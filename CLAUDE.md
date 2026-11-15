@@ -9,7 +9,7 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1 (agent), 2 (server core) and 3 (catalog) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1 (agent), 2 (server core), 3 (catalog) and 4 (upstream data) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -24,6 +24,8 @@ make stack-up               # server in Docker (127.0.0.1:8080) + agent in every
 docker exec inventory-server /inv cluster list         # registered clusters, last seen
 curl -s 127.0.0.1:8080/api/v1/changes?cluster=it-hetzner  # change history
 curl -s 127.0.0.1:8080/api/v1/inventory                   # components x clusters, unpinned, unrecognized
+curl -s 127.0.0.1:8080/api/v1/components/coredns          # + upstream lines/EOL + advisories per version
+./bin/inv upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
 make dev-down
 ```
 
@@ -55,6 +57,12 @@ make dev-down
   version, not images.
 - `internal/inventory` — computed on read from current state + catalog (catalog changes apply
   without re-ingest). Server flag `--internal-registries` marks in-house images.
+- `internal/upstream` — `Fetcher` (cached GET/POST in `upstream_cache`, ETag revalidation, stale
+  fallback) and `Client.Refresh` (endoflife.date lines, GitHub releases/archived, advisories).
+  `AdvisoriesFor` matches versions against ranges **locally** for both OSV and GitHub advisories —
+  see DESIGN.md "Security & lifecycle" for why OSV's version query must not be used and how
+  open-ended/TBD ranges are treated. `GITHUB_TOKEN` (no scopes) comes from `.env` (gitignored).
+- SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
 - Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
 - `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment. The ClusterRole must

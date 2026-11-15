@@ -10,9 +10,14 @@ cd "$(dirname "$0")/.."
 IMAGE=${IMAGE:-service-inventory:dev}
 clusters="it-hetzner:staging it-aws-test:prelive it-aws-prod:live"
 
+# GITHUB_TOKEN (no scopes) from .env, passed by name so it never appears in `ps`/shell history.
+if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
+[[ -n ${GITHUB_TOKEN:-} ]] || echo "warning: GITHUB_TOKEN not set (.env); upstream data will be rate limited" >&2
+
 docker rm -f inventory-server >/dev/null 2>&1 || true
 docker run -d --name inventory-server -p 127.0.0.1:8080:8080 -v inventory-data:/data \
-  -e INV_LISTEN=0.0.0.0:8080 -e INV_INTERNAL_REGISTRIES=registry.gitlab.example "$IMAGE" server >/dev/null
+  -e INV_LISTEN=0.0.0.0:8080 -e INV_INTERNAL_REGISTRIES=registry.gitlab.example -e GITHUB_TOKEN \
+  "$IMAGE" server >/dev/null
 until curl -sf 127.0.0.1:8080/healthz >/dev/null; do sleep 1; done
 echo "server: http://127.0.0.1:8080"
 

@@ -87,6 +87,13 @@ type Change struct {
 	NewValue  string     `json:"newValue,omitempty"`
 }
 
+type CacheEntry struct {
+	Key       string
+	FetchedAt time.Time
+	ETag      string
+	Body      []byte
+}
+
 type IngestResult struct {
 	Changes []Change
 	First   bool
@@ -109,6 +116,10 @@ type Store interface {
 	Ingest(ctx context.Context, clusterID int64, snap *snapshot.Snapshot) (*IngestResult, error)
 	CurrentImages(ctx context.Context, clusterID int64) ([]ImageRow, error)
 	ListChanges(ctx context.Context, clusterName string, limit int) ([]Change, error)
+
+	// Upstream response cache (release lists, EOL data, advisories).
+	GetCache(ctx context.Context, key string) (*CacheEntry, error)
+	PutCache(ctx context.Context, e CacheEntry) error
 
 	Close() error
 }

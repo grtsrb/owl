@@ -94,7 +94,8 @@ func TestParseVersion(t *testing.T) {
 		ok        bool
 	}{
 		{"v1.30.4", "1.30.4", true},
-		{"1.30.4+rke2r1", "1.30.4", true},
+		{"1.30.4+rke2r1", "1.30.4+rke2r1", true},
+		{"v1.34.13-rc3+rke2r1", "1.34.13-rc3+rke2r1", true},
 		{"v1.12.0-rc.1", "1.12.0-rc.1", true},
 		{"3.0.0-beta2", "3.0.0-beta2", true},
 		{"latest", "", false},

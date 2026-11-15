@@ -36,6 +36,8 @@ func main() {
 		err = runServer(os.Args[2:])
 	case "cluster":
 		err = runCluster(os.Args[2:])
+	case "upstream":
+		err = runUpstream(os.Args[2:])
 	case "version":
 		fmt.Println(version)
 	default:
@@ -55,6 +57,7 @@ commands:
   agent     collect workload inventory from a cluster and push it to the server
   server    run the central inventory server
   cluster   manage registered clusters and agent tokens (add, list, rotate-token, delete)
+  upstream  show upstream release lines, EOL, archived status and advisories for components
   version   print version`)
 }
 

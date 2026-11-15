@@ -18,9 +18,19 @@ import (
 )
 
 //go:embed schema.sql
-var schema string
+var schemaV1 string
 
-const schemaVersion = 1
+// migrations[i] upgrades the database from user_version i to i+1. Append only — never edit a
+// migration that has shipped.
+var migrations = []string{
+	schemaV1,
+	`CREATE TABLE upstream_cache (
+		key        TEXT PRIMARY KEY,
+		fetched_at TEXT NOT NULL,
+		etag       TEXT NOT NULL DEFAULT '',
+		body       BLOB NOT NULL
+	);`,
+}
 
 type DB struct{ db *sql.DB }
 
@@ -47,13 +57,49 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		return err
 	}
-	if v >= schemaVersion {
-		return nil
+	if v > len(migrations) {
+		return fmt.Errorf("database schema v%d is newer than this binary supports (v%d)", v, len(migrations))
 	}
-	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("apply schema: %w", err)
+	for ; v < len(migrations); v++ {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(migrations[v]); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration to v%d: %w", v+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", v+1)); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
-	_, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
+	return nil
+}
+
+func (d *DB) GetCache(ctx context.Context, key string) (*store.CacheEntry, error) {
+	var e store.CacheEntry
+	var fetched string
+	err := d.db.QueryRowContext(ctx, "SELECT key, fetched_at, etag, body FROM upstream_cache WHERE key=?", key).
+		Scan(&e.Key, &fetched, &e.ETag, &e.Body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if t := parseTime(sql.NullString{String: fetched, Valid: true}); t != nil {
+		e.FetchedAt = *t
+	}
+	return &e, nil
+}
+
+func (d *DB) PutCache(ctx context.Context, e store.CacheEntry) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO upstream_cache(key, fetched_at, etag, body) VALUES (?,?,?,?)
+		ON CONFLICT(key) DO UPDATE SET fetched_at=excluded.fetched_at, etag=excluded.etag, body=excluded.body`,
+		e.Key, e.FetchedAt.UTC().Format(ts), e.ETag, e.Body)
 	return err
 }
 

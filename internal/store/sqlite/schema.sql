@@ -1,4 +1,4 @@
--- Schema v1. Timestamps are RFC3339 UTC strings.
+-- Schema v1 (migration 1; later migrations live in sqlite.go). Timestamps: fixed-width UTC strings.
 CREATE TABLE IF NOT EXISTS clusters (
     id                 INTEGER PRIMARY KEY,
     name               TEXT NOT NULL UNIQUE,

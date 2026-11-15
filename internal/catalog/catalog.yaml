@@ -6,6 +6,10 @@
 #   eol:        endoflife.date product slug — only when it is really the same project (verified).
 #   versionParts: how many numeric parts a fully pinned version has (Postgres: 17.2 -> 2).
 #   tagPrefix:  per-image prefix stripped before parsing (some vendors prefix tags).
+#   releaseTagPrefix: only GitHub release tags with this prefix are versions of this component
+#               (ingress-nginx publishes controller-v1.x and helm-chart-4.x in one repo).
+#   osv:        Go module for OSV.dev advisory lookups (exact affected/fixed versions per version).
+#               Without it, advisories come from the GitHub repo's published security advisories.
 #
 # Vendor build suffixes (-hardened3, -build20240305, -debian-12-r20, -alpine, ...) are stripped
 # generically; the exact image is always kept for display.
@@ -16,16 +20,19 @@ components:
     source: cluster
     github: kubernetes/kubernetes
     eol: kubernetes
+    osv: {ecosystem: Go, name: k8s.io/kubernetes}
 
   - id: rke2
     name: RKE2
     source: cluster
     github: rancher/rke2
+    osv: {ecosystem: Go, name: github.com/rancher/rke2}
 
   - id: k3s
     name: k3s
     source: cluster
     github: k3s-io/k3s
+    osv: {ecosystem: Go, name: github.com/k3s-io/k3s}
 
   - id: ingress-nginx
     name: ingress-nginx controller
@@ -36,6 +43,8 @@ components:
       - rancher/hardened-ingress-nginx
     github: kubernetes/ingress-nginx
     tagPrefix: "controller-"
+    releaseTagPrefix: "controller-"
+    osv: {ecosystem: Go, name: k8s.io/ingress-nginx}
     notes: Retired upstream (maintenance ended March 2026). Not on endoflife.date.
 
   - id: nginx
@@ -67,6 +76,7 @@ components:
     images: [grafana/grafana, grafana/grafana-oss, grafana/grafana-enterprise, bitnami/grafana]
     github: grafana/grafana
     eol: grafana
+    osv: {ecosystem: Go, name: github.com/grafana/grafana}
 
   - id: coredns
     name: CoreDNS
@@ -76,6 +86,7 @@ components:
       - rancher/mirrored-coredns-coredns          # k3s
       - rancher/hardened-coredns                  # RKE2
     github: coredns/coredns
+    osv: {ecosystem: Go, name: github.com/coredns/coredns}
 
   - id: longhorn
     name: Longhorn
@@ -125,3 +136,4 @@ components:
       - rancher/mirrored-metrics-server
       - rancher/hardened-k8s-metrics-server
     github: kubernetes-sigs/metrics-server
+    releaseTagPrefix: "v"

@@ -63,11 +63,23 @@ cluster (each)                               server (Docker locally, later one E
 - Set globally or per component **in the UI** (stored in DB). Per-stage policies: v2.
 
 ## Security & lifecycle
-- Advisories: GitHub Security Advisories + OSV for the component's upstream project → "affected,
-  fixed in X". Blind spot: vulns in bundled OS packages/libs (later: ingest Trivy Operator reports).
-- EOL dates from endoflife.date.
-- Retired projects (archived repo, deprecated/EOL product — e.g. ingress-nginx, retired March 2026)
-  → Critical with migration notes.
+- Advisories: OSV.dev (Go modules: kubernetes, rke2, k3s, ingress-nginx, grafana, coredns) or the
+  GitHub repo's published security advisories → "affected, fixed in X". Blind spot: vulns in bundled
+  OS packages/libs (later: ingest Trivy Operator reports).
+  - **Ranges are evaluated locally**, never via OSV's per-version query: for modules whose tags aren't
+    Go module versions (ingress-nginx `controller-v1.x`, Grafana) that query returns every advisory
+    regardless of version (verified: latest ingress-nginx "had" CVE-2025-1974).
+  - Open-ended repo ranges (`>= 7.0.0`, `All`) are decided by the patched list (one fix per release
+    line). Open range + `TBD`/no patch → **needs review**, not affected (Redis rarely closes ranges).
+  - Affected with no fixed version → shown as "no fix listed", not counted for priority.
+  - Repos that publish no GitHub advisories (postgres, nginx, haproxy, haproxytech ingress,
+    metrics-server) → **"no advisory data"** — never shown as "no vulnerabilities".
+- EOL dates, LTS flags and latest patch per release line from endoflife.date (verified slugs only);
+  otherwise lines are derived from GitHub releases per minor (tag filter, pre-releases skipped).
+- **Retired** = GitHub repo archived *and* no release for 90 days (ingress-nginx). Archived but still
+  releasing (Redpanda) = "archived — check where development moved", not Critical.
+- Upstream data refreshes every 6 h, cached in SQLite with ETags; on upstream failure the last good
+  copy is served (marked stale).
 
 ## Priority (rule-based; Claude explains, never decides)
 - 🔴 Critical — affected by high/critical advisory, past EOL, or upstream retired

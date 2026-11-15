@@ -23,9 +23,27 @@ type Component struct {
 	VersionParts int      `json:"versionParts,omitempty"`
 	TagPrefix    string   `json:"tagPrefix,omitempty"`
 	Source       string   `json:"source,omitempty"` // "cluster" = version from the cluster, not an image
-	Notes        string   `json:"notes,omitempty"`
+	// ReleaseTagPrefix filters GitHub release tags to this component's own releases.
+	ReleaseTagPrefix string      `json:"releaseTagPrefix,omitempty"`
+	OSV              *OSVPackage `json:"osv,omitempty"`
+	Notes            string      `json:"notes,omitempty"`
 
 	refs []Ref // parsed Images, built once in Builtin()
+}
+
+type OSVPackage struct {
+	Ecosystem string `json:"ecosystem"`
+	Name      string `json:"name"`
+}
+
+// ByID returns the component with the given ID, or nil.
+func (c *Catalog) ByID(id string) *Component {
+	for i := range c.Components {
+		if c.Components[i].ID == id {
+			return &c.Components[i]
+		}
+	}
+	return nil
 }
 
 type Catalog struct {
@@ -142,18 +160,13 @@ func (c *Catalog) match(ref Ref) *Component {
 func (c *Catalog) ClusterVersions(gitVersion string) []Identification {
 	var out []Identification
 	v, ok := ParseVersion(gitVersion, "")
-	byID := func(id string) *Component {
-		for i := range c.Components {
-			if c.Components[i].ID == id {
-				return &c.Components[i]
-			}
-		}
-		return nil
-	}
+	byID := c.ByID
 	if k := byID("kubernetes"); k != nil {
 		id := Identification{Component: k, Ref: Ref{Raw: gitVersion}}
 		if ok {
-			id.Status, id.Version = StatusIdentified, &v
+			kv := v
+			kv.Build = "" // the Kubernetes version itself; the distro revision belongs to rke2/k3s
+			id.Status, id.Version = StatusIdentified, &kv
 		} else {
 			id.Status, id.Reason = StatusUnpinned, "unparseable Kubernetes version "+gitVersion
 		}
@@ -281,6 +294,10 @@ func ParseVersion(tag, prefix string) (Version, bool) {
 	// A digit or letter glued to the number (e.g. "1.2.3a", "20240305") means this isn't a semver-ish tag.
 	if suffix != "" && !strings.ContainsAny(suffix[:1], "-._+") {
 		return Version{}, false
+	}
+	if i := strings.Index(m[4], "+"); i >= 0 {
+		v.Build = m[4][i+1:] // e.g. rke2r1 in v1.30.4+rke2r1
+		suffix = strings.ToLower(m[4][:i])
 	}
 	if pm := prereleaseRe.FindStringSubmatch(suffix); pm != nil {
 		v.Prerelease = pm[1]

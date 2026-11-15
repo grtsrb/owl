@@ -3,6 +3,7 @@ package server
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"service-inventory/internal/auth"
@@ -19,6 +22,7 @@ import (
 	"service-inventory/internal/inventory"
 	"service-inventory/internal/snapshot"
 	"service-inventory/internal/store"
+	"service-inventory/internal/upstream"
 )
 
 // Limits protect against oversized or malicious payloads (gzip bombs).
@@ -28,9 +32,13 @@ const (
 )
 
 type Server struct {
-	Store   store.Store
-	Catalog *catalog.Catalog
-	Log     *slog.Logger
+	Store    store.Store
+	Catalog  *catalog.Catalog
+	Upstream *upstream.Client // nil = upstream checks disabled
+	Log      *slog.Logger
+
+	mu       sync.RWMutex
+	upstream map[string]*upstream.Info // component id -> latest info
 	// AllowedHosts are the Host header values (without port) the read API answers to. It blocks DNS
 	// rebinding against the unauthenticated read API until admin auth exists. Empty = localhost only.
 	// The agent ingest endpoint is exempt (agents may use an IP; it has its own token auth).
@@ -47,6 +55,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/clusters/{name}/images", s.clusterImages)
 	mux.HandleFunc("GET /api/v1/changes", s.listChanges)
 	mux.HandleFunc("GET /api/v1/inventory", s.inventory)
+	mux.HandleFunc("GET /api/v1/upstream", s.listUpstream)
+	mux.HandleFunc("GET /api/v1/components/{id}", s.componentDetail)
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
 	return logRequests(s.Log, s.checkHost(mux))
 }
@@ -260,5 +270,111 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 		}
 		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.code,
 			"took", time.Since(start).Round(time.Millisecond), "remote", r.RemoteAddr)
+	})
+}
+
+// RefreshUpstream fetches upstream info for every catalog component (cached responses make this
+// cheap; only expired entries hit the network).
+func (s *Server) RefreshUpstream(ctx context.Context) {
+	if s.Upstream == nil {
+		return
+	}
+	start := time.Now()
+	fresh := map[string]*upstream.Info{}
+	errs := 0
+	for i := range s.Catalog.Components {
+		c := &s.Catalog.Components[i]
+		info := s.Upstream.Refresh(ctx, c)
+		if len(info.Errors) > 0 {
+			errs++
+			s.Log.Warn("upstream refresh incomplete", "component", c.ID, "errors", info.Errors)
+		}
+		fresh[c.ID] = info
+	}
+	s.mu.Lock()
+	s.upstream = fresh
+	s.mu.Unlock()
+	s.Log.Info("upstream refreshed", "components", len(fresh), "withErrors", errs, "took", time.Since(start).Round(time.Millisecond))
+}
+
+// RunUpstreamRefresher refreshes now and then every interval until ctx is done.
+func (s *Server) RunUpstreamRefresher(ctx context.Context, every time.Duration) {
+	s.RefreshUpstream(ctx)
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.RefreshUpstream(ctx)
+		}
+	}
+}
+
+func (s *Server) upstreamInfo(id string) *upstream.Info {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.upstream[id]
+}
+
+func (s *Server) listUpstream(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	out := make([]*upstream.Info, 0, len(s.upstream))
+	for _, i := range s.upstream {
+		out = append(out, i)
+	}
+	s.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].ComponentID < out[j].ComponentID })
+	writeJSON(w, http.StatusOK, out)
+}
+
+type versionAdvisories struct {
+	Version    string           `json:"version"`
+	Advisories []upstream.Match `json:"advisories"`
+	Error      string           `json:"error,omitempty"`
+}
+
+// componentDetail: where the component runs, upstream info, and advisories per running version.
+func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	comp := s.Catalog.ByID(id)
+	if comp == nil {
+		httpError(w, http.StatusNotFound, "unknown component")
+		return
+	}
+	inv, err := inventory.Build(r.Context(), s.Store, s.Catalog)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var view *inventory.ComponentView
+	for i := range inv.Components {
+		if inv.Components[i].ID == id {
+			view = &inv.Components[i]
+		}
+	}
+	info := s.upstreamInfo(id)
+	advs := []versionAdvisories{}
+	if view != nil && s.Upstream != nil {
+		seen := map[string]bool{}
+		for _, in := range view.Instances {
+			if in.Version == "" || seen[in.Version] {
+				continue
+			}
+			seen[in.Version] = true
+			ms, err := s.Upstream.AdvisoriesFor(r.Context(), comp, info, in.Version)
+			va := versionAdvisories{Version: in.Version, Advisories: ms}
+			if err != nil {
+				va.Error = err.Error()
+			}
+			if va.Advisories == nil {
+				va.Advisories = []upstream.Match{}
+			}
+			advs = append(advs, va)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"component": comp, "inventory": view, "upstream": info, "advisoriesByVersion": advs,
 	})
 }

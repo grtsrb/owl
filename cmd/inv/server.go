@@ -19,6 +19,7 @@ import (
 	"service-inventory/internal/server"
 	"service-inventory/internal/store"
 	"service-inventory/internal/store/sqlite"
+	"service-inventory/internal/upstream"
 )
 
 func defaultDB() string {
@@ -32,6 +33,7 @@ func runServer(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	listen := fs.String("listen", envOr("INV_LISTEN", "127.0.0.1:8080"), "listen address (env INV_LISTEN)")
 	dbPath := fs.String("db", defaultDB(), "SQLite database path (env INV_DB)")
+	noUpstream := fs.Bool("no-upstream", false, "disable upstream checks (GitHub, endoflife.date, OSV)")
 	allowedHosts := fs.String("allowed-hosts", os.Getenv("INV_ALLOWED_HOSTS"),
 		"comma-separated extra Host names the UI/read API answers to (localhost always allowed; env INV_ALLOWED_HOSTS)")
 	internal := fs.String("internal-registries", os.Getenv("INV_INTERNAL_REGISTRIES"),
@@ -54,15 +56,25 @@ func runServer(args []string) error {
 	}
 	defer db.Close()
 
+	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ",")}
+	if *noUpstream {
+		log.Warn("upstream checks disabled")
+	} else {
+		if os.Getenv("GITHUB_TOKEN") == "" {
+			log.Warn("GITHUB_TOKEN not set: GitHub allows 60 requests/hour; upstream data will be incomplete")
+		}
+		app.Upstream = newUpstreamClient(db)
+	}
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           (&server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ",")}).Handler(),
+		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go app.RunUpstreamRefresher(ctx, 6*time.Hour)
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -156,4 +168,73 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func newUpstreamClient(db store.Store) *upstream.Client {
+	return &upstream.Client{F: &upstream.Fetcher{
+		HTTP:        &http.Client{Timeout: 30 * time.Second},
+		Cache:       db,
+		GitHubToken: os.Getenv("GITHUB_TOKEN"),
+		UserAgent:   "service-inventory/" + version,
+		TTL:         6 * time.Hour,
+	}}
+}
+
+// runUpstream is a debugging aid: fetch (or read cached) upstream info and print it.
+func runUpstream(args []string) error {
+	fs := flag.NewFlagSet("upstream", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDB(), "SQLite database path (used as cache; env INV_DB)")
+	comp := fs.String("component", "", "component id (default: all)")
+	version := fs.String("version", "", "also list advisories affecting this version (needs --component)")
+	_ = fs.Parse(args)
+
+	db, err := sqlite.Open(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	cat, err := catalog.Builtin()
+	if err != nil {
+		return err
+	}
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		fmt.Fprintln(os.Stderr, "warning: GITHUB_TOKEN not set; GitHub allows only 60 requests/hour")
+	}
+	cl := newUpstreamClient(db)
+	ctx := context.Background()
+	for i := range cat.Components {
+		c := &cat.Components[i]
+		if *comp != "" && c.ID != *comp {
+			continue
+		}
+		info := cl.Refresh(ctx, c)
+		lines := []string{}
+		for j, l := range info.Lines {
+			if j == 4 {
+				break
+			}
+			tag := l.Name + "→" + l.Latest
+			if l.LTS {
+				tag += " LTS"
+			}
+			if l.EOL {
+				tag += " EOL"
+			} else if l.EOLDate != nil {
+				tag += " (eol " + l.EOLDate.Format("2006-01-02") + ")"
+			}
+			lines = append(lines, tag)
+		}
+		fmt.Printf("%-28s latest=%-10s archived=%-5v advisories=%-11s lines=[%s] %s\n", c.ID, info.LatestStable,
+			info.Archived, info.AdvisorySource, strings.Join(lines, ", "), strings.Join(info.Errors, "; "))
+		if *version != "" {
+			ms, err := cl.AdvisoriesFor(ctx, c, info, *version)
+			if err != nil {
+				return err
+			}
+			for _, m := range ms {
+				fmt.Printf("    %-22s %-9s certain=%-5v fixed=%v %s\n", m.ID, m.Severity, m.Certain, m.FixedIn, m.Summary)
+			}
+		}
+	}
+	return nil
 }
