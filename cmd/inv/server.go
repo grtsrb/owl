@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"service-inventory/internal/auth"
+	"service-inventory/internal/catalog"
 	"service-inventory/internal/server"
 	"service-inventory/internal/store"
 	"service-inventory/internal/store/sqlite"
@@ -30,9 +32,22 @@ func runServer(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	listen := fs.String("listen", envOr("INV_LISTEN", "127.0.0.1:8080"), "listen address (env INV_LISTEN)")
 	dbPath := fs.String("db", defaultDB(), "SQLite database path (env INV_DB)")
+	allowedHosts := fs.String("allowed-hosts", os.Getenv("INV_ALLOWED_HOSTS"),
+		"comma-separated extra Host names the UI/read API answers to (localhost always allowed; env INV_ALLOWED_HOSTS)")
+	internal := fs.String("internal-registries", os.Getenv("INV_INTERNAL_REGISTRIES"),
+		"comma-separated registries of in-house images, e.g. registry.gitlab.example.com (env INV_INTERNAL_REGISTRIES)")
 	_ = fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	cat, err := catalog.Builtin()
+	if err != nil {
+		return err
+	}
+	for _, r := range strings.Split(*internal, ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			cat.InternalRegistries = append(cat.InternalRegistries, r)
+		}
+	}
 	db, err := sqlite.Open(*dbPath)
 	if err != nil {
 		return err
@@ -41,7 +56,7 @@ func runServer(args []string) error {
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           (&server.Server{Store: db, Log: log}).Handler(),
+		Handler:           (&server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ",")}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,

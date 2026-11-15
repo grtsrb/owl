@@ -17,8 +17,8 @@ import (
 	"service-inventory/internal/snapshot"
 )
 
-// Collector builds snapshots using read-only list calls. It needs exactly the permissions in
-// deploy/agent/rbac.yaml — keep the two in sync.
+// Collector builds snapshots using read-only list calls. It needs exactly the permissions of the
+// ClusterRole in deploy/agent/agent.yaml — keep the two in sync.
 type Collector struct {
 	Client  kubernetes.Interface
 	Version string
@@ -85,8 +85,10 @@ func (c *Collector) Collect(ctx context.Context) (*snapshot.Snapshot, error) {
 	}, func(obj runtime.Object) {
 		rs := obj.(*appsv1.ReplicaSet)
 		key := ownerKey{"ReplicaSet", rs.Namespace, rs.Name}
-		if ref := controllerOf(rs.OwnerReferences); ref != nil && ref.Kind == "Deployment" {
-			rsOwner[key] = ownerKey{"Deployment", rs.Namespace, ref.Name}
+		if ref := controllerOf(rs.OwnerReferences); ref != nil {
+			// Deployment, or another controller (e.g. Argo Rollouts' Rollout). Never list old revisions
+			// as workloads of their own; their pods are attributed to the owner.
+			rsOwner[key] = ownerKey{ref.Kind, rs.Namespace, ref.Name}
 			return
 		}
 		add("ReplicaSet", rs.ObjectMeta, replicas(rs.Spec.Replicas), rs.Spec.Template.Spec)
@@ -208,11 +210,16 @@ func recordRunning(w *snapshot.Workload, p *corev1.Pod) {
 	for _, s := range p.Status.InitContainerStatuses {
 		statuses[s.Name] = s
 	}
+	init := map[string]bool{}
+	for _, c := range p.Spec.InitContainers {
+		init[c.Name] = true
+	}
 	all := append(append([]corev1.Container{}, p.Spec.InitContainers...), p.Spec.Containers...)
 	for _, ct := range all {
 		st := statuses[ct.Name]
 		ready := 0
-		if st.Ready {
+		// A completed init container is never "Ready"; successful termination is its healthy state.
+		if st.Ready || (init[ct.Name] && st.State.Terminated != nil && st.State.Terminated.ExitCode == 0) {
 			ready = 1
 		}
 		found := false

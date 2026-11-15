@@ -65,6 +65,9 @@ func Diff(old, new []ImageRow) []Change {
 		if a.Namespace != b.Namespace {
 			return a.Namespace < b.Namespace
 		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
 		if a.Workload != b.Workload {
 			return a.Workload < b.Workload
 		}

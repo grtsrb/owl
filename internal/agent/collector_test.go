@@ -77,6 +77,11 @@ func TestCollect(t *testing.T) {
 		pod("im-1", "InstanceManager", "instance-manager-a", "longhornio/longhorn-instance-manager:v1.7.2", "s", true),
 		pod("im-2", "InstanceManager", "instance-manager-a", "longhornio/longhorn-instance-manager:v1.7.2", "s", true),
 
+		// Argo Rollouts: ReplicaSets owned by a Rollout must not become workloads of their own.
+		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "api-rev1", Namespace: "ns", OwnerReferences: ctrl("Rollout", "api")}},
+		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "api-rev2", Namespace: "ns", OwnerReferences: ctrl("Rollout", "api")}},
+		pod("api-x", "ReplicaSet", "api-rev2", "ghcr.io/acme/api:2.0.0", "s", true),
+
 		// Bare pod, plus a finished pod that must be ignored.
 		pod("debug", "", "", "busybox:latest", "s", true),
 	}
@@ -112,6 +117,9 @@ func TestCollect(t *testing.T) {
 	if im := find(t, snap, "InstanceManager", "instance-manager-a"); len(im.Running) != 1 || im.Running[0].Pods != 2 {
 		t.Errorf("operator pods not grouped: %+v", im)
 	}
+	if ro := find(t, snap, "Rollout", "api"); len(ro.Running) != 1 {
+		t.Errorf("rollout pods not attributed to the Rollout: %+v", ro)
+	}
 	find(t, snap, "Pod", "debug")
 	for _, w := range snap.Workloads {
 		if w.Kind == "ReplicaSet" || w.Kind == "Job" || w.Name == "old-job-pod" {
@@ -120,5 +128,21 @@ func TestCollect(t *testing.T) {
 	}
 	if len(snap.Cluster.Nodes) != 1 || snap.Cluster.Nodes[0].KubeletVersion != "v1.30.4+rke2r1" {
 		t.Errorf("nodes: %+v", snap.Cluster.Nodes)
+	}
+}
+
+func TestCompletedInitContainerCountsAsReady(t *testing.T) {
+	p := pod("p", "", "", "app:1", "s", true)
+	p.Spec.InitContainers = []corev1.Container{{Name: "migrate", Image: "migrate:1"}}
+	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "migrate", Image: "migrate:1", ImageID: "s",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}}}
+	snap, err := (&Collector{Client: fake.NewClientset(p), Version: "test"}).Collect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range find(t, snap, "Pod", "p").Running {
+		if r.Ready != 1 {
+			t.Errorf("%s: want ready=1, got %+v", r.Container, r)
+		}
 	}
 }

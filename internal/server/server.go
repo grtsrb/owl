@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"service-inventory/internal/auth"
+	"service-inventory/internal/catalog"
+	"service-inventory/internal/inventory"
 	"service-inventory/internal/snapshot"
 	"service-inventory/internal/store"
 )
@@ -24,8 +28,13 @@ const (
 )
 
 type Server struct {
-	Store store.Store
-	Log   *slog.Logger
+	Store   store.Store
+	Catalog *catalog.Catalog
+	Log     *slog.Logger
+	// AllowedHosts are the Host header values (without port) the read API answers to. It blocks DNS
+	// rebinding against the unauthenticated read API until admin auth exists. Empty = localhost only.
+	// The agent ingest endpoint is exempt (agents may use an IP; it has its own token auth).
+	AllowedHosts []string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -37,7 +46,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/clusters", s.listClusters)
 	mux.HandleFunc("GET /api/v1/clusters/{name}/images", s.clusterImages)
 	mux.HandleFunc("GET /api/v1/changes", s.listChanges)
-	return logRequests(s.Log, mux)
+	mux.HandleFunc("GET /api/v1/inventory", s.inventory)
+	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
+	return logRequests(s.Log, s.checkHost(mux))
+}
+
+func (s *Server) checkHost(next http.Handler) http.Handler {
+	allowed := map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
+	for _, h := range s.AllowedHosts {
+		if h = strings.TrimSpace(strings.ToLower(h)); h != "" {
+			allowed[h] = true
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == snapshot.IngestPath || r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if !allowed[strings.ToLower(strings.Trim(host, "[]"))] {
+			httpError(w, http.StatusMisdirectedRequest, "host not allowed (set INV_ALLOWED_HOSTS)")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
@@ -65,11 +100,21 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		defer zr.Close()
 		body = zr
 	}
-	body = io.LimitReader(body, maxDecompressedBody+1)
+	limited := &limitReader{r: body, n: maxDecompressedBody}
 
 	var snap snapshot.Snapshot
-	dec := json.NewDecoder(body)
-	if err := dec.Decode(&snap); err != nil {
+	dec := json.NewDecoder(limited)
+	err = dec.Decode(&snap)
+	if err == nil && dec.Decode(&struct{}{}) != io.EOF {
+		err = errors.New("unexpected data after snapshot")
+	}
+	var maxErr *http.MaxBytesError
+	switch {
+	case errors.As(err, &maxErr) || errors.Is(err, errTooLarge):
+		httpError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
+			"snapshot too large (limits: %d MiB compressed, %d MiB decompressed)", maxCompressedBody>>20, maxDecompressedBody>>20))
+		return
+	case err != nil:
 		httpError(w, http.StatusBadRequest, "invalid snapshot: "+err.Error())
 		return
 	}
@@ -87,6 +132,29 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	s.Log.Info("snapshot ingested", "cluster", cluster.Name, "workloads", len(snap.Workloads),
 		"changes", len(res.Changes), "first", res.First, "agent", snap.AgentVersion)
 	writeJSON(w, http.StatusAccepted, map[string]any{"cluster": cluster.Name, "changes": len(res.Changes)})
+}
+
+var errTooLarge = errors.New("decompressed body too large")
+
+// limitReader is like io.LimitReader but returns errTooLarge instead of a silent EOF when exceeded.
+type limitReader struct {
+	r io.Reader
+	n int64
+}
+
+func (l *limitReader) Read(p []byte) (int, error) {
+	if l.n <= 0 {
+		return 0, errTooLarge
+	}
+	if int64(len(p)) > l.n {
+		p = p[:l.n+1] // read one extra byte to detect overflow
+	}
+	n, err := l.r.Read(p)
+	if int64(n) > l.n {
+		return int(l.n), errTooLarge
+	}
+	l.n -= int64(n)
+	return n, err
 }
 
 type clusterJSON struct {
@@ -142,6 +210,15 @@ func (s *Server) listChanges(w http.ResponseWriter, r *http.Request) {
 		cs = []store.Change{}
 	}
 	writeJSON(w, http.StatusOK, cs)
+}
+
+func (s *Server) inventory(w http.ResponseWriter, r *http.Request) {
+	inv, err := inventory.Build(r.Context(), s.Store, s.Catalog)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, inv)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

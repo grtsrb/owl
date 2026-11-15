@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,10 +34,35 @@ func (c Config) Validate() error {
 	if c.ServerURL == "" || c.Token == "" {
 		return errors.New("server URL (INV_SERVER_URL) and token (INV_TOKEN) are required")
 	}
-	if strings.HasPrefix(c.ServerURL, "http://") && !c.AllowInsecureHTTP {
-		return errors.New("refusing to send the token over plain http; use https or set INV_ALLOW_INSECURE_HTTP=true (local dev only)")
+	u, err := url.Parse(c.ServerURL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("invalid server URL %q", c.ServerURL)
+	}
+	switch u.Scheme { // url.Parse lowercases the scheme, so "HTTP://" can't slip through
+	case "https":
+	case "http":
+		if !c.AllowInsecureHTTP {
+			return errors.New("refusing to send the token over plain http; use https or set INV_ALLOW_INSECURE_HTTP=true (local dev only)")
+		}
+	default:
+		return fmt.Errorf("unsupported server URL scheme %q", u.Scheme)
+	}
+	if c.Timeout <= 0 {
+		return errors.New("timeout must be positive")
 	}
 	return nil
+}
+
+// NewHTTPClient returns the client the agent pushes with. It never follows redirects: the ingest
+// endpoint doesn't redirect, and following one could resend the bearer token to another URL
+// (e.g. downgraded to http).
+func NewHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 type Agent struct {
@@ -52,6 +78,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := a.Config.Validate(); err != nil {
 		return err
 	}
+	if a.Config.Interval < time.Minute {
+		return fmt.Errorf("interval %s is too short (minimum 1m)", a.Config.Interval)
+	}
 	jitter := time.Duration(rand.Int64N(int64(30 * time.Second)))
 	a.Log.Info("agent started", "server", a.Config.ServerURL, "interval", a.Config.Interval, "firstRunIn", jitter.Round(time.Second))
 	timer := time.NewTimer(jitter)
@@ -62,17 +91,22 @@ func (a *Agent) Run(ctx context.Context) error {
 			return nil
 		case <-timer.C:
 		}
-		if err := a.RunOnce(ctx); err != nil {
+		if err := a.runCycle(ctx); err != nil {
 			a.Log.Error("cycle failed", "err", err)
 		}
 		timer.Reset(a.Config.Interval)
 	}
 }
 
+// RunOnce validates the config, then collects and pushes a single snapshot.
 func (a *Agent) RunOnce(ctx context.Context) error {
 	if err := a.Config.Validate(); err != nil {
 		return err
 	}
+	return a.runCycle(ctx)
+}
+
+func (a *Agent) runCycle(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, a.Config.Timeout)
 	defer cancel()
 	start := time.Now()

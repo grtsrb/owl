@@ -61,7 +61,8 @@ func (d *DB) Close() error { return d.db.Close() }
 
 func now() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
-const ts = time.RFC3339Nano
+// ts is fixed-width (always milliseconds, always UTC "Z") so text order == time order in SQL.
+const ts = "2006-01-02T15:04:05.000Z07:00"
 
 func parseTime(s sql.NullString) *time.Time {
 	if !s.Valid || s.String == "" {
@@ -69,7 +70,9 @@ func parseTime(s sql.NullString) *time.Time {
 	}
 	t, err := time.Parse(ts, s.String)
 	if err != nil {
-		return nil
+		if t, err = time.Parse(time.RFC3339Nano, s.String); err != nil {
+			return nil
+		}
 	}
 	return &t
 }

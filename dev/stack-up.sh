@@ -12,7 +12,7 @@ clusters="it-hetzner:staging it-aws-test:prelive it-aws-prod:live"
 
 docker rm -f inventory-server >/dev/null 2>&1 || true
 docker run -d --name inventory-server -p 127.0.0.1:8080:8080 -v inventory-data:/data \
-  -e INV_LISTEN=0.0.0.0:8080 "$IMAGE" server >/dev/null
+  -e INV_LISTEN=0.0.0.0:8080 -e INV_INTERNAL_REGISTRIES=registry.gitlab.example "$IMAGE" server >/dev/null
 until curl -sf 127.0.0.1:8080/healthz >/dev/null; do sleep 1; done
 echo "server: http://127.0.0.1:8080"
 

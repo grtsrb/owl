@@ -52,15 +52,15 @@ type Cluster struct {
 
 // ImageRow is one container image of one workload in a cluster's current state.
 type ImageRow struct {
-	Namespace       string
-	Kind            string
-	Workload        string
-	Container       string
-	Image           string // from the workload template (intended)
-	Init            bool
-	DesiredReplicas int32
+	Namespace       string `json:"namespace"`
+	Kind            string `json:"kind"`
+	Workload        string `json:"workload"`
+	Container       string `json:"container"`
+	Image           string `json:"image"` // from the workload template (intended)
+	Init            bool   `json:"init,omitempty"`
+	DesiredReplicas int32  `json:"desiredReplicas"`
 	// Running images observed in pods for this container; usually one, more during a rollout.
-	Running []snapshot.RunningImage
+	Running []snapshot.RunningImage `json:"running"`
 }
 
 type ChangeType string
@@ -74,17 +74,17 @@ const (
 )
 
 type Change struct {
-	ID        int64
-	ClusterID int64
-	Cluster   string // filled on reads
-	At        time.Time
-	Type      ChangeType
-	Namespace string
-	Kind      string
-	Workload  string
-	Container string
-	OldValue  string
-	NewValue  string
+	ID        int64      `json:"id"`
+	ClusterID int64      `json:"-"`
+	Cluster   string     `json:"cluster"` // filled on reads
+	At        time.Time  `json:"at"`
+	Type      ChangeType `json:"type"`
+	Namespace string     `json:"namespace,omitempty"`
+	Kind      string     `json:"kind,omitempty"`
+	Workload  string     `json:"workload,omitempty"`
+	Container string     `json:"container,omitempty"`
+	OldValue  string     `json:"oldValue,omitempty"`
+	NewValue  string     `json:"newValue,omitempty"`
 }
 
 type IngestResult struct {

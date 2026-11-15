@@ -9,7 +9,7 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1 (agent) and 2 (server core) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1 (agent), 2 (server core) and 3 (catalog) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -23,6 +23,7 @@ make image                  # Docker image (same image for agent and server)
 make stack-up               # server in Docker (127.0.0.1:8080) + agent in every k3d cluster
 docker exec inventory-server /inv cluster list         # registered clusters, last seen
 curl -s 127.0.0.1:8080/api/v1/changes?cluster=it-hetzner  # change history
+curl -s 127.0.0.1:8080/api/v1/inventory                   # components x clusters, unpinned, unrecognized
 make dev-down
 ```
 
@@ -41,8 +42,19 @@ make dev-down
   event, not N "added". `internal/store/sqlite` — schema in `schema.sql`, versioned via
   `PRAGMA user_version`; single connection (SQLite single-writer).
 - `internal/server` — HTTP API. Ingest authenticates by SHA-256 token hash (`internal/auth`), enforces
-  compressed/decompressed size limits and `SchemaVersion`. Read endpoints are unauthenticated until
-  milestone 8 — don't bind the server to a public interface before then.
+  compressed/decompressed size limits (413) and `SchemaVersion`. Read endpoints are unauthenticated
+  until milestone 8 and only answer allowlisted `Host` headers (localhost + `INV_ALLOWED_HOSTS`) to
+  block DNS rebinding — don't bind the server to a public interface before auth lands.
+- SQLite timestamps use a fixed-width layout so `ORDER BY` on the text column is chronological.
+- `internal/catalog` — `catalog.yaml` (embedded) maps image names → component → GitHub repo /
+  endoflife.date slug. `eol` is set **only when verified to be the same project** (endoflife.date
+  `haproxy-ingress` is jcmoraisjr's, not haproxytech's). Exact name match beats mirror-suffix match.
+  `ParseVersion` strips vendor suffixes (`-hardened3`, `-build…`, `-debian-12-r20`) but keeps real
+  pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
+  "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
+  version, not images.
+- `internal/inventory` — computed on read from current state + catalog (catalog changes apply
+  without re-ingest). Server flag `--internal-registries` marks in-house images.
 - Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
 - `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment. The ClusterRole must

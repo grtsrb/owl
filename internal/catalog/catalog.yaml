@@ -1,0 +1,127 @@
+# Built-in component catalog: which images belong to which upstream component.
+#
+#   images:     image names (registry/repository, or bare repository = Docker Hub). Mirrors/proxies are
+#               matched by path suffix, e.g. harbor.example.com/proxy/library/nginx -> docker.io/library/nginx.
+#   github:     upstream repo for releases, advisories and archived/retired status (milestone 4).
+#   eol:        endoflife.date product slug — only when it is really the same project (verified).
+#   versionParts: how many numeric parts a fully pinned version has (Postgres: 17.2 -> 2).
+#   tagPrefix:  per-image prefix stripped before parsing (some vendors prefix tags).
+#
+# Vendor build suffixes (-hardened3, -build20240305, -debian-12-r20, -alpine, ...) are stripped
+# generically; the exact image is always kept for display.
+#   source: cluster — not matched by image; version comes from the cluster itself (node kubeletVersion).
+components:
+  - id: kubernetes
+    name: Kubernetes
+    source: cluster
+    github: kubernetes/kubernetes
+    eol: kubernetes
+
+  - id: rke2
+    name: RKE2
+    source: cluster
+    github: rancher/rke2
+
+  - id: k3s
+    name: k3s
+    source: cluster
+    github: k3s-io/k3s
+
+  - id: ingress-nginx
+    name: ingress-nginx controller
+    images:
+      - registry.k8s.io/ingress-nginx/controller
+      - k8s.gcr.io/ingress-nginx/controller
+      - rancher/nginx-ingress-controller        # RKE2 hardened build
+      - rancher/hardened-ingress-nginx
+    github: kubernetes/ingress-nginx
+    tagPrefix: "controller-"
+    notes: Retired upstream (maintenance ended March 2026). Not on endoflife.date.
+
+  - id: nginx
+    name: nginx
+    images: [nginx, nginxinc/nginx-unprivileged, bitnami/nginx]
+    github: nginx/nginx
+    eol: nginx
+
+  - id: haproxy
+    name: HAProxy
+    images: [haproxy, haproxytech/haproxy-alpine, haproxytech/haproxy-debian, bitnami/haproxy]
+    github: haproxy/haproxy
+    eol: haproxy
+
+  - id: haproxy-kubernetes-ingress
+    name: HAProxy Kubernetes Ingress (HAProxy Technologies)
+    images: [haproxytech/kubernetes-ingress]
+    github: haproxytech/kubernetes-ingress
+    # NOT endoflife.date "haproxy-ingress": that product is jcmoraisjr/haproxy-ingress (0.x).
+
+  - id: haproxy-ingress
+    name: HAProxy Ingress (jcmoraisjr)
+    images: [quay.io/jcmoraisjr/haproxy-ingress]
+    github: jcmoraisjr/haproxy-ingress
+    eol: haproxy-ingress
+
+  - id: grafana
+    name: Grafana
+    images: [grafana/grafana, grafana/grafana-oss, grafana/grafana-enterprise, bitnami/grafana]
+    github: grafana/grafana
+    eol: grafana
+
+  - id: coredns
+    name: CoreDNS
+    images:
+      - coredns/coredns
+      - registry.k8s.io/coredns/coredns
+      - rancher/mirrored-coredns-coredns          # k3s
+      - rancher/hardened-coredns                  # RKE2
+    github: coredns/coredns
+
+  - id: longhorn
+    name: Longhorn
+    images:
+      - longhornio/longhorn-manager
+      - longhornio/longhorn-engine
+      - longhornio/longhorn-instance-manager
+      - longhornio/longhorn-ui
+      - longhornio/longhorn-share-manager
+      - rancher/mirrored-longhornio-longhorn-manager
+      - rancher/mirrored-longhornio-longhorn-engine
+      - rancher/mirrored-longhornio-longhorn-instance-manager
+    github: longhorn/longhorn
+    eol: longhorn
+
+  - id: redis
+    name: Redis
+    images: [redis, bitnami/redis, redis/redis-stack-server, bitnamilegacy/redis]
+    github: redis/redis
+    eol: redis
+
+  - id: valkey
+    name: Valkey
+    images: [valkey/valkey, bitnami/valkey]
+    github: valkey-io/valkey
+    eol: valkey
+
+  - id: postgresql
+    name: PostgreSQL
+    images: [postgres, bitnami/postgresql, bitnamilegacy/postgresql]
+    github: postgres/postgres
+    eol: postgresql
+    versionParts: 2
+
+  - id: redpanda
+    name: Redpanda
+    images:
+      - docker.redpanda.com/redpandadata/redpanda
+      - redpandadata/redpanda
+      - vectorized/redpanda
+    github: redpanda-data/redpanda
+
+  - id: metrics-server
+    name: metrics-server
+    images:
+      - registry.k8s.io/metrics-server/metrics-server
+      - rancher/mirrored-metrics-server
+      - rancher/hardened-k8s-metrics-server
+    github: kubernetes-sigs/metrics-server

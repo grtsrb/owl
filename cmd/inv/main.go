@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -98,7 +97,7 @@ func runAgent(args []string) error {
 	a := &agent.Agent{
 		Collector: col,
 		Log:       log,
-		HTTP:      &http.Client{Timeout: 30 * time.Second},
+		HTTP:      agent.NewHTTPClient(),
 		Config: agent.Config{
 			ServerURL: *server,
 			Token:     os.Getenv("INV_TOKEN"), // env only: never accept the token as a flag (shows in ps)

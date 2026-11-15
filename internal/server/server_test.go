@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"service-inventory/internal/auth"
+	"service-inventory/internal/catalog"
 	"service-inventory/internal/snapshot"
 	"service-inventory/internal/store"
 	"service-inventory/internal/store/sqlite"
@@ -33,7 +34,11 @@ func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 	if err := db.AddToken(context.Background(), c.ID, hash, prefix); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer((&Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Handler())
+	cat, err := catalog.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Handler())
 	t.Cleanup(srv.Close)
 	return srv, db, token
 }
@@ -138,7 +143,8 @@ func TestIngestRejectsBadAuthAndPayloads(t *testing.T) {
 
 func TestOversizedPayloadRejected(t *testing.T) {
 	srv, _, token := setup(t)
-	big := bytes.Repeat([]byte("a"), maxCompressedBody+1)
+	// Valid-looking JSON (one huge string), so the parser keeps reading until the limit trips.
+	big := append([]byte(`{"workloads":"`), bytes.Repeat([]byte("a"), maxCompressedBody+1)...)
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+snapshot.IngestPath, bytes.NewReader(big))
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
@@ -146,7 +152,27 @@ func TestOversizedPayloadRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("oversized body: got %d", resp.StatusCode)
+	}
+}
+
+func TestReadAPIRejectsForeignHost(t *testing.T) {
+	srv, _, _ := setup(t)
+	get := func(host string) int {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/clusters", nil)
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := get("evil.example.com"); code != http.StatusMisdirectedRequest {
+		t.Errorf("rebinding host: got %d", code)
+	}
+	if code := get("127.0.0.1:8080"); code != http.StatusOK {
+		t.Errorf("localhost: got %d", code)
 	}
 }
