@@ -117,6 +117,11 @@ type Store interface {
 	CurrentImages(ctx context.Context, clusterID int64) ([]ImageRow, error)
 	ListChanges(ctx context.Context, clusterName string, limit int) ([]Change, error)
 
+	// Version policies: scope "global" or a component id -> policy spec (see internal/policy).
+	ListPolicies(ctx context.Context) (map[string]string, error)
+	SetPolicy(ctx context.Context, scope, spec string) error
+	DeletePolicy(ctx context.Context, scope string) error
+
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)
 	PutCache(ctx context.Context, e CacheEntry) error

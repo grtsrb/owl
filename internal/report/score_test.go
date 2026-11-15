@@ -1,0 +1,113 @@
+package report
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"service-inventory/internal/inventory"
+	"service-inventory/internal/policy"
+	"service-inventory/internal/upstream"
+)
+
+func day(s string) *time.Time { t, _ := time.Parse("2006-01-02", s); return &t }
+
+var now = *day("2026-11-15")
+
+func k8sInfo() *upstream.Info {
+	return &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "1.37", Latest: "1.37.2", EOLDate: day("2027-10-28")},
+		{Name: "1.36", Latest: "1.36.6", EOLDate: day("2027-06-28")},
+		{Name: "1.35", Latest: "1.35.10", EOLDate: day("2027-02-01")}, // within 90 days of now
+		{Name: "1.34", Latest: "1.34.13", EOL: true, EOLDate: day("2026-10-27")},
+		{Name: "1.33", Latest: "1.33.13", EOL: true, EOLDate: day("2026-06-28")},
+	}}
+}
+
+func score(version, status string, info *upstream.Info, matches []upstream.Match) Score {
+	sp, _ := policy.Parse("lts-or-n-1")
+	var t *policy.Target
+	if info != nil {
+		tt, _ := policy.Resolve(sp, info.Lines)
+		t = &tt
+	}
+	return ScoreInstance(inventory.Instance{Version: version, Status: status, Image: "img:" + version}, info, t, matches, now)
+}
+
+func has(s Score, substr string) bool {
+	for _, r := range s.Reasons {
+		if strings.Contains(r.Text, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestScoreLevels(t *testing.T) {
+	cases := []struct {
+		name, version string
+		want          Level
+		reason        string
+	}{
+		{"at target", "1.36.6", LevelOK, ""},
+		{"newer than target, latest patch", "1.37.2", LevelOK, ""},
+		{"newer than target, patch missing", "1.37.1", LevelLow, "patch available: 1.37.2"},
+		{"same line, behind", "1.36.2", LevelLow, "patch available: 1.36.6"},
+		{"one line behind + EOL soon", "1.35.10", LevelHigh, "reaches end-of-life on 2027-02-01"},
+		{"EOL", "1.33.6", LevelCritical, "end-of-life since 2026-06-28"},
+		{"older than all lines", "1.20.0", LevelHigh, "release lines behind"},
+	}
+	for _, c := range cases {
+		s := score(c.version, "identified", k8sInfo(), nil)
+		if s.Level != c.want || (c.reason != "" && !has(s, c.reason)) {
+			t.Errorf("%s (%s): got %s %+v", c.name, c.version, s.Level, s.Reasons)
+		}
+	}
+}
+
+func TestScoreSecurityAndLifecycle(t *testing.T) {
+	m := func(sev string, certain, noFix bool) upstream.Match {
+		return upstream.Match{Advisory: upstream.Advisory{ID: "GHSA-x", Aliases: []string{"CVE-2025-1974"}, Severity: sev,
+			FixedIn: []string{"1.36.7"}}, Certain: certain, NoFix: noFix}
+	}
+	if s := score("1.36.6", "identified", k8sInfo(), []upstream.Match{m("high", true, false)}); s.Level != LevelCritical || !has(s, "CVE-2025-1974 (high), fixed in 1.36.7") {
+		t.Errorf("high advisory: %+v", s)
+	}
+	if s := score("1.36.6", "identified", k8sInfo(), []upstream.Match{m("moderate", true, false)}); s.Level != LevelMedium {
+		t.Errorf("moderate advisory: %s", s.Level)
+	}
+	s := score("1.36.6", "identified", k8sInfo(), []upstream.Match{m("critical", false, false), m("high", true, true)})
+	if s.Level != LevelOK || len(s.Notes) != 2 {
+		t.Errorf("needs-review and no-fix must not raise the level: %s %v", s.Level, s.Notes)
+	}
+
+	retired := k8sInfo()
+	retired.Retired, retired.LastReleaseAt = true, day("2026-03-19")
+	if s := score("1.37.2", "identified", retired, nil); s.Level != LevelCritical || !has(s, "retired") {
+		t.Errorf("retired: %+v", s)
+	}
+	if s := score("", "unpinned", k8sInfo(), nil); s.Level != LevelMedium || !has(s, "unpinned") {
+		t.Errorf("unpinned: %+v", s)
+	}
+	if s := score("1.36.6", "identified", nil, nil); s.Level != LevelUnknown {
+		t.Errorf("no upstream data must be unknown, never ok: %s", s.Level)
+	}
+	noData := k8sInfo()
+	noData.AdvisorySource = ""
+	if s := score("1.36.6", "identified", noData, nil); !strings.Contains(strings.Join(s.Notes, " "), "no advisory data") {
+		t.Errorf("missing advisory source must be noted: %v", s.Notes)
+	}
+}
+
+func TestDrift(t *testing.T) {
+	in := func(stage, cluster, v string) ScoredInstance {
+		return ScoredInstance{Instance: inventory.Instance{Stage: stage, Cluster: cluster, Version: v, Status: "identified"}}
+	}
+	d := drift([]ScoredInstance{in("staging", "it-hetzner", "1.11.3"), in("prelive", "it-aws-test", "1.10.4"), in("live", "it-aws-prod", "1.11.5")})
+	if len(d) != 2 || d[0].Kind != DriftPending || d[1].Kind != DriftAnomaly {
+		t.Fatalf("drift: %+v", d)
+	}
+	if d := drift([]ScoredInstance{in("staging", "a", "1.0.0"), in("live", "b", "1.0.0")}); len(d) != 0 {
+		t.Errorf("equal versions: %+v", d)
+	}
+}

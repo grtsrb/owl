@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"service-inventory/internal/auth"
@@ -197,5 +198,35 @@ func TestAllowedHostWithPort(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("allowed host with port: got %d", rec.Code)
+	}
+}
+
+func TestPolicyAPI(t *testing.T) {
+	srv, _, _ := setup(t)
+	put := func(ct, body string) int {
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policies/grafana", strings.NewReader(body))
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := put("application/x-www-form-urlencoded", "policy=latest"); c != http.StatusUnsupportedMediaType {
+		t.Errorf("form post must be refused (CSRF): %d", c)
+	}
+	if c := put("application/json", `{"policy":"bogus"}`); c != http.StatusBadRequest {
+		t.Errorf("invalid policy: %d", c)
+	}
+	if c := put("application/json", `{"policy":"pin:12.3"}`); c != http.StatusOK {
+		t.Errorf("valid policy: %d", c)
+	}
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policies/not-a-component", strings.NewReader(`{"policy":"latest"}`))
+	req.Header.Set("Content-Type", "application/json")
+	if resp, _ := http.DefaultClient.Do(req); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown scope: %d", resp.StatusCode)
 	}
 }

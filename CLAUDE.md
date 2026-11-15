@@ -9,7 +9,7 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1 (agent), 2 (server core), 3 (catalog) and 4 (upstream data) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–5 (agent, server core, catalog, upstream data, policy/scoring/drift) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -26,6 +26,8 @@ curl -s 127.0.0.1:8080/api/v1/changes?cluster=it-hetzner  # change history
 curl -s 127.0.0.1:8080/api/v1/inventory                   # components x clusters, unpinned, unrecognized
 curl -s 127.0.0.1:8080/api/v1/components/coredns          # + upstream lines/EOL + advisories per version
 ./bin/inv upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
+curl -s 127.0.0.1:8080/api/v1/report                      # levels + reasons + targets + drift
+curl -s -X PUT -H 'Content-Type: application/json' -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/policies/grafana
 make dev-down
 ```
 
@@ -63,6 +65,10 @@ make dev-down
   `AdvisoriesFor` matches versions against ranges **locally** for both OSV and GitHub advisories —
   see DESIGN.md "Security & lifecycle" for why OSV's version query must not be used and how
   open-ended/TBD ranges are treated. `GITHUB_TOKEN` (no scopes) comes from `.env` (gitignored).
+- `internal/policy` — parse/resolve version policies to a target (line + version) from release lines.
+- `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
+  table-tested in `score_test.go`); `Build` combines inventory + upstream + policies + drift
+  (newest version per stage along staging→prelive→live: pending promotion vs anomaly).
 - SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
 - Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.

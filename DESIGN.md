@@ -82,11 +82,24 @@ cluster (each)                               server (Docker locally, later one E
   copy is served (marked stale).
 
 ## Priority (rule-based; Claude explains, never decides)
-- 🔴 Critical — affected by high/critical advisory, past EOL, or upstream retired
+- 🔴 Critical — affected by a high/critical advisory *with a fix*, past EOL, or upstream retired
 - 🟠 High — EOL within 90 days, or ≥ 2 release lines behind target
-- 🟡 Medium — behind target, or unpinned
-- 🟢 Low — only patch updates available
-- ✅ OK — at/above target
+- 🟡 Medium — 1 release line behind target, unpinned, or a moderate/unknown-severity advisory
+- 🟢 Low — only patch updates available (or a low-severity advisory)
+- ✅ OK — at/above target and on the latest patch of its line
+- ❔ Unknown — no upstream release data (never shown as OK)
+
+"Needs review" advisories, advisories with no fix listed, "no advisory data" and archived-but-
+releasing projects are **notes**: shown with the instance, never change the level. Every level comes
+with its reasons (e.g. "CVE-2025-1974 (critical), fixed in 1.11.5", "release line 1.33 is EOL since
+2026-06-28"). A component's level is its worst instance.
+
+"Lines behind" counts release lines as upstream defines them: minors for Kubernetes, but Grafana and
+Redpanda ship a minor roughly monthly, so n-1 is strict there — use per-component policies.
+
+Policies (`internal/policy`): `lts-or-n-1` (default), `lts` (falls back to n-1), `latest`, `n-1`,
+`n-2`, `pin:<line or version>`; stored per scope (`global` or component id), editable via
+`PUT /api/v1/policies/{scope}` (JSON only — a cross-site form post can't change them).
 
 Promotion drift across stages: "newer in staging, not yet in prod" and anomalies like "prod newer than staging".
 

@@ -30,6 +30,12 @@ var migrations = []string{
 		etag       TEXT NOT NULL DEFAULT '',
 		body       BLOB NOT NULL
 	);`,
+	// scope: "global" or a component id.
+	`CREATE TABLE policies (
+		scope      TEXT PRIMARY KEY,
+		spec       TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 type DB struct{ db *sql.DB }
@@ -346,4 +352,32 @@ func (d *DB) ListChanges(ctx context.Context, clusterName string, limit int) ([]
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) ListPolicies(ctx context.Context) (map[string]string, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT scope, spec FROM policies")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var scope, spec string
+		if err := rows.Scan(&scope, &spec); err != nil {
+			return nil, err
+		}
+		out[scope] = spec
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) SetPolicy(ctx context.Context, scope, spec string) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO policies(scope, spec, updated_at) VALUES (?,?,?)
+		ON CONFLICT(scope) DO UPDATE SET spec=excluded.spec, updated_at=excluded.updated_at`, scope, spec, now().Format(ts))
+	return err
+}
+
+func (d *DB) DeletePolicy(ctx context.Context, scope string) error {
+	_, err := d.db.ExecContext(ctx, "DELETE FROM policies WHERE scope=?", scope)
+	return err
 }

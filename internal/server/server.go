@@ -20,6 +20,8 @@ import (
 	"service-inventory/internal/auth"
 	"service-inventory/internal/catalog"
 	"service-inventory/internal/inventory"
+	"service-inventory/internal/policy"
+	"service-inventory/internal/report"
 	"service-inventory/internal/snapshot"
 	"service-inventory/internal/store"
 	"service-inventory/internal/upstream"
@@ -57,6 +59,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/inventory", s.inventory)
 	mux.HandleFunc("GET /api/v1/upstream", s.listUpstream)
 	mux.HandleFunc("GET /api/v1/components/{id}", s.componentDetail)
+	mux.HandleFunc("GET /api/v1/report", s.report)
+	mux.HandleFunc("GET /api/v1/policies", s.listPolicies)
+	// Policy writes: JSON only. Together with no CORS headers this means a cross-site page can't
+	// change policies (a JSON PUT from another origin needs a preflight we never answer).
+	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.setPolicy)
+	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.deletePolicy)
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
 	return logRequests(s.Log, s.checkHost(mux))
 }
@@ -386,4 +394,68 @@ func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"component": comp, "inventory": view, "upstream": info, "advisoriesByVersion": advs,
 	})
+}
+
+func (s *Server) report(w http.ResponseWriter, r *http.Request) {
+	rep, err := report.Build(r.Context(), report.Inputs{
+		Catalog: s.Catalog, Store: s.Store, Upstream: s.Upstream, Infos: s.upstreamInfo, Now: time.Now().UTC(),
+	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
+func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) {
+	pols, err := s.Store.ListPolicies(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	global := pols["global"]
+	delete(pols, "global")
+	if global == "" {
+		global = policy.Default
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"global": global, "overrides": pols, "presets": policy.Presets})
+}
+
+func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
+	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return
+	}
+	scope := r.PathValue("scope")
+	if scope != "global" && s.Catalog.ByID(scope) == nil {
+		httpError(w, http.StatusNotFound, "unknown component (use a component id or \"global\")")
+		return
+	}
+	var body struct {
+		Policy string `json:"policy"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		httpError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	sp, err := policy.Parse(body.Policy)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Store.SetPolicy(r.Context(), scope, sp.Raw); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.Log.Info("policy changed", "scope", scope, "policy", sp.Raw)
+	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": sp.Raw})
+}
+
+func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
+	scope := r.PathValue("scope")
+	if err := s.Store.DeletePolicy(r.Context(), scope); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": "inherited"})
 }
