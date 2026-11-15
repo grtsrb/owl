@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, adminToken, ApiError, type ComponentReport, type Match } from "../api";
+import { api, adminToken, writeErrorText, type ComponentReport, type Match } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
 
 export default function ComponentPage() {
@@ -11,7 +11,8 @@ export default function ComponentPage() {
 
   if (report.error) return <ErrorBox error={report.error} retry={report.reload} />;
   if (detail.error) return <ErrorBox error={detail.error} retry={detail.reload} />;
-  if (!report.data || !detail.data) return <Loading />;
+  // While another component loads, never show the previous one's data under this URL.
+  if (!report.data || !detail.data || detail.data.component.id !== id) return <Loading />;
   const c = report.data.components.find((x) => x.id === id);
   const d = detail.data;
   const up = d.upstream;
@@ -54,6 +55,7 @@ export default function ComponentPage() {
           ) : <Empty>No target (no upstream release data).</Empty>}
           {policies.data && (
             <PolicyEditor
+              key={id}
               scope={id}
               current={policies.data.overrides[id]}
               inherited={policies.data.global}
@@ -172,7 +174,9 @@ function Advisories({ d }: { d: { version: string; advisories: Match[]; error?: 
                     <tr key={a.id}>
                       <td><Tag tone={sevTone(a.severity)}>{a.severity || "unknown"}</Tag>{!a.certain && <Tag title="Upstream data doesn't say which versions are fixed">review</Tag>}{a.noFix && <Tag title="No fixed version listed">no fix</Tag>}</td>
                       <td><a href={a.url} target="_blank" rel="noreferrer noopener" className="mono">{label(a)}</a><div className="subtle">{a.summary}</div></td>
-                      <td className="mono">{a.fixedIn?.join(", ") || "—"}</td>
+                      <td className="mono" title={a.fixedIn?.length ? `All fixed versions: ${a.fixedIn.join(", ")}` : undefined}>
+                        {a.relevantFix || a.fixedIn?.join(", ") || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -193,13 +197,11 @@ function PolicyEditor({ scope, current, inherited, presets, onSaved }: {
   const [busy, setBusy] = useState(false);
   const hasToken = adminToken.get() !== "";
 
-  async function run(fn: () => Promise<unknown>, ok: string) {
+  async function run(fn: () => Promise<unknown>, ok: string): Promise<boolean> {
     setBusy(true); setMsg(null);
-    try { await fn(); setMsg({ ok: true, text: ok }); onSaved(); }
-    catch (e) {
-      const text = e instanceof ApiError && e.status === 401 ? "Admin token missing or wrong — set it in Settings." : e instanceof Error ? e.message : String(e);
-      setMsg({ ok: false, text });
-    } finally { setBusy(false); }
+    try { await fn(); setMsg({ ok: true, text: ok }); onSaved(); return true; }
+    catch (e) { setMsg({ ok: false, text: writeErrorText(e) }); return false; }
+    finally { setBusy(false); }
   }
 
   return (
@@ -209,7 +211,7 @@ function PolicyEditor({ scope, current, inherited, presets, onSaved }: {
         <input id="policy" className="input mono" list="presets" placeholder={`inherited: ${inherited}`} value={value} onChange={(e) => setValue(e.target.value)} />
         <datalist id="presets">{presets.filter((p) => !p.includes("<")).map((p) => <option key={p} value={p} />)}</datalist>
         <button className="btn primary" disabled={busy || !value || !hasToken}>Save</button>
-        {current && <button type="button" className="btn" disabled={busy || !hasToken} onClick={() => run(() => api.clearPolicy(scope), "Override removed.").then(() => setValue(""))}>Use global</button>}
+        {current && <button type="button" className="btn" disabled={busy || !hasToken} onClick={async () => { if (await run(() => api.clearPolicy(scope), "Override removed.")) setValue(""); }}>Use global</button>}
       </div>
       <p className="subtle">e.g. <code>lts-or-n-1</code>, <code>latest</code>, <code>n-2</code>, <code>pin:16</code>{!hasToken && <> · <Link to="/settings">set the admin token</Link> to edit</>}</p>
       {msg && <p className={msg.ok ? "ok-text" : "err-text"}>{msg.text}</p>}

@@ -2,8 +2,6 @@ package report
 
 import (
 	"strings"
-
-	"service-inventory/internal/catalog"
 	"testing"
 	"time"
 
@@ -153,15 +151,5 @@ func TestDriftPartialPromotion(t *testing.T) {
 	d := drift([]ScoredInstance{in("staging", "stg", "1.11.5"), in("live", "prod-a", "1.11.5"), in("live", "prod-b", "1.10.4")})
 	if len(d) != 1 || d[0].Kind != DriftPending || !strings.Contains(d[0].Text, "prod-b") {
 		t.Errorf("partial promotion must name the lagging cluster: %+v", d)
-	}
-}
-
-func TestRelevantFix(t *testing.T) {
-	fixes := []string{"6.2.20", "7.2.11", "7.4.6", "8.0.4", "8.2.2"}
-	for v, want := range map[string]string{"7.4.1": "7.4.6", "7.2.4": "7.2.11", "7.0.15": "7.2.11", "8.1.0": "8.2.2"} {
-		pv, _ := catalog.ParseVersion(v, "")
-		if got := relevantFix(pv, fixes); got != want {
-			t.Errorf("%s: got %s want %s", v, got, want)
-		}
 	}
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Level } from "./api";
 
 export const levelLabel: Record<Level, string> = {
@@ -54,11 +54,16 @@ export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const latest = useRef(0); // only the newest request may update state (no stale overwrite)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const load = useCallback(fn, deps);
   const reload = useCallback(() => {
+    const id = ++latest.current;
     setLoading(true);
-    load().then((d) => { setData(d); setError(null); }).catch(setError).finally(() => setLoading(false));
+    load()
+      .then((d) => { if (id === latest.current) { setData(d); setError(null); } })
+      .catch((e) => { if (id === latest.current) setError(e); })
+      .finally(() => { if (id === latest.current) setLoading(false); });
   }, [load]);
   useEffect(reload, [reload]);
   return { data, error, loading, reload };

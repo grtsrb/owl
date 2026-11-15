@@ -183,3 +183,17 @@ func TestDistroBuildsAndExactRanges(t *testing.T) {
 		t.Errorf("exact range with no patch must be a certain match: %v", got)
 	}
 }
+
+func TestRelevantFix(t *testing.T) {
+	fixes := []string{"6.2.20", "7.2.11", "7.4.6", "8.0.4", "8.2.2"}
+	for v, want := range map[string]string{"7.4.1": "7.4.6", "7.2.4": "7.2.11", "7.0.15": "7.2.11", "8.1.0": "8.2.2", "7.4.8": "8.0.4"} {
+		pv, _ := catalog.ParseVersion(v, "")
+		if got := RelevantFix(pv, fixes); got != want {
+			t.Errorf("%s: got %q want %q", v, got, want)
+		}
+	}
+	pv, _ := catalog.ParseVersion("17.0", "")
+	if got := RelevantFix(pv, []string{"16.6", "17.2"}); got != "17.2" { // major-named lines (Postgres)
+		t.Errorf("postgres: %q", got)
+	}
+}

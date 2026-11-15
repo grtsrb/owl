@@ -8,11 +8,13 @@ export interface Reason { level: Level; text: string }
 
 export interface RunningImage { container: string; image: string; imageID?: string; pods: number; ready: number }
 
+export interface AffectedRange { range: string; patched: string }
 export interface Advisory {
   id: string; aliases?: string[]; severity: string; summary: string; url: string; source: string;
-  fixedIn?: string[];
+  ranges?: AffectedRange[]; fixedIn?: string[];
 }
-export interface Match extends Advisory { certain: boolean; noFix?: boolean }
+/** relevantFix: the fixed version that matters for the running version (computed by the server). */
+export interface Match extends Advisory { certain: boolean; noFix?: boolean; relevantFix?: string }
 
 export interface Score {
   level: Level; reasons: Reason[]; notes?: string[]; line?: string; linesBehind: number;
@@ -77,6 +79,13 @@ export interface Policies { global: string; overrides: Record<string, string>; p
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
+}
+
+/** User-facing text for a failed write. */
+export function writeErrorText(e: unknown): string {
+  if (e instanceof ApiError && e.status === 401) return "Admin token missing or wrong — set it in Settings.";
+  if (e instanceof ApiError && e.status === 403) return e.message;
+  return e instanceof Error ? e.message : String(e);
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

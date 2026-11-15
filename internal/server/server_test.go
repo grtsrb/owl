@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"service-inventory/internal/auth"
 	"service-inventory/internal/catalog"
@@ -251,5 +252,44 @@ func TestWritesDisabledWithoutAdminToken(t *testing.T) {
 	h(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("no configured token must disable writes: %d", rec.Code)
+	}
+}
+
+func TestFallbackRouting(t *testing.T) {
+	srv, _, _ := setup(t)
+	do := func(method, path string) (int, string) {
+		req, _ := http.NewRequest(method, srv.URL+path, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode, resp.Header.Get("Content-Type")
+	}
+	for _, c := range []struct{ method, path string }{{"GET", "/api"}, {"GET", "/api/v1/nope"}, {"POST", "/api/v1/nope"}, {"PUT", "/api/v1/clusters"}, {"DELETE", "/whatever"}} {
+		if code, ct := do(c.method, c.path); code != http.StatusNotFound || !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("%s %s: %d %s", c.method, c.path, code, ct)
+		}
+	}
+}
+
+func TestMissingAssetIs404(t *testing.T) {
+	ui := fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}, "assets/app-1.js": {Data: []byte("x")}}
+	h := (&Server{UI: ui, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Handler()
+	get := func(p string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.Host = "localhost"
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := get("/assets/app-OLD.js"); c != http.StatusNotFound {
+		t.Errorf("missing asset: %d", c)
+	}
+	if c := get("/assets/app-1.js"); c != http.StatusOK {
+		t.Errorf("asset: %d", c)
+	}
+	if c := get("/components/redis"); c != http.StatusOK {
+		t.Errorf("client route: %d", c)
 	}
 }

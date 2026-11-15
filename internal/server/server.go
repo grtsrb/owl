@@ -52,7 +52,10 @@ type Server struct {
 	// login (Google sign-in, roles) in a later milestone.
 	AdminToken string
 	// UI is the built web app (web.Dist()); nil = API only.
-	UI fs.FS
+	UI      fs.FS
+	uiOnce  sync.Once
+	uiIndex []byte
+	uiFiles http.Handler
 }
 
 func (s *Server) Handler() http.Handler {
@@ -74,7 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
 	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
-	mux.HandleFunc("GET /", s.serveUI)
+	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
 }
 
@@ -92,38 +95,49 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// serveUI serves built assets and falls back to index.html for client-side routes (/components/x).
-func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/") {
+// fallback handles every request no API route matched: anything under /api gets a JSON 404 (any
+// method); other GET/HEAD requests get the UI.
+func (s *Server) fallback(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") ||
+		(r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		httpError(w, http.StatusNotFound, "not found")
 		return
 	}
+	s.serveUI(w, r)
+}
+
+const uiMissing = "UI not built: run `make ui` (the API is at /api/v1/...)"
+
+// serveUI serves built assets (real 404s for missing ones, so a stale tab after a deploy fails
+// visibly) and index.html for client-side routes (/components/x).
+func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	if s.UI == nil {
-		http.Error(w, "UI not built: run `make ui` (the API is at /api/v1/...)", http.StatusNotFound)
+		http.Error(w, uiMissing, http.StatusNotFound)
 		return
 	}
+	s.uiOnce.Do(func() {
+		s.uiIndex, _ = fs.ReadFile(s.UI, "index.html")
+		s.uiFiles = http.FileServerFS(s.UI)
+	})
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-	if name != "" {
-		if f, err := s.UI.Open(name); err == nil {
-			st, _ := f.Stat()
-			f.Close()
-			if st != nil && !st.IsDir() {
-				if strings.HasPrefix(name, "assets/") { // content-hashed file names
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-				}
-				http.ServeFileFS(w, r, s.UI, name)
-				return
-			}
+	if strings.HasPrefix(name, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // content-hashed names
+		s.uiFiles.ServeHTTP(w, r)                                              // 404s on its own
+		return
+	}
+	if name != "" && name != "index.html" {
+		if st, err := fs.Stat(s.UI, name); err == nil && !st.IsDir() { // e.g. favicon
+			s.uiFiles.ServeHTTP(w, r)
+			return
 		}
 	}
-	index, err := fs.ReadFile(s.UI, "index.html")
-	if err != nil {
-		http.Error(w, "UI not built: run `make ui` (the API is at /api/v1/...)", http.StatusNotFound)
+	if s.uiIndex == nil {
+		http.Error(w, uiMissing, http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(index)
+	w.Write(s.uiIndex)
 }
 
 func (s *Server) checkHost(next http.Handler) http.Handler {

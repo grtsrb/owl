@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, adminToken, ApiError } from "../api";
+import { api, adminToken, writeErrorText } from "../api";
 import { ago, Card, ErrorBox, Loading, Tag, useApi } from "../ui";
 
 export default function Settings() {
@@ -67,7 +67,7 @@ function GlobalPolicy({ current, presets, overrides, onSaved }: { current: strin
     <form onSubmit={async (e) => {
       e.preventDefault(); setMsg(null);
       try { await api.setPolicy("global", value); setMsg({ ok: true, text: "Saved." }); onSaved(); }
-      catch (err) { setMsg({ ok: false, text: err instanceof ApiError && err.status === 401 ? "Admin token missing or wrong." : String(err instanceof Error ? err.message : err) }); }
+      catch (err) { setMsg({ ok: false, text: writeErrorText(err) }); }
     }}>
       <div className="row">
         <input className="input mono" list="gpresets" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Global policy" />

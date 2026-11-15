@@ -123,8 +123,10 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		}
 		s.Advisories = append(s.Advisories, m)
 		fixed := ""
-		if f := relevantFix(v, m.FixedIn); f != "" {
-			fixed = ", fixed in " + f
+		if m.RelevantFix != "" {
+			fixed = ", fixed in " + m.RelevantFix
+		} else if len(m.FixedIn) > 0 {
+			fixed = ", fixed in " + strings.Join(m.FixedIn, " / ")
 		}
 		id := advisoryLabel(m.Advisory)
 		switch m.Severity {
@@ -214,30 +216,6 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		s.add(LevelLow, "patch available: %s", target.Version)
 	}
 	return s
-}
-
-// relevantFix picks the fix that matters for v out of a per-line list ("6.2.20, 7.2.11, 7.4.6"):
-// the fix in v's own release line, else the lowest fixed version above v.
-func relevantFix(v catalog.Version, fixed []string) string {
-	var best *catalog.Version
-	bestStr := ""
-	for _, f := range fixed {
-		fv, ok := catalog.ParseVersion(f, "")
-		if !ok {
-			continue
-		}
-		if fv.Major == v.Major && fv.Minor == v.Minor {
-			return f
-		}
-		if fv.Compare(v) > 0 && (best == nil || fv.Compare(*best) < 0) {
-			cp := fv
-			best, bestStr = &cp, f
-		}
-	}
-	if bestStr == "" && len(fixed) > 0 {
-		return strings.Join(fixed, " / ")
-	}
-	return bestStr
 }
 
 // lineDistance counts release lines between v and t from the versions: majors for products whose

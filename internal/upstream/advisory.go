@@ -33,6 +33,45 @@ type Match struct {
 	// NoFix: affected, and upstream lists no fixed version (yet). Shown, but not something an
 	// upgrade resolves.
 	NoFix bool `json:"noFix,omitempty"`
+	// RelevantFix is the fixed version that matters for this running version (see RelevantFix).
+	RelevantFix string `json:"relevantFix,omitempty"`
+}
+
+// RelevantFix picks the fix that matters for v from a per-line list ("6.2.20, 7.2.11, 7.4.6"): the
+// lowest fix above v in v's own major.minor line, else in its major, else the lowest fix above v.
+// Fixes at or below v are never "relevant" (they can appear with multi-range data).
+func RelevantFix(v catalog.Version, fixed []string) string {
+	type cand struct {
+		v catalog.Version
+		s string
+	}
+	var sameMinor, sameMajor, any *cand
+	pick := func(best **cand, c cand) {
+		if *best == nil || c.v.Compare((*best).v) < 0 {
+			cc := c
+			*best = &cc
+		}
+	}
+	for _, f := range fixed {
+		fv, ok := catalog.ParseVersion(f, "")
+		if !ok || compareToBound(v, fv) >= 0 {
+			continue
+		}
+		c := cand{fv, f}
+		if fv.Major == v.Major && fv.Minor == v.Minor {
+			pick(&sameMinor, c)
+		}
+		if fv.Major == v.Major {
+			pick(&sameMajor, c)
+		}
+		pick(&any, c)
+	}
+	for _, c := range []*cand{sameMinor, sameMajor, any} {
+		if c != nil {
+			return c.s
+		}
+	}
+	return ""
 }
 
 // AdvisoriesFor returns the advisories affecting a component version. Both sources (OSV, GitHub
@@ -78,6 +117,7 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 		if affected || (!certain && len(a.Ranges) > 0) {
 			m := Match{Advisory: a, Certain: affected, NoFix: affected && len(fixed) == 0}
 			m.FixedIn = fixed
+			m.RelevantFix = RelevantFix(v, fixed)
 			m.Ranges = nil // the matched version is what matters to callers
 			out = append(out, m)
 		}
