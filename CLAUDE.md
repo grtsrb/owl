@@ -1,0 +1,68 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+Service Inventory: tracks third-party components running in Kubernetes clusters (RKE2), compares them
+with upstream releases / EOL / advisories, scores upgrade priority, and uses Claude to summarize
+version jumps. **`DESIGN.md` is the source of truth for decisions** — read it before non-trivial work,
+and update it when a decision changes.
+
+## Status
+Milestones 1 (agent) and 2 (server core) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+layout in sync as milestones land.
+
+## Commands
+```bash
+make build test lint        # bin/inv, go test ./..., go vet + gofmt check
+go test ./internal/agent -run TestCollect -v    # single test
+make dev-up                 # create the 3 k3d clusters (different k3s versions) + seed them
+make seed                   # re-apply seed workloads (dev/seed/seed.sh — bash 3.2 compatible)
+make agent-print CLUSTER=it-aws-prod   # what the agent would send, as JSON (uses k3d-<name> context)
+make image                  # Docker image (same image for agent and server)
+make stack-up               # server in Docker (127.0.0.1:8080) + agent in every k3d cluster
+docker exec inventory-server /inv cluster list         # registered clusters, last seen
+curl -s 127.0.0.1:8080/api/v1/changes?cluster=it-hetzner  # change history
+make dev-down
+```
+
+## Layout / architecture
+- `cmd/inv` — single binary: `agent`, `server`, and `cluster add|list|rotate-token|delete` (operator
+  command that works directly on the DB file; prints the agent token once).
+- `internal/snapshot` — **wire contract** agent → server. Contains no cluster identity (server derives
+  it from the token). Bump `SchemaVersion` on breaking changes.
+- `internal/agent` — `Collector` lists workloads/pods/nodes and resolves pod ownership to the
+  top-level workload (Pod→ReplicaSet→Deployment, Pod→Job→CronJob; pods owned by unknown kinds, e.g.
+  operator CRDs, are grouped under that owner). Workload *templates* give the intended image (so
+  scaled-to-0 workloads count); pods give what actually runs (several `Running` entries = rollout in
+  progress). `Agent` pushes gzipped JSON with retry on 5xx/429/network errors, never on 4xx.
+- `internal/store` — `Store` interface + `Diff` (pure; history tracks *template* image changes only,
+  not replicas/running pods, to avoid noise). First snapshot of a cluster is one `first_snapshot`
+  event, not N "added". `internal/store/sqlite` — schema in `schema.sql`, versioned via
+  `PRAGMA user_version`; single connection (SQLite single-writer).
+- `internal/server` — HTTP API. Ingest authenticates by SHA-256 token hash (`internal/auth`), enforces
+  compressed/decompressed size limits and `SchemaVersion`. Read endpoints are unauthenticated until
+  milestone 8 — don't bind the server to a public interface before then.
+- Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
+- `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
+- `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment. The ClusterRole must
+  match exactly what `collector.go` lists.
+- `dev/seed/seed.sh` — per-cluster version tables; heavy components are scaled to 0.
+
+## Invariants (easy to violate, hard to notice)
+- **Agent is read-only and push-only.** Its RBAC must never include Secrets or any write verb; the
+  server must never connect into clusters or store kubeconfigs.
+- **Claude only receives public data**: component name, version jump, upstream release notes. Never
+  send cluster names, namespaces, hostnames, workload names, configs or tokens to the Claude API.
+- **Priority levels are rule-based and deterministic** (see DESIGN.md "Priority"). Claude explains a
+  level; it never sets one.
+- **Agent tokens are stored hashed** and shown only once at creation.
+- Keep the agent lightweight (small static binary, low memory) — avoid pulling heavy deps into the
+  agent code path.
+- Storage goes through a repository interface so SQLite can be swapped for Postgres.
+
+## Local environment
+- Three k3d clusters named like the real ones: `it-hetzner` (staging), `it-aws-test` (prelive),
+  `it-aws-prod` (live). Kube contexts are `k3d-<name>`. These are the only clusters to touch from
+  this repo during development.
+- Server runs in Docker on the host; agents in the k3d clusters push to it.
