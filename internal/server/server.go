@@ -363,10 +363,19 @@ func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			seen[in.Version] = true
-			ms, err := s.Upstream.AdvisoriesFor(r.Context(), comp, info, in.Version)
-			va := versionAdvisories{Version: in.Version, Advisories: ms}
-			if err != nil {
-				va.Error = err.Error()
+			va := versionAdvisories{Version: in.Version, Advisories: []upstream.Match{}}
+			switch {
+			case in.Status == string(catalog.StatusUnpinned):
+				// "redis:7" is some 7.x — matching it as 7.0.0 would invent vulnerabilities.
+				va.Error = "floating/unpinned tag: exact version unknown, advisories not evaluated"
+			case info == nil:
+				va.Error = "upstream data not loaded yet"
+			default:
+				ms, err := s.Upstream.AdvisoriesFor(r.Context(), comp, info, in.Version)
+				va.Advisories = ms
+				if err != nil {
+					va.Error = err.Error()
+				}
 			}
 			if va.Advisories == nil {
 				va.Advisories = []upstream.Match{}

@@ -158,3 +158,28 @@ func TestOpenRangesWithPatchLists(t *testing.T) {
 	check("7.0.15", map[string]string{"per-line": "affected"}) // 7.0 line unpatched, newer lines fixed
 	check("8.10.3", map[string]string{"per-line": "", "one-line": "", "bounded": ""})
 }
+
+func TestDistroBuildsAndExactRanges(t *testing.T) {
+	info := &Info{Advisories: []Advisory{
+		{ID: "build-fix", Ranges: []AffectedRange{{Range: "< 1.30.4+rke2r2", Patched: "1.30.4+rke2r2"}}},
+		{ID: "upstream-fix", Ranges: []AffectedRange{{Range: "<= 1.30.4", Patched: "1.30.5"}}},
+		{ID: "exact", Ranges: []AffectedRange{{Range: "= 1.2.3"}}},
+	}}
+	affected := func(version string) map[string]bool {
+		ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, version)
+		got := map[string]bool{}
+		for _, m := range ms {
+			got[m.ID] = m.Certain
+		}
+		return got
+	}
+	if got := affected("1.30.4+rke2r1"); !got["build-fix"] || !got["upstream-fix"] {
+		t.Errorf("rke2r1 must be affected by both: %v", got)
+	}
+	if got := affected("1.30.4+rke2r2"); got["build-fix"] || !got["upstream-fix"] {
+		t.Errorf("rke2r2 fixes the build advisory but is still 1.30.4 upstream: %v", got)
+	}
+	if got := affected("1.2.3"); !got["exact"] {
+		t.Errorf("exact range with no patch must be a certain match: %v", got)
+	}
+}

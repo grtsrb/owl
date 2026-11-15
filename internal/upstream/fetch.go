@@ -11,14 +11,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"service-inventory/internal/store"
 )
 
-// Fetcher does cached HTTP GETs. Responses are stored in the database with their ETag; fresh entries
-// are served without a request, stale ones are revalidated (a GitHub 304 doesn't count against the
-// rate limit), and if the upstream is down the last good body is served with stale=true.
+// Fetcher does cached HTTP requests. Responses are stored in the database; fresh entries are served
+// without a request, expired ones are revalidated with their ETag (a GitHub 304 doesn't count against
+// the rate limit), and if the upstream fails the last good body is served with stale=true.
 type Fetcher struct {
 	HTTP        *http.Client
 	Cache       store.Store
@@ -35,84 +36,93 @@ type result struct {
 	Stale bool // upstream failed; this is the last good copy
 }
 
+// fetchFunc performs the actual request. etag is the cached ETag ("" if none); it returns the new
+// body and ETag, or notModified=true to keep the cached body.
+type fetchFunc func(ctx context.Context, etag string) (body []byte, newETag string, notModified bool, err error)
+
+// cached is the single caching policy used for every upstream call.
+func (f *Fetcher) cached(ctx context.Context, key string, ttl time.Duration, fetch fetchFunc) (*result, error) {
+	now := time.Now
+	if f.now != nil {
+		now = f.now
+	}
+	entry, err := f.Cache.GetCache(ctx, key)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if entry != nil && now().Sub(entry.FetchedAt) < ttl {
+		return &result{Body: entry.Body}, nil
+	}
+	etag := ""
+	if entry != nil {
+		etag = entry.ETag
+	}
+	body, newETag, notModified, err := fetch(ctx, etag)
+	switch {
+	case err == nil && notModified && entry != nil:
+		entry.FetchedAt = now()
+		_ = f.Cache.PutCache(ctx, *entry)
+		return &result{Body: entry.Body}, nil
+	case err == nil && !notModified:
+		_ = f.Cache.PutCache(ctx, store.CacheEntry{Key: key, FetchedAt: now(), ETag: newETag, Body: body})
+		return &result{Body: body}, nil
+	case err == nil:
+		err = errors.New("not modified, but nothing cached")
+	}
+	if entry != nil {
+		return &result{Body: entry.Body, Stale: true}, nil
+	}
+	return nil, err
+}
+
 func (f *Fetcher) get(ctx context.Context, key, url string) (*result, error) {
 	return f.getTTL(ctx, key, url, f.TTL)
 }
 
 func (f *Fetcher) getTTL(ctx context.Context, key, url string, ttl time.Duration) (*result, error) {
-	now := time.Now
-	if f.now != nil {
-		now = f.now
-	}
-	cached, err := f.Cache.GetCache(ctx, key)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, err
-	}
-	if cached != nil && now().Sub(cached.FetchedAt) < ttl {
-		return &result{Body: cached.Body}, nil
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", f.UserAgent)
-	req.Header.Set("Accept", "application/json")
-	if f.GitHubToken != "" && isGitHubAPI(url) {
-		req.Header.Set("Authorization", "Bearer "+f.GitHubToken)
-		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	}
-	if cached != nil && cached.ETag != "" {
-		req.Header.Set("If-None-Match", cached.ETag)
-	}
-
-	body, etag, status, err := f.do(req)
-	switch {
-	case err == nil && status == http.StatusNotModified && cached != nil:
-		cached.FetchedAt = now()
-		_ = f.Cache.PutCache(ctx, *cached)
-		return &result{Body: cached.Body}, nil
-	case err == nil && status == http.StatusOK:
-		_ = f.Cache.PutCache(ctx, store.CacheEntry{Key: key, FetchedAt: now(), ETag: etag, Body: body})
-		return &result{Body: body}, nil
-	case err == nil:
-		err = fmt.Errorf("GET %s: HTTP %d", url, status)
-	}
-	if cached != nil {
-		return &result{Body: cached.Body, Stale: true}, nil
-	}
-	return nil, err
+	return f.cached(ctx, key, ttl, func(ctx context.Context, etag string) ([]byte, string, bool, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if etag != "" {
+			req.Header.Set("If-None-Match", etag)
+		}
+		return f.send(req)
+	})
 }
 
-func (f *Fetcher) do(req *http.Request) (body []byte, etag string, status int, err error) {
-	resp, err := f.HTTP.Do(req)
-	if err != nil {
-		return nil, "", 0, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, "", resp.StatusCode, nil
-	}
-	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	return body, resp.Header.Get("ETag"), resp.StatusCode, err
-}
-
-func newPost(ctx context.Context, url string, body []byte, ua string) (*http.Request, error) {
+// postJSON does an uncached POST (callers wrap it in cached() with their own key).
+func (f *Fetcher) postJSON(ctx context.Context, url string, body []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Content-Type", "application/json")
-	return req, nil
+	b, _, _, err := f.send(req)
+	return b, err
 }
 
-func cacheEntry(key string, at time.Time, etag string, body []byte) store.CacheEntry {
-	return store.CacheEntry{Key: key, FetchedAt: at, ETag: etag, Body: body}
-}
-
-func isGitHubAPI(url string) bool {
-	const p = "https://api.github.com/"
-	return len(url) >= len(p) && url[:len(p)] == p
+// send performs a request with standard headers; 304 is reported as notModified, other non-200 as error.
+func (f *Fetcher) send(req *http.Request) ([]byte, string, bool, error) {
+	req.Header.Set("User-Agent", f.UserAgent)
+	req.Header.Set("Accept", "application/json")
+	if f.GitHubToken != "" && strings.HasPrefix(req.URL.String(), "https://api.github.com/") {
+		req.Header.Set("Authorization", "Bearer "+f.GitHubToken)
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	}
+	resp, err := f.HTTP.Do(req)
+	if err != nil {
+		return nil, "", false, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		return body, resp.Header.Get("ETag"), false, err
+	case http.StatusNotModified:
+		return nil, "", true, nil
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return nil, "", false, fmt.Errorf("%s %s: HTTP %d", req.Method, req.URL, resp.StatusCode)
 }

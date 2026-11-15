@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -53,10 +54,13 @@ type Client struct {
 func (c *Client) Refresh(ctx context.Context, comp *catalog.Component) *Info {
 	info := &Info{ComponentID: comp.ID, FetchedAt: time.Now().UTC(), Advisories: []Advisory{}}
 	fail := func(what string, err error) { info.Errors = append(info.Errors, what+": "+err.Error()) }
+	releasesKnown := false // did we actually get release data? (an error must not read as "no releases")
 
 	if comp.EOL != "" {
 		if err := c.eolLines(ctx, comp, info); err != nil {
 			fail("endoflife.date", err)
+		} else {
+			releasesKnown = true
 		}
 	}
 	if comp.GitHub != "" {
@@ -66,24 +70,27 @@ func (c *Client) Refresh(ctx context.Context, comp *catalog.Component) *Info {
 		if len(info.Lines) == 0 {
 			if err := c.githubLines(ctx, comp, info); err != nil {
 				fail("github releases", err)
-			}
-		}
-		if comp.OSV == nil {
-			if err := c.repoAdvisories(ctx, comp, info); err != nil {
-				fail("github advisories", err)
-			} else if len(info.Advisories) > 0 {
-				info.AdvisorySource = "github-repo"
+			} else {
+				releasesKnown = true
 			}
 		}
 	}
+	osvOK := false
 	if comp.OSV != nil {
 		advs, stale, err := c.osvAll(ctx, comp.OSV)
 		if err != nil {
 			fail("osv", err)
 		} else {
 			c.fillSeverities(ctx, advs)
-			info.Advisories, info.AdvisorySource = advs, "osv"
+			info.Advisories, info.AdvisorySource, osvOK = advs, "osv", true
 			info.Stale = info.Stale || stale
+		}
+	}
+	if comp.GitHub != "" && !osvOK { // no OSV configured, or OSV failed: use the repo's advisories
+		if err := c.repoAdvisories(ctx, comp, info); err != nil {
+			fail("github advisories", err)
+		} else if len(info.Advisories) > 0 {
+			info.AdvisorySource = "github-repo"
 		}
 	}
 	for _, l := range info.Lines {
@@ -91,7 +98,8 @@ func (c *Client) Refresh(ctx context.Context, comp *catalog.Component) *Info {
 			info.LastReleaseAt = l.LatestDate
 		}
 	}
-	info.Retired = info.Archived && (info.LastReleaseAt == nil || time.Since(*info.LastReleaseAt) > RetiredAfter)
+	info.Retired = info.Archived && releasesKnown &&
+		(info.LastReleaseAt == nil || time.Since(*info.LastReleaseAt) > RetiredAfter)
 	return info
 }
 
@@ -276,31 +284,44 @@ func (c *Client) osvAll(ctx context.Context, pkg *catalog.OSVPackage) ([]Advisor
 			} `json:"ranges"`
 		} `json:"affected"`
 	}
+	// All pages are fetched together and cached as ONE entry, so a page can never be mixed with pages
+	// (or page tokens) from another point in time.
+	res, err := c.F.cached(ctx, "osv-all:"+pkg.Ecosystem+":"+pkg.Name, c.F.TTL,
+		func(ctx context.Context, _ string) ([]byte, string, bool, error) {
+			var all []json.RawMessage
+			token := ""
+			for page := 0; page < 20; page++ {
+				q := map[string]any{"package": map[string]string{"ecosystem": pkg.Ecosystem, "name": pkg.Name}}
+				if token != "" {
+					q["page_token"] = token
+				}
+				body, _ := json.Marshal(q)
+				b, err := c.F.postJSON(ctx, "https://api.osv.dev/v1/query", body)
+				if err != nil {
+					return nil, "", false, err
+				}
+				var r struct {
+					Vulns []json.RawMessage `json:"vulns"`
+					Next  string            `json:"next_page_token"`
+				}
+				if err := json.Unmarshal(b, &r); err != nil {
+					return nil, "", false, err
+				}
+				all = append(all, r.Vulns...)
+				if token = r.Next; token == "" {
+					combined, err := json.Marshal(all)
+					return combined, "", false, err
+				}
+			}
+			return nil, "", false, errors.New("osv: too many result pages")
+		})
+	if err != nil {
+		return nil, false, err
+	}
+	stale := res.Stale
 	var vulns []osvVuln
-	stale := false
-	token := ""
-	for page := 0; page < 20; page++ {
-		q := map[string]any{"package": map[string]string{"ecosystem": pkg.Ecosystem, "name": pkg.Name}}
-		if token != "" {
-			q["page_token"] = token
-		}
-		body, _ := json.Marshal(q)
-		res, err := c.F.post(ctx, fmt.Sprintf("osv-all:%s:%s:%d", pkg.Ecosystem, pkg.Name, page), "https://api.osv.dev/v1/query", body)
-		if err != nil {
-			return nil, stale, err
-		}
-		stale = stale || res.Stale
-		var r struct {
-			Vulns []osvVuln `json:"vulns"`
-			Next  string    `json:"next_page_token"`
-		}
-		if err := json.Unmarshal(res.Body, &r); err != nil {
-			return nil, stale, err
-		}
-		vulns = append(vulns, r.Vulns...)
-		if token = r.Next; token == "" {
-			break
-		}
+	if err := json.Unmarshal(res.Body, &vulns); err != nil {
+		return nil, stale, err
 	}
 
 	var out []Advisory
@@ -420,33 +441,6 @@ func dedupeOSV(in []Advisory) []Advisory {
 	return out
 }
 
-func (f *Fetcher) post(ctx context.Context, key, url string, body []byte) (*result, error) {
-	cached, _ := f.Cache.GetCache(ctx, key)
-	now := time.Now
-	if f.now != nil {
-		now = f.now
-	}
-	if cached != nil && now().Sub(cached.FetchedAt) < f.TTL {
-		return &result{Body: cached.Body}, nil
-	}
-	req, err := newPost(ctx, url, body, f.UserAgent)
-	if err != nil {
-		return nil, err
-	}
-	resp, etag, status, err := f.do(req)
-	if err == nil && status == 200 {
-		_ = f.Cache.PutCache(ctx, cacheEntry(key, now(), etag, resp))
-		return &result{Body: resp}, nil
-	}
-	if err == nil {
-		err = fmt.Errorf("POST %s: HTTP %d", url, status)
-	}
-	if cached != nil {
-		return &result{Body: cached.Body, Stale: true}, nil
-	}
-	return nil, err
-}
-
 // --- helpers ---------------------------------------------------------------------------------
 
 func sortLines(ls []ReleaseLine) {
@@ -481,13 +475,4 @@ func parseDate(s string) *time.Time {
 		}
 	}
 	return nil
-}
-
-func containsStr(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

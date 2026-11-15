@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"service-inventory/internal/catalog"
@@ -42,7 +43,6 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 	if !ok || info == nil {
 		return out, nil
 	}
-	v.Build = "" // advisories are about the upstream version (rke2r2 vs r1 is handled as a newer release)
 	for _, a := range info.Advisories {
 		affected, certain := false, true
 		var fixed []string
@@ -52,7 +52,7 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 			if strings.EqualFold(strings.TrimSpace(r.Range), "all") && len(patched) > 0 {
 				in, known = true, true // "All" + per-line patches: decided by the patch list below
 			}
-			if in && !strings.Contains(r.Range, "<") {
+			if in && openEnded(r.Range) {
 				// Open-ended range (">= 7.0.0", "All"): many repos never close it after fixing, so the
 				// patched list decides. Without one we can't tell -> needs review, not affected.
 				if len(patched) == 0 {
@@ -66,7 +66,7 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 			}
 			if in || !known {
 				for _, p := range patched {
-					if !containsStr(fixed, p.Original) {
+					if !slices.Contains(fixed, p.Original) {
 						fixed = append(fixed, p.Original)
 					}
 				}
@@ -105,7 +105,7 @@ func InRange(v catalog.Version, expr string) (in bool, known bool) {
 		if !ok {
 			return false, false
 		}
-		c := v.Compare(withoutBuild(bound))
+		c := compareToBound(v, bound)
 		var holds bool
 		switch op {
 		case ">=":
@@ -147,7 +147,7 @@ func fixedByPatches(v catalog.Version, patched []catalog.Version) bool {
 	newestLine := false
 	for _, p := range patched {
 		if p.Major == v.Major && p.Minor == v.Minor {
-			return v.Compare(withoutBuild(p)) >= 0
+			return compareToBound(v, p) >= 0
 		}
 		if p.Major > v.Major || (p.Major == v.Major && p.Minor > v.Minor) {
 			newestLine = true // a newer line got a fix, so v's line is affected and unpatched
@@ -156,7 +156,28 @@ func fixedByPatches(v catalog.Version, patched []catalog.Version) bool {
 	return !newestLine
 }
 
-func withoutBuild(v catalog.Version) catalog.Version {
-	v.Build = ""
-	return v
+// compareToBound compares v with an advisory bound. A bound without build metadata ("1.30.4") refers
+// to the upstream release, so v's distro build is ignored (1.30.4+rke2r1 == 1.30.4). A bound with a
+// build ("1.30.4+rke2r2") is compared including it, so a fix shipped only in a newer distro build is
+// detected.
+func compareToBound(v, bound catalog.Version) int {
+	if bound.Build == "" {
+		v.Build = ""
+	}
+	return v.Compare(bound)
+}
+
+// openEnded reports whether a range has no upper bound: "All", "", or only ">"/">=" parts. Exact
+// ranges ("= 1.2.3", "1.2.3") are bounded.
+func openEnded(expr string) bool {
+	expr = strings.TrimSpace(expr)
+	if expr == "" || strings.EqualFold(expr, "all") || expr == "*" {
+		return true
+	}
+	for _, part := range strings.Split(expr, ",") {
+		if !strings.HasPrefix(strings.TrimSpace(part), ">") {
+			return false
+		}
+	}
+	return true
 }

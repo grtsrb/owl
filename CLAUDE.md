@@ -30,8 +30,9 @@ make dev-down
 ```
 
 ## Layout / architecture
-- `cmd/inv` — single binary: `agent`, `server`, and `cluster add|list|rotate-token|delete` (operator
-  command that works directly on the DB file; prints the agent token once).
+- `cmd/inv` — single binary: `agent`, `server`, `cluster add|list|rotate-token|delete` (operator
+  command that works directly on the DB file; prints the agent token once) and `upstream` (debug:
+  print upstream lines/advisories for a component, optionally for one `--version`).
 - `internal/snapshot` — **wire contract** agent → server. Contains no cluster identity (server derives
   it from the token). Bump `SchemaVersion` on breaking changes.
 - `internal/agent` — `Collector` lists workloads/pods/nodes and resolves pod ownership to the
