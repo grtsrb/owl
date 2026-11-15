@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"service-inventory/internal/catalog"
 	"service-inventory/internal/upstream"
@@ -65,18 +66,54 @@ type Target struct {
 	Note    string `json:"note,omitempty"`
 }
 
-// Resolve picks the target. lines are newest first (as upstream.Info.Lines). ok=false when there is
-// nothing to resolve against (no release data).
-func Resolve(sp Spec, lines []upstream.ReleaseLine) (Target, bool) {
+// UsableLines are lines with a known latest version, newest first. Resolve and the scorer both index
+// into this list, so "n-1" and "lines behind" always count the same lines.
+func UsableLines(lines []upstream.ReleaseLine) []upstream.ReleaseLine {
 	var ls []upstream.ReleaseLine
 	for _, l := range lines {
 		if l.Latest != "" {
 			ls = append(ls, l)
 		}
 	}
+	return ls
+}
+
+// IsEOL: flagged EOL, or its EOL date has passed (cached data may predate the flag flipping).
+func IsEOL(l upstream.ReleaseLine, now time.Time) bool {
+	return l.EOL || (l.EOLDate != nil && !l.EOLDate.After(now))
+}
+
+// Position returns where v sits in usable lines (newest first): exact=true with that index if v's
+// line is listed; otherwise the index v's line would occupy (len(ls) = older than all known lines).
+// Lines are named by major ("17") or major.minor ("1.36").
+func Position(v catalog.Version, ls []upstream.ReleaseLine) (idx int, exact bool) {
+	pos := 0
+	for i, l := range ls {
+		lv, ok := catalog.ParseVersion(l.Name, "")
+		if !ok {
+			continue
+		}
+		if lv.Major == v.Major && (lv.Parts == 1 || lv.Minor == v.Minor) {
+			return i, true
+		}
+		if lv.Major > v.Major || (lv.Major == v.Major && lv.Parts > 1 && lv.Minor > v.Minor) {
+			pos = i + 1 // this line is newer than v
+		}
+	}
+	return pos, false
+}
+
+// Resolve picks the target. lines are newest first (as upstream.Info.Lines). ok=false when there is
+// nothing to resolve against (no usable release data). EOL lines are never chosen as an LTS target;
+// if n-k lands on an EOL line, the target says so in Note.
+func Resolve(sp Spec, lines []upstream.ReleaseLine, now time.Time) (Target, bool) {
+	ls := UsableLines(lines)
 	t := Target{Policy: sp.Raw}
 	pick := func(l upstream.ReleaseLine) (Target, bool) {
 		t.Line, t.Version = l.Name, l.Latest
+		if IsEOL(l, now) {
+			t.Note = strings.TrimPrefix(t.Note+"; target line "+l.Name+" is end-of-life", "; ")
+		}
 		return t, true
 	}
 	nth := func(n int) (Target, bool) {
@@ -97,39 +134,27 @@ func Resolve(sp Spec, lines []upstream.ReleaseLine) (Target, bool) {
 		return nth(sp.N)
 	case "lts", "lts-or-n":
 		for _, l := range ls {
-			if l.LTS && !l.EOL {
+			if l.LTS && !IsEOL(l, now) {
 				return pick(l)
 			}
 		}
-		target, ok := nth(sp.N)
-		if ok && target.Note == "" {
-			target.Note = fmt.Sprintf("no supported LTS line; using n-%d", sp.N)
-		}
-		return target, ok
+		t.Note = fmt.Sprintf("no supported LTS line; using n-%d", sp.N)
+		return nth(sp.N)
 	case "pin":
-		pv, _ := catalog.ParseVersion(sp.Pin, "")
+		if len(ls) == 0 {
+			return t, false
+		}
 		for _, l := range ls {
 			if l.Name == sp.Pin { // "pin:16" / "pin:1.11" = that line, latest patch
 				return pick(l)
 			}
 		}
-		t.Version, t.Line = sp.Pin, LineOf(pv, ls)
+		pv, _ := catalog.ParseVersion(sp.Pin, "")
+		t.Version = sp.Pin
+		if i, exact := Position(pv, ls); exact {
+			t.Line = ls[i].Name
+		}
 		return t, true
 	}
 	return t, false
-}
-
-// LineOf returns the name of the release line containing v ("" if none matches). Lines are named
-// by major ("17") or major.minor ("1.36").
-func LineOf(v catalog.Version, lines []upstream.ReleaseLine) string {
-	for _, l := range lines {
-		lv, ok := catalog.ParseVersion(l.Name, "")
-		if !ok {
-			continue
-		}
-		if lv.Major == v.Major && (lv.Parts == 1 || lv.Minor == v.Minor) {
-			return l.Name
-		}
-	}
-	return ""
 }

@@ -56,7 +56,13 @@ func runServer(args []string) error {
 	}
 	defer db.Close()
 
-	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ",")}
+	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
+		AdminToken: os.Getenv("INV_ADMIN_TOKEN")}
+	if app.AdminToken == "" {
+		log.Warn("INV_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
+	} else if len(app.AdminToken) < 24 {
+		return errors.New("INV_ADMIN_TOKEN must be at least 24 characters")
+	}
 	if *noUpstream {
 		log.Warn("upstream checks disabled")
 	} else {

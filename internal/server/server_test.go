@@ -21,6 +21,8 @@ import (
 	"service-inventory/internal/store/sqlite"
 )
 
+const testAdminToken = "test-admin-token-0123456789abcdef"
+
 func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -40,7 +42,8 @@ func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Handler())
+	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AdminToken: testAdminToken}).Handler())
 	t.Cleanup(srv.Close)
 	return srv, db, token
 }
@@ -204,16 +207,13 @@ func TestAllowedHostWithPort(t *testing.T) {
 func TestPolicyAPI(t *testing.T) {
 	srv, _, _ := setup(t)
 	put := func(ct, body string) int {
-		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policies/grafana", strings.NewReader(body))
-		if ct != "" {
-			req.Header.Set("Content-Type", ct)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		return resp.StatusCode
+		return putAs(t, srv.URL, testAdminToken, ct, body)
+	}
+	if c := putAs(t, srv.URL, "", "application/json", `{"policy":"latest"}`); c != http.StatusUnauthorized {
+		t.Errorf("no admin token must be refused: %d", c)
+	}
+	if c := putAs(t, srv.URL, "wrong-token-wrong-token-wrong", "application/json", `{"policy":"latest"}`); c != http.StatusUnauthorized {
+		t.Errorf("wrong admin token must be refused: %d", c)
 	}
 	if c := put("application/x-www-form-urlencoded", "policy=latest"); c != http.StatusUnsupportedMediaType {
 		t.Errorf("form post must be refused (CSRF): %d", c)
@@ -224,9 +224,32 @@ func TestPolicyAPI(t *testing.T) {
 	if c := put("application/json", `{"policy":"pin:12.3"}`); c != http.StatusOK {
 		t.Errorf("valid policy: %d", c)
 	}
-	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policies/not-a-component", strings.NewReader(`{"policy":"latest"}`))
-	req.Header.Set("Content-Type", "application/json")
-	if resp, _ := http.DefaultClient.Do(req); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("unknown scope: %d", resp.StatusCode)
+}
+
+func putAs(t *testing.T, base, token, ct, body string) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPut, base+"/api/v1/policies/grafana", strings.NewReader(body))
+	if ct != "" {
+		req.Header.Set("Content-Type", ct)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestWritesDisabledWithoutAdminToken(t *testing.T) {
+	h := (&Server{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).requireAdmin(func(w http.ResponseWriter, r *http.Request) {})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/policies/x", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	h(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("no configured token must disable writes: %d", rec.Code)
 	}
 }

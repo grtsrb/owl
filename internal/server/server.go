@@ -4,6 +4,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +46,9 @@ type Server struct {
 	// rebinding against the unauthenticated read API until admin auth exists. Empty = localhost only.
 	// The agent ingest endpoint is exempt (agents may use an IP; it has its own token auth).
 	AllowedHosts []string
+	// AdminToken authorizes write endpoints (policies). Empty = writes disabled. Replaced by real
+	// login (Google sign-in, roles) in a later milestone.
+	AdminToken string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -63,8 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/policies", s.listPolicies)
 	// Policy writes: JSON only. Together with no CORS headers this means a cross-site page can't
 	// change policies (a JSON PUT from another origin needs a preflight we never answer).
-	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.setPolicy)
-	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.deletePolicy)
+	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
+	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
 	return logRequests(s.Log, s.checkHost(mux))
 }
@@ -447,7 +451,7 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("policy changed", "scope", scope, "policy", sp.Raw)
+	s.Log.Info("policy changed", "scope", scope, "policy", sp.Raw, "by", "admin-token", "remote", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": sp.Raw})
 }
 
@@ -457,5 +461,24 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.Log.Info("policy override removed", "scope", scope, "by", "admin-token", "remote", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": "inherited"})
+}
+
+// requireAdmin guards write endpoints with the admin bearer token (constant-time compare). With no
+// token configured, writes are disabled rather than open.
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.AdminToken == "" {
+			httpError(w, http.StatusForbidden, "write endpoints are disabled: set INV_ADMIN_TOKEN on the server")
+			return
+		}
+		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.AdminToken)) != 1 {
+			s.Log.Warn("admin auth failed", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+			httpError(w, http.StatusUnauthorized, "admin token required")
+			return
+		}
+		next(w, r)
+	}
 }

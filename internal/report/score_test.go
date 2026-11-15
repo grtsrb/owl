@@ -28,7 +28,7 @@ func score(version, status string, info *upstream.Info, matches []upstream.Match
 	sp, _ := policy.Parse("lts-or-n-1")
 	var t *policy.Target
 	if info != nil {
-		tt, _ := policy.Resolve(sp, info.Lines)
+		tt, _ := policy.Resolve(sp, info.Lines, now)
 		t = &tt
 	}
 	return ScoreInstance(inventory.Instance{Version: version, Status: status, Image: "img:" + version}, info, t, matches, now)
@@ -55,7 +55,7 @@ func TestScoreLevels(t *testing.T) {
 		{"same line, behind", "1.36.2", LevelLow, "patch available: 1.36.6"},
 		{"one line behind + EOL soon", "1.35.10", LevelHigh, "reaches end-of-life on 2027-02-01"},
 		{"EOL", "1.33.6", LevelCritical, "end-of-life since 2026-06-28"},
-		{"older than all lines", "1.20.0", LevelHigh, "release lines behind"},
+		{"older than all lines (older than EOL lines)", "1.20.0", LevelCritical, "older than end-of-life release lines"},
 	}
 	for _, c := range cases {
 		s := score(c.version, "identified", k8sInfo(), nil)
@@ -109,5 +109,47 @@ func TestDrift(t *testing.T) {
 	}
 	if d := drift([]ScoredInstance{in("staging", "a", "1.0.0"), in("live", "b", "1.0.0")}); len(d) != 0 {
 		t.Errorf("equal versions: %+v", d)
+	}
+}
+
+func TestScoreReviewRegressions(t *testing.T) {
+	// Unpinned with no upstream data is still Medium (not Unknown).
+	s := ScoreInstance(inventory.Instance{Status: "unpinned", Image: "postgres:16"}, nil, nil, nil, now)
+	if s.Level != LevelMedium {
+		t.Errorf("unpinned without upstream data: %s %+v", s.Level, s.Reasons)
+	}
+	// No resolvable target must never be OK.
+	s = ScoreInstance(inventory.Instance{Status: "identified", Version: "1.36.6"}, k8sInfo(), nil, nil, now)
+	if s.Level != LevelUnknown {
+		t.Errorf("nil target: %s", s.Level)
+	}
+	// A line missing from the middle doesn't inflate "lines behind": 1.35.x vs target 1.36 is 1 behind.
+	gap := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "1.37", Latest: "1.37.2"}, {Name: "1.36", Latest: "1.36.6"}, {Name: "1.34", Latest: "1.34.13"}}}
+	tgt := &policy.Target{Policy: "n-1", Line: "1.36", Version: "1.36.6"}
+	s = ScoreInstance(inventory.Instance{Status: "identified", Version: "1.35.4"}, gap, tgt, nil, now)
+	if s.LinesBehind != 1 || s.Level != LevelMedium {
+		t.Errorf("gap in lines: behind=%d level=%s", s.LinesBehind, s.Level)
+	}
+	// An exact pin on a line we don't list still counts the distance by position.
+	pin := &policy.Target{Policy: "pin:1.39.0", Version: "1.39.0"}
+	s = ScoreInstance(inventory.Instance{Status: "identified", Version: "1.36.6"}, gap, pin, nil, now)
+	if s.Level != LevelHigh {
+		t.Errorf("pin beyond known lines: %s behind=%d", s.Level, s.LinesBehind)
+	}
+	// Reasons are sorted worst first by ScoreInstance itself.
+	s = score("1.36.2", "identified", k8sInfo(), []upstream.Match{{Advisory: upstream.Advisory{ID: "X", Severity: "high"}, Certain: true}})
+	if s.Reasons[0].Level != LevelCritical {
+		t.Errorf("reasons not worst-first: %+v", s.Reasons)
+	}
+}
+
+func TestDriftPartialPromotion(t *testing.T) {
+	in := func(stage, cluster, v string) ScoredInstance {
+		return ScoredInstance{Instance: inventory.Instance{Stage: stage, Cluster: cluster, Version: v, Status: "identified"}}
+	}
+	d := drift([]ScoredInstance{in("staging", "stg", "1.11.5"), in("live", "prod-a", "1.11.5"), in("live", "prod-b", "1.10.4")})
+	if len(d) != 1 || d[0].Kind != DriftPending || !strings.Contains(d[0].Text, "prod-b") {
+		t.Errorf("partial promotion must name the lagging cluster: %+v", d)
 	}
 }

@@ -27,7 +27,9 @@ curl -s 127.0.0.1:8080/api/v1/inventory                   # components x cluster
 curl -s 127.0.0.1:8080/api/v1/components/coredns          # + upstream lines/EOL + advisories per version
 ./bin/inv upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
 curl -s 127.0.0.1:8080/api/v1/report                      # levels + reasons + targets + drift
-curl -s -X PUT -H 'Content-Type: application/json' -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/policies/grafana
+set -a; . ./.env; set +a   # GITHUB_TOKEN, INV_ADMIN_TOKEN (stack-up generates the admin token once)
+curl -s -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $INV_ADMIN_TOKEN" \
+  -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/policies/grafana
 make dev-down
 ```
 
@@ -65,7 +67,11 @@ make dev-down
   `AdvisoriesFor` matches versions against ranges **locally** for both OSV and GitHub advisories —
   see DESIGN.md "Security & lifecycle" for why OSV's version query must not be used and how
   open-ended/TBD ranges are treated. `GITHUB_TOKEN` (no scopes) comes from `.env` (gitignored).
-- `internal/policy` — parse/resolve version policies to a target (line + version) from release lines.
+- `internal/policy` — parse/resolve version policies to a target (line + version). `UsableLines`,
+  `Position` and `IsEOL` are the single definition of "release line", shared with the scorer — don't
+  re-implement line matching elsewhere.
+- Write endpoints require `INV_ADMIN_TOKEN` (bearer, constant-time compare, ≥24 chars); unset = writes
+  disabled. Interim until Google sign-in; also JSON-only (cross-site form posts can't write).
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
   table-tested in `score_test.go`); `Build` combines inventory + upstream + policies + drift
   (newest version per stage along staging→prelive→live: pending promotion vs anomaly).

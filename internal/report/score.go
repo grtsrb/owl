@@ -5,6 +5,7 @@ package report
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -69,12 +70,24 @@ func (s *Score) add(l Level, format string, args ...any) {
 }
 
 // ScoreInstance applies the priority rules to one running instance. matches are the advisories for
-// its version (nil when not evaluated, e.g. unpinned).
+// its version (nil when not evaluated, e.g. unpinned). target is nil when no policy target could be
+// resolved. Reasons come back worst first.
 func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Target, matches []upstream.Match, now time.Time) Score {
 	s := Score{Level: LevelOK, Reasons: []Reason{}}
-	if info == nil || len(info.Lines) == 0 {
-		s.Level = LevelUnknown
-		s.Reasons = append(s.Reasons, Reason{LevelUnknown, "no upstream release data"})
+	defer func() {
+		sort.SliceStable(s.Reasons, func(i, j int) bool { return s.Reasons[i].Level.Rank() > s.Reasons[j].Level.Rank() })
+	}()
+
+	// Unpinned is Medium regardless of upstream data: the fix (pin a version) doesn't depend on it.
+	if in.Status == string(catalog.StatusUnpinned) {
+		s.add(LevelMedium, "unpinned image tag (%s): exact version unknown — pin a version", in.Image)
+	}
+	var lines []upstream.ReleaseLine
+	if info != nil {
+		lines = policy.UsableLines(info.Lines)
+	}
+	if len(lines) == 0 {
+		s.add(LevelUnknown, "no upstream release data")
 		return s
 	}
 
@@ -88,9 +101,7 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 	} else if info.Archived {
 		s.Notes = append(s.Notes, "upstream repository is archived but still releasing — check where development moved")
 	}
-
 	if in.Status == string(catalog.StatusUnpinned) {
-		s.add(LevelMedium, "unpinned image tag (%s): exact version unknown — pin a version", in.Image)
 		return s // version-based rules can't be applied to an unknown version
 	}
 	v, ok := catalog.ParseVersion(in.Version, "")
@@ -137,19 +148,14 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		s.Notes = append(s.Notes, "no advisory data for this component — vulnerability status unknown")
 	}
 
-	// Release line: EOL and position vs target.
-	lineIdx := -1
-	for i, l := range info.Lines {
-		if lv, ok := catalog.ParseVersion(l.Name, ""); ok && lv.Major == v.Major && (lv.Parts == 1 || lv.Minor == v.Minor) {
-			lineIdx = i
-			s.Line, s.LatestInLine = l.Name, l.Latest
-			break
-		}
-	}
-	if lineIdx >= 0 {
-		l := info.Lines[lineIdx]
+	// Release line: EOL. A version whose line isn't listed sits between known lines (or below all of
+	// them); it's EOL if the next older listed line is EOL — a version older than an EOL line is EOL.
+	pos, exact := policy.Position(v, lines)
+	if exact {
+		l := lines[pos]
+		s.Line, s.LatestInLine = l.Name, l.Latest
 		switch {
-		case l.EOL || (l.EOLDate != nil && !l.EOLDate.After(now)):
+		case policy.IsEOL(l, now):
 			when := ""
 			if l.EOLDate != nil {
 				when = " since " + l.EOLDate.Format("2006-01-02")
@@ -158,31 +164,46 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		case l.EOLDate != nil && l.EOLDate.Sub(now) <= EOLSoon:
 			s.add(LevelHigh, "release line %s reaches end-of-life on %s", l.Name, l.EOLDate.Format("2006-01-02"))
 		}
+	} else {
+		olderEOL := false
+		for _, l := range lines[pos:] {
+			if policy.IsEOL(l, now) {
+				olderEOL = true
+				break
+			}
+		}
+		switch {
+		case olderEOL || pos == len(lines) && policy.IsEOL(lines[len(lines)-1], now):
+			s.add(LevelCritical, "version %s is older than end-of-life release lines (not tracked upstream any more)", in.Version)
+		case pos == len(lines):
+			s.Notes = append(s.Notes, "version is older than every release line upstream data covers")
+		}
 	}
 
+	// Position vs target.
 	if target == nil {
+		s.add(LevelUnknown, "no version target could be resolved for the policy")
 		return s
 	}
 	tv, ok := catalog.ParseVersion(target.Version, "")
-	if !ok || v.Compare(tv) >= 0 {
-		if ok && s.LatestInLine != "" {
+	if !ok {
+		s.add(LevelUnknown, "target version %q not understood", target.Version)
+		return s
+	}
+	if v.Compare(tv) >= 0 {
+		if s.LatestInLine != "" {
 			if lv, ok := catalog.ParseVersion(s.LatestInLine, ""); ok && v.Compare(lv) < 0 {
 				s.add(LevelLow, "patch available: %s", s.LatestInLine)
 			}
 		}
 		return s
 	}
-	targetIdx := -1
-	for i, l := range info.Lines {
-		if l.Name == target.Line {
-			targetIdx = i
-		}
-	}
-	switch {
-	case lineIdx >= 0 && targetIdx >= 0:
-		s.LinesBehind = lineIdx - targetIdx
-	case lineIdx < 0: // older than every known line
-		s.LinesBehind = len(info.Lines) - max(targetIdx, 0)
+	targetPos, targetListed := policy.Position(tv, lines)
+	s.LinesBehind = pos - targetPos
+	if !targetListed {
+		// The target's line isn't in upstream data (e.g. an exact pin beyond it): positions can't count
+		// lines we don't know, so use the version distance itself.
+		s.LinesBehind = max(s.LinesBehind, lineDistance(v, tv, lines))
 	}
 	switch {
 	case s.LinesBehind >= 2:
@@ -193,6 +214,22 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		s.add(LevelLow, "patch available: %s", target.Version)
 	}
 	return s
+}
+
+// lineDistance counts release lines between v and t from the versions: majors for products whose
+// lines are majors (Postgres "17"), otherwise minors; a major jump counts as at least 2 lines.
+func lineDistance(v, t catalog.Version, lines []upstream.ReleaseLine) int {
+	majorLines := false
+	if lv, ok := catalog.ParseVersion(lines[0].Name, ""); ok && lv.Parts == 1 {
+		majorLines = true
+	}
+	switch {
+	case majorLines:
+		return t.Major - v.Major
+	case t.Major != v.Major:
+		return max(2, t.Major-v.Major)
+	}
+	return t.Minor - v.Minor
 }
 
 // advisoryLabel prefers a CVE ID (what people search for), falling back to the advisory ID.
