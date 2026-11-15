@@ -20,6 +20,7 @@ import (
 	"service-inventory/internal/store"
 	"service-inventory/internal/store/sqlite"
 	"service-inventory/internal/upstream"
+	"service-inventory/web"
 )
 
 func defaultDB() string {
@@ -57,7 +58,7 @@ func runServer(args []string) error {
 	defer db.Close()
 
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		AdminToken: os.Getenv("INV_ADMIN_TOKEN")}
+		AdminToken: os.Getenv("INV_ADMIN_TOKEN"), UI: web.Dist()}
 	if app.AdminToken == "" {
 		log.Warn("INV_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
 	} else if len(app.AdminToken) < 24 {

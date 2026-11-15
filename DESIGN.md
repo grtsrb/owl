@@ -112,7 +112,11 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 - Optional: without an API key everything else still works.
 
 ## Interfaces
-- React dashboard; CLI (`inv scan`, `inv outdated`, …).
+- React dashboard (embedded in the binary): Overview (level tiles + components × clusters matrix with
+  target/latest/flags), component detail (reasons per instance, advisories per version, release lines,
+  drift, policy editor), Changes, Images (unpinned/unrecognized/in-house), Settings (global policy,
+  clusters, admin token). Light/dark follow the OS.
+- CLI (`inv scan`, `inv outdated`, …).
 - Mattermost: weekly digest (Mon 09:00: counts per level, top 5 actions with summaries, drift) +
   instant alert when something *newly* becomes Critical. Google Chat/email later.
 - Auth v1: single admin password (local: none). v2: Google sign-in, viewer/admin roles.

@@ -9,12 +9,15 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1–5 (agent, server core, catalog, upstream data, policy/scoring/drift) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–6 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
 ```bash
 make build test lint        # bin/inv, go test ./..., go vet + gofmt check
+make ui                     # build web/ (React) into web/dist, embedded by the next `make build`
+make ui-dev                 # Vite dev server :5173 with /api proxied to :8080 (needs make stack-up)
+cd web && npm run typecheck # TypeScript check only
 go test ./internal/agent -run TestCollect -v    # single test
 make dev-up                 # create the 3 k3d clusters (different k3s versions) + seed them
 make seed                   # re-apply seed workloads (dev/seed/seed.sh — bash 3.2 compatible)
@@ -75,6 +78,11 @@ make dev-down
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
   table-tested in `score_test.go`); `Build` combines inventory + upstream + policies + drift
   (newest version per stage along staging→prelive→live: pending promotion vs anomaly).
+- `web/` — Vite + React + TS UI. `web/embed.go` embeds `web/dist` (`.keep` keeps the dir for
+  `go build` without a UI build; the build script recreates it). Server serves it with SPA fallback
+  and a strict CSP (`default-src 'self'`) — don't add inline scripts/styles or third-party origins.
+  `web/src/api.ts` mirrors the Go JSON types; keep them in sync when changing API structs. The admin
+  token is held in sessionStorage only and sent only on writes.
 - SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
 - Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.

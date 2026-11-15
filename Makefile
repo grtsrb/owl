@@ -6,7 +6,14 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: build test lint image dev-up dev-down seed agent-print agent-deploy stack-up stack-down
+.PHONY: ui ui-dev build test lint image dev-up dev-down seed agent-print agent-deploy stack-up stack-down
+
+## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
+ui:
+	cd web && npm ci && npm run build
+
+ui-dev: ## Vite dev server on :5173, proxying /api to the server on :8080
+	cd web && npm run dev
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/inv ./cmd/inv

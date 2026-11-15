@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +51,8 @@ type Server struct {
 	// AdminToken authorizes write endpoints (policies). Empty = writes disabled. Replaced by real
 	// login (Google sign-in, roles) in a later milestone.
 	AdminToken string
+	// UI is the built web app (web.Dist()); nil = API only.
+	UI fs.FS
 }
 
 func (s *Server) Handler() http.Handler {
@@ -70,7 +74,56 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
 	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
-	return logRequests(s.Log, s.checkHost(mux))
+	mux.HandleFunc("GET /", s.serveUI)
+	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
+}
+
+// securityHeaders: the UI loads only same-origin scripts/styles (Vite emits no inline code), can't be
+// framed, and responses aren't MIME-sniffed.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; object-src 'none'; "+
+			"base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// serveUI serves built assets and falls back to index.html for client-side routes (/components/x).
+func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		httpError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if s.UI == nil {
+		http.Error(w, "UI not built: run `make ui` (the API is at /api/v1/...)", http.StatusNotFound)
+		return
+	}
+	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+	if name != "" {
+		if f, err := s.UI.Open(name); err == nil {
+			st, _ := f.Stat()
+			f.Close()
+			if st != nil && !st.IsDir() {
+				if strings.HasPrefix(name, "assets/") { // content-hashed file names
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
+				http.ServeFileFS(w, r, s.UI, name)
+				return
+			}
+		}
+	}
+	index, err := fs.ReadFile(s.UI, "index.html")
+	if err != nil {
+		http.Error(w, "UI not built: run `make ui` (the API is at /api/v1/...)", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(index)
 }
 
 func (s *Server) checkHost(next http.Handler) http.Handler {
