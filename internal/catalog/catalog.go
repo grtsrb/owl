@@ -24,6 +24,8 @@ type Component struct {
 	TagPrefix    string   `json:"tagPrefix,omitempty"`
 	Source       string   `json:"source,omitempty"` // "cluster" = version from the cluster, not an image
 	Notes        string   `json:"notes,omitempty"`
+
+	refs []Ref // parsed Images, built once in Builtin()
 }
 
 type Catalog struct {
@@ -48,6 +50,9 @@ func Builtin() (*Catalog, error) {
 		seen[comp.ID] = true
 		if comp.VersionParts == 0 {
 			comp.VersionParts = 3
+		}
+		for _, img := range comp.Images {
+			comp.refs = append(comp.refs, ParseRef(img+":x")) // dummy tag; only the name is used
 		}
 	}
 	return &c, nil
@@ -110,16 +115,20 @@ func (c *Catalog) match(ref Ref) *Component {
 	// Exact name match wins over a mirror-suffix match, so e.g. bitnami/redis is never claimed by a
 	// shorter pattern of another component.
 	for i := range c.Components {
-		for _, p := range c.Components[i].Images {
-			pr := ParseRef(p + ":x")
-			if pr.Registry == ref.Registry && pr.Repository == ref.Repository {
+		for _, p := range c.Components[i].refs {
+			if p.Registry == ref.Registry && p.Repository == ref.Repository {
 				return &c.Components[i]
 			}
 		}
 	}
+	if publicRegistries[ref.Registry] {
+		// On public registries a longer path is someone else's image (ghcr.io/myorg/bitnami/redis is a
+		// fork), not a mirror. Mirrors/pull-through caches live on private registries.
+		return nil
+	}
 	for i := range c.Components {
-		for _, p := range c.Components[i].Images {
-			if ref.matches(p) {
+		for _, p := range c.Components[i].refs {
+			if ref.mirrorOf(p) {
 				return &c.Components[i]
 			}
 		}
@@ -151,9 +160,11 @@ func (c *Catalog) ClusterVersions(gitVersion string) []Identification {
 		out = append(out, id)
 	}
 	for _, distro := range []string{"rke2", "k3s"} {
-		if strings.Contains(gitVersion, "+"+distro) {
+		if i := strings.Index(gitVersion, "+"+distro); i >= 0 {
 			if d := byID(distro); d != nil && ok {
-				out = append(out, Identification{Component: d, Ref: Ref{Raw: gitVersion}, Status: StatusIdentified, Version: &v})
+				dv := v
+				dv.Build = gitVersion[i+1:] // keep the distro revision: v1.30.4+rke2r2 != +rke2r1
+				out = append(out, Identification{Component: d, Ref: Ref{Raw: gitVersion}, Status: StatusIdentified, Version: &dv})
 			}
 		}
 	}
@@ -166,7 +177,10 @@ type Version struct {
 	Major, Minor, Patch int
 	Parts               int
 	Prerelease          string // e.g. rc1, beta.2 — empty for stable
-	Original            string // the tag as found
+	// Build is distribution build metadata, e.g. "rke2r1" in v1.30.4+rke2r1. Unlike semver it does
+	// order releases (rke2r2 is a newer RKE2 release of the same Kubernetes version).
+	Build    string
+	Original string // the tag as found
 }
 
 func (v Version) String() string {
@@ -179,6 +193,9 @@ func (v Version) String() string {
 	}
 	if v.Prerelease != "" {
 		s += "-" + v.Prerelease
+	}
+	if v.Build != "" {
+		s += "+" + v.Build
 	}
 	return s
 }
@@ -194,13 +211,46 @@ func (v Version) Compare(o Version) int {
 	}
 	switch {
 	case v.Prerelease == o.Prerelease:
-		return 0
+		return naturalCompare(v.Build, o.Build)
 	case v.Prerelease == "":
 		return 1
 	case o.Prerelease == "":
 		return -1
 	}
-	return strings.Compare(v.Prerelease, o.Prerelease)
+	return naturalCompare(v.Prerelease, o.Prerelease)
+}
+
+// naturalCompare compares strings with embedded numbers numerically: rc.2 < rc.10, rke2r1 < rke2r2.
+func naturalCompare(a, b string) int {
+	for a != "" && b != "" {
+		ai, bi := chunk(a), chunk(b)
+		ca, cb := a[:ai], b[:bi]
+		a, b = a[ai:], b[bi:]
+		na, errA := strconv.Atoi(ca)
+		nb, errB := strconv.Atoi(cb)
+		switch {
+		case errA == nil && errB == nil:
+			if na != nb {
+				if na < nb {
+					return -1
+				}
+				return 1
+			}
+		case ca != cb:
+			return strings.Compare(ca, cb)
+		}
+	}
+	return strings.Compare(a, b) // the longer remainder sorts later
+}
+
+// chunk returns the length of the leading run of digits or non-digits.
+func chunk(s string) int {
+	digit := s[0] >= '0' && s[0] <= '9'
+	i := 1
+	for i < len(s) && (s[i] >= '0' && s[i] <= '9') == digit {
+		i++
+	}
+	return i
 }
 
 var (

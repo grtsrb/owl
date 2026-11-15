@@ -54,7 +54,11 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) checkHost(next http.Handler) http.Handler {
 	allowed := map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 	for _, h := range s.AllowedHosts {
-		if h = strings.TrimSpace(strings.ToLower(h)); h != "" {
+		h = strings.TrimSpace(strings.ToLower(h))
+		if hostOnly, _, err := net.SplitHostPort(h); err == nil {
+			h = hostOnly // "inv.internal:8080" -> "inv.internal" (the request side is compared without port)
+		}
+		if h = strings.Trim(h, "[]"); h != "" {
 			allowed[h] = true
 		}
 	}
@@ -144,15 +148,18 @@ type limitReader struct {
 
 func (l *limitReader) Read(p []byte) (int, error) {
 	if l.n <= 0 {
-		return 0, errTooLarge
+		// At the limit: only an error if there is actually more data.
+		var one [1]byte
+		if n, err := l.r.Read(one[:]); n > 0 {
+			return 0, errTooLarge
+		} else {
+			return 0, err
+		}
 	}
 	if int64(len(p)) > l.n {
-		p = p[:l.n+1] // read one extra byte to detect overflow
+		p = p[:l.n]
 	}
 	n, err := l.r.Read(p)
-	if int64(n) > l.n {
-		return int(l.n), errTooLarge
-	}
 	l.n -= int64(n)
 	return n, err
 }

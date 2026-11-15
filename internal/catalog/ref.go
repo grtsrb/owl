@@ -50,13 +50,16 @@ func ParseRef(image string) Ref {
 	return r
 }
 
-// matches reports whether this ref is the given pattern ("registry/path" or bare "path"). Besides an
-// exact match, the pattern's path may appear as a suffix after a registry mirror/proxy prefix, e.g.
-// harbor.example.com/dockerhub/library/nginx matches docker.io/library/nginx.
-func (r Ref) matches(pattern string) bool {
-	p := ParseRef(pattern + ":x") // reuse normalisation; the dummy tag is ignored
-	if r.Registry == p.Registry && r.Repository == p.Repository {
-		return true
-	}
+// publicRegistries host images under user/org namespaces; a longer path there is a different image,
+// never a mirror of a shorter one.
+var publicRegistries = map[string]bool{
+	"docker.io": true, "ghcr.io": true, "quay.io": true, "registry.k8s.io": true, "k8s.gcr.io": true,
+	"gcr.io": true, "public.ecr.aws": true, "mcr.microsoft.com": true, "registry.gitlab.com": true,
+	"docker.redpanda.com": true,
+}
+
+// mirrorOf reports whether r is pattern p served from a mirror/pull-through cache, i.e. p's path is a
+// suffix of r's path on a segment boundary: harbor.example.com/dockerhub/library/nginx -> library/nginx.
+func (r Ref) mirrorOf(p Ref) bool {
 	return strings.HasSuffix(r.Repository, "/"+p.Repository)
 }

@@ -67,6 +67,9 @@ func TestIdentify(t *testing.T) {
 		{"registry.gitlab.example/it/billing-api:2.3.1", StatusInHouse, "", "2.3.1"},
 		{"ghcr.io/acme/mystery-tool:0.4.0", StatusUnrecognized, "", ""},
 		{"myorg/redis:7.2.4", StatusUnrecognized, "", ""}, // a fork is not upstream redis
+		// Nested forks on public registries are not mirrors.
+		{"ghcr.io/myorg/bitnami/redis:7.2.4", StatusUnrecognized, "", ""},
+		{"ghcr.io/acme/grafana/grafana:9.0.0", StatusUnrecognized, "", ""},
 	}
 	for _, c := range cases {
 		id := cat.Identify(c.image)
@@ -119,10 +122,27 @@ func TestClusterVersions(t *testing.T) {
 	for _, id := range cat.ClusterVersions("v1.30.4+rke2r1") {
 		got[id.Component.ID] = id.Version.String()
 	}
-	if got["kubernetes"] != "1.30.4" || got["rke2"] != "1.30.4" || len(got) != 2 {
+	if got["kubernetes"] != "1.30.4" || got["rke2"] != "1.30.4+rke2r1" || len(got) != 2 {
 		t.Errorf("rke2 cluster: %v", got)
 	}
 	if ids := cat.ClusterVersions("v1.33.6+k3s1"); len(ids) != 2 || ids[1].Component.ID != "k3s" {
 		t.Errorf("k3s cluster: %+v", ids)
+	}
+}
+
+func TestVersionOrderingNatural(t *testing.T) {
+	cat, _ := Builtin()
+	r1 := cat.ClusterVersions("v1.30.4+rke2r1")[1].Version
+	r2 := cat.ClusterVersions("v1.30.4+rke2r2")[1].Version
+	if r1.Compare(*r2) >= 0 {
+		t.Error("rke2r2 must be newer than rke2r1")
+	}
+	pairs := [][2]string{{"1.12.0-rc.2", "1.12.0-rc.10"}, {"3.0.0-beta.9", "3.0.0-beta.10"}, {"1.12.0-rc.10", "1.12.0"}}
+	for _, p := range pairs {
+		a, _ := ParseVersion(p[0], "")
+		b, _ := ParseVersion(p[1], "")
+		if a.Compare(b) >= 0 {
+			t.Errorf("%s should sort before %s", p[0], p[1])
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -174,5 +175,27 @@ func TestReadAPIRejectsForeignHost(t *testing.T) {
 	}
 	if code := get("127.0.0.1:8080"); code != http.StatusOK {
 		t.Errorf("localhost: got %d", code)
+	}
+}
+
+func TestLimitReaderAcceptsExactLimit(t *testing.T) {
+	exact := &limitReader{r: bytes.NewReader(make([]byte, 10)), n: 10}
+	if b, err := io.ReadAll(exact); err != nil || len(b) != 10 {
+		t.Errorf("exact size: %d bytes, err %v", len(b), err)
+	}
+	over := &limitReader{r: bytes.NewReader(make([]byte, 11)), n: 10}
+	if _, err := io.ReadAll(over); !errors.Is(err, errTooLarge) {
+		t.Errorf("over limit: want errTooLarge, got %v", err)
+	}
+}
+
+func TestAllowedHostWithPort(t *testing.T) {
+	h := (&Server{AllowedHosts: []string{"inv.internal:8080"}}).checkHost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil)
+	req.Host = "inv.internal:8080"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("allowed host with port: got %d", rec.Code)
 	}
 }

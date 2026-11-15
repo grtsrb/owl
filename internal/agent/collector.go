@@ -54,6 +54,14 @@ func (c *Collector) Collect(ctx context.Context) (*snapshot.Snapshot, error) {
 	// rsOwner / jobOwner resolve intermediate controllers to the top-level workload.
 	rsOwner := map[ownerKey]ownerKey{}
 	jobOwner := map[ownerKey]ownerKey{}
+	// ReplicaSets of controllers we don't list (e.g. Argo Rollouts), aggregated per owner: the owner's
+	// intended image is the newest ReplicaSet's template, its replicas the sum. This keeps such
+	// workloads visible when scaled to 0 and stable during canaries.
+	type rsAgg struct {
+		newest   *appsv1.ReplicaSet
+		replicas int32
+	}
+	foreignRS := map[ownerKey]*rsAgg{}
 
 	apps := c.Client.AppsV1()
 	if err := each(ctx, func(ctx context.Context, o metav1.ListOptions) (runtime.Object, error) {
@@ -86,14 +94,29 @@ func (c *Collector) Collect(ctx context.Context) (*snapshot.Snapshot, error) {
 		rs := obj.(*appsv1.ReplicaSet)
 		key := ownerKey{"ReplicaSet", rs.Namespace, rs.Name}
 		if ref := controllerOf(rs.OwnerReferences); ref != nil {
-			// Deployment, or another controller (e.g. Argo Rollouts' Rollout). Never list old revisions
-			// as workloads of their own; their pods are attributed to the owner.
-			rsOwner[key] = ownerKey{ref.Kind, rs.Namespace, ref.Name}
+			// Never list old revisions as workloads of their own; pods are attributed to the owner.
+			owner := ownerKey{ref.Kind, rs.Namespace, ref.Name}
+			rsOwner[key] = owner
+			if ref.Kind != "Deployment" { // Deployments are listed with their own template
+				agg := foreignRS[owner]
+				if agg == nil {
+					agg = &rsAgg{}
+					foreignRS[owner] = agg
+				}
+				agg.replicas += replicas(rs.Spec.Replicas)
+				if agg.newest == nil || newerRS(rs, agg.newest) {
+					agg.newest = rs.DeepCopy()
+				}
+			}
 			return
 		}
 		add("ReplicaSet", rs.ObjectMeta, replicas(rs.Spec.Replicas), rs.Spec.Template.Spec)
 	}); err != nil {
 		return nil, fmt.Errorf("replicasets: %w", err)
+	}
+	for owner, agg := range foreignRS {
+		add(owner.kind, metav1.ObjectMeta{Namespace: owner.namespace, Name: owner.name}, agg.replicas,
+			agg.newest.Spec.Template.Spec)
 	}
 
 	batch := c.Client.BatchV1()
@@ -185,6 +208,14 @@ func each(ctx context.Context, list pager.ListPageFunc, fn func(runtime.Object))
 		fn(obj)
 		return nil
 	})
+}
+
+// newerRS orders ReplicaSets by creation time (name breaks ties so the choice is deterministic).
+func newerRS(a, b *appsv1.ReplicaSet) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return b.CreationTimestamp.Before(&a.CreationTimestamp)
+	}
+	return a.Name > b.Name
 }
 
 func resolveOwner(p *corev1.Pod, rsOwner, jobOwner map[ownerKey]ownerKey) ownerKey {

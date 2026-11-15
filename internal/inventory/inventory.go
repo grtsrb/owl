@@ -60,7 +60,7 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 	}
 	comps := map[string]*ComponentView{}
 	unknown := map[string]*Unrecognized{}
-	inv := &Inventory{Unpinned: []Instance{}, InHouse: []Instance{}}
+	inv := &Inventory{Components: []ComponentView{}, Unpinned: []Instance{}, InHouse: []Instance{}}
 
 	add := func(id catalog.Identification, in Instance) {
 		in.Status, in.Reason = string(id.Status), id.Reason
@@ -118,7 +118,7 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 
 	for _, c := range comps {
 		for _, vs := range c.VersionsByCluster {
-			sort.Strings(vs)
+			sort.Slice(vs, func(i, j int) bool { return versionLess(vs[i], vs[j]) })
 		}
 		inv.Components = append(inv.Components, *c)
 	}
@@ -131,6 +131,18 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 		inv.Unrecognized = []Unrecognized{}
 	}
 	return inv, nil
+}
+
+// versionLess orders version strings by version (1.9.0 < 1.10.0), falling back to text.
+func versionLess(a, b string) bool {
+	va, okA := catalog.ParseVersion(a, "")
+	vb, okB := catalog.ParseVersion(b, "")
+	if okA && okB {
+		if c := va.Compare(vb); c != 0 {
+			return c < 0
+		}
+	}
+	return a < b
 }
 
 func contains(s []string, v string) bool {
