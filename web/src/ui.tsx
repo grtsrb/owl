@@ -84,3 +84,40 @@ export function ago(iso?: string | null): string {
 export function date(iso?: string | null): string {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "—";
 }
+
+export const levelRank: Record<Level, number> = { critical: 5, high: 4, medium: 3, low: 2, unknown: 1, ok: 0 };
+
+export function worstLevel(levels: Level[]): Level {
+  return levels.reduce<Level>((a, b) => (levelRank[b] > levelRank[a] ? b : a), "ok");
+}
+
+/** Count per level, worst first, only levels that occur. */
+export function levelCounts(levels: Level[]): { level: Level; n: number }[] {
+  const n: Partial<Record<Level, number>> = {};
+  for (const l of levels) n[l] = (n[l] ?? 0) + 1;
+  return (["critical", "high", "medium", "low", "unknown", "ok"] as Level[]).filter((l) => n[l]).map((l) => ({ level: l, n: n[l]! }));
+}
+
+/** Stacked bar of level counts (segments sized by count). */
+export function LevelBar({ counts, thin = false }: { counts: { level: Level; n: number }[]; thin?: boolean }) {
+  const label = counts.map((c) => `${c.n} ${levelLabel[c.level]}`).join(", ") || "nothing scored";
+  return (
+    <div className={`lvbar${thin ? " thin" : ""}`} role="img" aria-label={`Components by level: ${label}`}>
+      {counts.map((c) => <span key={c.level} className={`lvl-${c.level}`} style={{ flexGrow: c.n }} />)}
+    </div>
+  );
+}
+
+export function CountBadges({ counts }: { counts: { level: Level; n: number }[] }) {
+  return (
+    <div className="counts">
+      {counts.map((c) => <span key={c.level} className={`badge lvl-${c.level}`}>{c.n} {levelLabel[c.level]}</span>)}
+    </div>
+  );
+}
+
+/** Format an API error for display under a form. */
+export function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
+  if (!msg) return null;
+  return <p className={msg.ok ? "ok-text" : "err-text"} role={msg.ok ? "status" : "alert"}>{msg.text}</p>;
+}

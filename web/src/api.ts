@@ -24,12 +24,15 @@ export interface Score {
 export interface Instance {
   cluster: string; stage: string; tenant: string; namespace?: string; kind?: string; workload?: string;
   container?: string; image: string; version?: string; status: string; reason?: string;
+  repository?: string; override?: "map" | "inhouse" | "ignore";
   desiredReplicas: number; running?: RunningImage[];
 }
-export interface ScoredInstance extends Instance { score: Score }
+export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check";
+export interface Action { kind: ActionKind; text: string; why: string }
+export interface ScoredInstance extends Instance { score: Score; action: Action }
 
 export interface Target { policy: string; line: string; version: string; note?: string }
-export interface Drift { kind: "pending_promotion" | "anomaly"; text: string }
+export interface Drift { kind: "pending_promotion" | "anomaly" | "only_in"; text: string; tenant: string; clusters: string[] }
 
 export interface ComponentReport {
   id: string; name: string; level: Level; target?: Target; notes?: string;
@@ -43,6 +46,7 @@ export interface ComponentReport {
 export interface Report {
   generatedAt: string; summary: Partial<Record<Level, number>>; policies: Record<string, string>;
   components: ComponentReport[]; unpinned: number; inHouse: number; unrecognized: number;
+  stages: string[];
 }
 
 export interface Cluster {
@@ -71,9 +75,15 @@ export interface ComponentDetail {
 }
 
 export interface Inventory {
-  unpinned: Instance[]; inHouse: Instance[];
+  unpinned: Instance[]; inHouse: Instance[]; ignored: Instance[];
   unrecognized: { repository: string; instances: Instance[] }[];
 }
+
+export interface StageInfo { name: string; position: number; clusters: number }
+export interface TenantInfo { name: string; clusters: number }
+export interface CatalogOverride { repository: string; kind: "map" | "inhouse" | "ignore"; component?: string; updatedAt: string }
+export interface ServerSettings { serverURL: string; agentImage: string }
+export interface CatalogComponent { id: string; name: string; source?: string }
 
 export interface Policies { global: string; overrides: Record<string, string>; presets: string[] }
 
@@ -88,10 +98,10 @@ export function writeErrorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, admin = method !== "GET"): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (method !== "GET") {
+  if (admin) {
     const token = adminToken.get();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
@@ -116,6 +126,35 @@ export const api = {
   policies: () => request<Policies>("GET", "/api/v1/policies"),
   setPolicy: (scope: string, policy: string) => request("PUT", `/api/v1/policies/${encodeURIComponent(scope)}`, { policy }),
   clearPolicy: (scope: string) => request("DELETE", `/api/v1/policies/${encodeURIComponent(scope)}`),
+  catalog: () => request<{ components: CatalogComponent[] }>("GET", "/api/v1/catalog"),
+
+  stages: () => request<StageInfo[]>("GET", "/api/v1/stages"),
+  addStage: (name: string) => request<StageInfo[]>("POST", "/api/v1/stages", { name }),
+  reorderStages: (order: string[]) => request<StageInfo[]>("PUT", "/api/v1/stages", { order }),
+  deleteStage: (name: string) => request<StageInfo[]>("DELETE", `/api/v1/stages/${encodeURIComponent(name)}`),
+
+  tenants: () => request<TenantInfo[]>("GET", "/api/v1/tenants"),
+  addTenant: (name: string) => request<TenantInfo[]>("POST", "/api/v1/tenants", { name }),
+  renameTenant: (from: string, name: string) => request<TenantInfo[]>("PATCH", `/api/v1/tenants/${encodeURIComponent(from)}`, { name }),
+  deleteTenant: (name: string) => request<TenantInfo[]>("DELETE", `/api/v1/tenants/${encodeURIComponent(name)}`),
+
+  addCluster: (c: { name: string; stage: string; tenant: string }) =>
+    request<{ cluster: Cluster; token: string }>("POST", "/api/v1/clusters", c),
+  editCluster: (name: string, c: { stage: string; tenant: string }) =>
+    request<Cluster>("PATCH", `/api/v1/clusters/${encodeURIComponent(name)}`, c),
+  rotateToken: (name: string) => request<{ cluster: Cluster; token: string }>("POST", `/api/v1/clusters/${encodeURIComponent(name)}/rotate-token`),
+  deleteCluster: (name: string) => request("DELETE", `/api/v1/clusters/${encodeURIComponent(name)}`),
+  exportCluster: (name: string) => request<unknown>("GET", `/api/v1/clusters/${encodeURIComponent(name)}/export`, undefined, true),
+
+  overrides: () => request<CatalogOverride[]>("GET", "/api/v1/catalog/overrides"),
+  setOverride: (o: { repository: string; kind: CatalogOverride["kind"]; component?: string }) =>
+    request<CatalogOverride[]>("PUT", "/api/v1/catalog/overrides", o),
+  deleteOverride: (repository: string) =>
+    request<CatalogOverride[]>("DELETE", `/api/v1/catalog/overrides?repository=${encodeURIComponent(repository)}`),
+
+  settings: () => request<ServerSettings>("GET", "/api/v1/settings"),
+  saveSettings: (s: ServerSettings) => request<ServerSettings>("PUT", "/api/v1/settings", s),
+  agentManifestURL: "/api/v1/agent/manifest",
 };
 
 // The admin token lives only in this tab's sessionStorage (cleared when the tab closes) — never in
@@ -126,4 +165,33 @@ export const adminToken = {
   set: (t: string) => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } },
 };
 
-export const stageOrder: Record<string, number> = { staging: 1, prelive: 2, live: 3 };
+/** Save text as a file (blob URL: no server round trip, so a token never travels in a URL). */
+export function download(filename: string, text: string, type = "application/yaml") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** The token Secret for a cluster's agent. Values are JSON strings, which are valid YAML scalars. */
+export function agentSecretYAML(serverURL: string, token: string): string {
+  const lines = [
+    "# Agent token for Service Inventory. Apply, then delete this file:",
+    "#   kubectl apply -f <this file>",
+    "apiVersion: v1",
+    "kind: Secret",
+    "metadata:",
+    "  name: inventory-agent",
+    "  namespace: service-inventory",
+    "type: Opaque",
+    "stringData:",
+    `  INV_SERVER_URL: ${JSON.stringify(serverURL || "https://SET-SERVER-URL-IN-SETTINGS")}`,
+    `  INV_TOKEN: ${JSON.stringify(token)}`,
+  ];
+  if (serverURL.startsWith("http://")) lines.push(`  INV_ALLOW_INSECURE_HTTP: "true" # plain HTTP: local development only`);
+  return lines.join("\n") + "\n";
+}

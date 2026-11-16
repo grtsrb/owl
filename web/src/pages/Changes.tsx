@@ -1,5 +1,6 @@
-import { useState } from "react";
 import { api, type Change } from "../api";
+import { useReporting } from "../App";
+import { useClusterSelection } from "../model";
 import { ago, Card, Empty, ErrorBox, Loading, Tag, useApi } from "../ui";
 
 const typeLabel: Record<string, [string, string]> = {
@@ -11,29 +12,28 @@ const typeLabel: Record<string, [string, string]> = {
 };
 
 export default function Changes() {
-  const [cluster, setCluster] = useState("");
-  const clusters = useApi(api.clusters);
-  const changes = useApi(() => api.changes(cluster), [cluster]);
+  const reporting = useReporting();
+  const sel = useClusterSelection(reporting);
+  // One cluster: ask the server for just that one; several: fetch recent history and filter here.
+  const one = sel.selected.length === 1 ? sel.selected[0] : "";
+  const changes = useApi(() => api.changes(one, one ? 300 : 1000), [one]);
+  const shown = changes.data?.filter((c) => sel.selected.includes(c.cluster));
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Changes</h1>
-          <p className="muted">Image and Kubernetes version changes reported by the agents (template changes only).</p>
+          <p className="muted">Image and Kubernetes version changes reported by the agents (template changes only), for the clusters selected above.</p>
         </div>
-        <select className="input" value={cluster} onChange={(e) => setCluster(e.target.value)} aria-label="Cluster">
-          <option value="">All clusters</option>
-          {clusters.data?.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-        </select>
       </div>
       <Card>
-        {changes.error ? <ErrorBox error={changes.error} retry={changes.reload} /> : !changes.data ? <Loading /> :
-          changes.data.length === 0 ? <Empty>No changes recorded yet.</Empty> : (
+        {changes.error ? <ErrorBox error={changes.error} retry={changes.reload} /> : !shown ? <Loading /> :
+          shown.length === 0 ? <Empty>No changes recorded yet.</Empty> : (
             <div className="table-wrap">
               <table>
                 <thead><tr><th>When</th><th>Cluster</th><th>Type</th><th>Workload</th><th>Change</th></tr></thead>
-                <tbody>{changes.data.map((c) => <Row key={c.id} c={c} />)}</tbody>
+                <tbody>{shown.map((c) => <Row key={c.id} c={c} />)}</tbody>
               </table>
             </div>
           )}

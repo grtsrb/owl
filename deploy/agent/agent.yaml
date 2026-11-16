@@ -1,10 +1,13 @@
-# Service Inventory agent. Apply per cluster after creating the token Secret:
+# Service Inventory agent. Easiest: Settings → Clusters → Add cluster in the UI, which gives you this
+# file (with your agent image filled in) and a separate agent-secret-<cluster>.yaml with the token:
 #
-#   kubectl create namespace service-inventory
+#   kubectl apply -f agent.yaml
+#   kubectl apply -f agent-secret-<cluster>.yaml
+#
+# By hand: create the Secret yourself (the token is shown once by the server):
 #   kubectl -n service-inventory create secret generic inventory-agent \
-#     --from-literal=INV_SERVER_URL=https://inventory.example.com \
-#     --from-literal=INV_TOKEN=<token shown once by the server>
-#   kubectl apply -f deploy/agent/agent.yaml
+#     --from-literal=INV_SERVER_URL=https://inventory.example.com --from-literal=INV_TOKEN=<token>
+# (that leaves the token in your shell history — prefer a file you apply and delete).
 #
 # Permissions are read-only (get/list) and exclude Secrets and ConfigMaps. Keep this in sync with
 # internal/agent/collector.go.

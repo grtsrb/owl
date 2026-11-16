@@ -24,6 +24,10 @@ type Instance struct {
 	Version   string `json:"version,omitempty"`
 	Status    string `json:"status"`
 	Reason    string `json:"reason,omitempty"`
+	// Repository is registry/repository of the image (what catalog overrides key on).
+	Repository string `json:"repository,omitempty"`
+	// Override is set when a catalog override decided this instance (map, inhouse, ignore).
+	Override string `json:"override,omitempty"`
 	// Replicas / running pods, so scaled-to-0 and half-done rollouts are visible.
 	DesiredReplicas int32                   `json:"desiredReplicas"`
 	Running         []snapshot.RunningImage `json:"running,omitempty"`
@@ -45,6 +49,8 @@ type Inventory struct {
 	Unpinned     []Instance      `json:"unpinned"`
 	InHouse      []Instance      `json:"inHouse"`
 	Unrecognized []Unrecognized  `json:"unrecognized"`
+	// Ignored: unrecognized images the user chose to ignore (kept so the UI can show and undo it).
+	Ignored []Instance `json:"ignored"`
 }
 
 // Unrecognized groups unknown images by repository, so the user maps each once.
@@ -58,18 +64,61 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 	if err != nil {
 		return nil, err
 	}
+	ovList, err := st.ListOverrides(ctx)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[string]store.CatalogOverride{}
+	for _, o := range ovList {
+		overrides[o.Repository] = o
+	}
 	comps := map[string]*ComponentView{}
 	unknown := map[string]*Unrecognized{}
-	inv := &Inventory{Components: []ComponentView{}, Unpinned: []Instance{}, InHouse: []Instance{}}
+	inv := &Inventory{Components: []ComponentView{}, Unpinned: []Instance{}, InHouse: []Instance{}, Ignored: []Instance{}}
 
-	add := func(id catalog.Identification, in Instance) {
-		in.Status, in.Reason = string(id.Status), id.Reason
+	// identify applies a catalog override, but only to images the catalog doesn't recognize itself:
+	// once the catalog learns an image, its own (verified) mapping wins.
+	identify := func(image string) (catalog.Identification, string) {
+		id := cat.Identify(image)
+		if id.Status != catalog.StatusUnrecognized {
+			return id, ""
+		}
+		o, ok := overrides[id.Ref.Name()]
+		if !ok {
+			return id, ""
+		}
+		switch o.Kind {
+		case store.OverrideMap:
+			if comp := cat.ByID(o.Component); comp != nil {
+				return cat.IdentifyAs(image, comp), string(o.Kind)
+			}
+		case store.OverrideInHouse:
+			id.Status, id.Reason = catalog.StatusInHouse, "marked in-house"
+			if v, ok := catalog.ParseVersion(id.Ref.Tag, ""); ok {
+				id.Version = &v
+			}
+			return id, string(o.Kind)
+		case store.OverrideIgnore:
+			id.Status, id.Reason = catalog.StatusIgnored, "ignored"
+			return id, string(o.Kind)
+		}
+		return id, ""
+	}
+
+	add := func(id catalog.Identification, override string, in Instance) {
+		in.Status, in.Reason, in.Override = string(id.Status), id.Reason, override
+		if id.Ref.Repository != "" {
+			in.Repository = id.Ref.Name()
+		}
 		if id.Version != nil {
 			in.Version = id.Version.String()
 		}
 		switch id.Status {
 		case catalog.StatusInHouse:
 			inv.InHouse = append(inv.InHouse, in)
+			return
+		case catalog.StatusIgnored:
+			inv.Ignored = append(inv.Ignored, in)
 			return
 		case catalog.StatusUnrecognized:
 			name := id.Ref.Name()
@@ -101,7 +150,7 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 			for _, id := range cat.ClusterVersions(cl.KubernetesVersion) {
 				in := base
 				in.Image = cl.KubernetesVersion
-				add(id, in)
+				add(id, "", in)
 			}
 		}
 		rows, err := st.CurrentImages(ctx, cl.ID)
@@ -112,7 +161,8 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 			in := base
 			in.Namespace, in.Kind, in.Workload, in.Container = r.Namespace, r.Kind, r.Workload, r.Container
 			in.Image, in.DesiredReplicas, in.Running = r.Image, r.DesiredReplicas, r.Running
-			add(cat.Identify(r.Image), in)
+			id, override := identify(r.Image)
+			add(id, override, in)
 		}
 	}
 

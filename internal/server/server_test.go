@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -291,5 +292,178 @@ func TestMissingAssetIs404(t *testing.T) {
 	}
 	if c := get("/components/redis"); c != http.StatusOK {
 		t.Errorf("client route: %d", c)
+	}
+}
+
+func call(t *testing.T, method, url, body string, admin bool) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest(method, url, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if admin {
+		req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	if out == nil {
+		out = map[string]any{"raw": string(raw)}
+	}
+	return resp.StatusCode, out
+}
+
+func TestClusterManagement(t *testing.T) {
+	srv, db, oldToken := setup(t)
+	u := srv.URL + "/api/v1"
+
+	if code, _ := call(t, "POST", u+"/clusters", `{"name":"ds-prod","stage":"live","tenant":"DS"}`, false); code != 401 {
+		t.Errorf("create without admin token: %d", code)
+	}
+	if code, _ := call(t, "POST", u+"/clusters", `{"name":"DS Prod","stage":"live","tenant":"DS"}`, true); code != 400 {
+		t.Errorf("invalid name: %d", code)
+	}
+	if code, _ := call(t, "POST", u+"/clusters", `{"name":"x","stage":"qa","tenant":"DS"}`, true); code != 400 {
+		t.Errorf("unknown stage: %d", code)
+	}
+	code, out := call(t, "POST", u+"/clusters", `{"name":"ds-prod","stage":"live","tenant":"DS"}`, true)
+	token, _ := out["token"].(string)
+	if code != 201 || token == "" {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	if code, _ := call(t, "POST", u+"/clusters", `{"name":"ds-prod","stage":"live","tenant":"DS"}`, true); code != 409 {
+		t.Errorf("duplicate: %d", code)
+	}
+	if got := push(t, srv.URL, token, snap("v1.33.6+k3s1", map[string]string{"web": "nginx:1.25.4"})); got != 202 {
+		t.Errorf("new token must ingest: %d", got)
+	}
+
+	// Edit: stage and tenant must exist; tenant DS was created along with the cluster.
+	if code, _ := call(t, "PATCH", u+"/clusters/ds-prod", `{"stage":"prelive","tenant":"nope"}`, true); code != 404 {
+		t.Errorf("edit to unknown tenant: %d", code)
+	}
+	if code, out := call(t, "PATCH", u+"/clusters/ds-prod", `{"stage":"prelive","tenant":"DS"}`, true); code != 200 || out["stage"] != "prelive" {
+		t.Errorf("edit: %d %v", code, out)
+	}
+
+	// Rotation: the old token stops working at once, the new one works.
+	code, out = call(t, "POST", u+"/clusters/it-hetzner/rotate-token", "", true)
+	newToken, _ := out["token"].(string)
+	if code != 200 || newToken == "" {
+		t.Fatalf("rotate: %d %v", code, out)
+	}
+	if got := push(t, srv.URL, oldToken, snap("v1.36.4+k3s1", nil)); got != 401 {
+		t.Errorf("old token after rotation: %d", got)
+	}
+	if got := push(t, srv.URL, newToken, snap("v1.36.4+k3s1", nil)); got != 202 {
+		t.Errorf("new token after rotation: %d", got)
+	}
+
+	// Export is admin-only and carries history but no token hashes.
+	if code, _ := call(t, "GET", u+"/clusters/ds-prod/export", "", false); code != 401 {
+		t.Errorf("export without admin: %d", code)
+	}
+	code, out = call(t, "GET", u+"/clusters/ds-prod/export", "", true)
+	if code != 200 || out["format"] != "service-inventory/cluster-export" || len(out["images"].([]any)) != 1 || len(out["changes"].([]any)) != 1 {
+		t.Errorf("export: %d %v", code, out)
+	}
+	if strings.Contains(fmt.Sprint(out), "token") {
+		t.Error("export must not contain token data")
+	}
+
+	// Stage / tenant in use can't be deleted.
+	if code, _ := call(t, "DELETE", u+"/stages/prelive", "", true); code != 409 {
+		t.Errorf("delete stage in use: %d", code)
+	}
+	if code, _ := call(t, "DELETE", u+"/tenants/DS", "", true); code != 409 {
+		t.Errorf("delete tenant in use: %d", code)
+	}
+	if code, _ := call(t, "DELETE", u+"/clusters/ds-prod", "", true); code != 200 {
+		t.Errorf("delete cluster: %d", code)
+	}
+	if _, err := db.GetCluster(context.Background(), "ds-prod"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("cluster still there: %v", err)
+	}
+	if code, _ := call(t, "DELETE", u+"/tenants/DS", "", true); code != 200 {
+		t.Errorf("delete unused tenant: %d", code)
+	}
+}
+
+func TestSettingsAndManifest(t *testing.T) {
+	srv, _, _ := setup(t)
+	u := srv.URL + "/api/v1"
+	// Anything that could break out of the YAML line is rejected.
+	for _, img := range []string{"evil\n  hostNetwork: true", "a b", `x"y`, "img:1 # c"} {
+		body, _ := json.Marshal(map[string]string{"agentImage": img})
+		if code, _ := call(t, "PUT", u+"/settings", string(body), true); code != 400 {
+			t.Errorf("image %q accepted: %d", img, code)
+		}
+	}
+	for _, su := range []string{"ftp://x", "https://", "https://u:p@x", "https://x/?a=b", "not a url"} {
+		body, _ := json.Marshal(map[string]string{"serverURL": su})
+		if code, _ := call(t, "PUT", u+"/settings", string(body), true); code != 400 {
+			t.Errorf("server URL %q accepted: %d", su, code)
+		}
+	}
+	req, _ := http.NewRequest("PUT", u+"/settings", strings.NewReader(`agentImage=x`))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 415 {
+		t.Errorf("form posts must be refused: %v %v", resp.StatusCode, err)
+	}
+
+	code, out := call(t, "PUT", u+"/settings", `{"serverURL":"https://inv.example.com/","agentImage":"registry.example.com/devops/service-inventory:0.7.0"}`, true)
+	if code != 200 || out["serverURL"] != "https://inv.example.com" {
+		t.Fatalf("settings: %d %v", code, out)
+	}
+	resp, err := http.Get(u + "/agent/manifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	m, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(m), "image: registry.example.com/devops/service-inventory:0.7.0\n") ||
+		strings.Contains(string(m), "replace with your registry image") {
+		t.Errorf("manifest image not substituted:\n%s", m)
+	}
+	if strings.Contains(string(m), "kind: Secret\n") {
+		t.Error("the manifest must not contain the token Secret")
+	}
+	for _, line := range strings.Split(string(m), "\n") {
+		if l := strings.TrimSpace(line); strings.HasPrefix(l, "resources:") && strings.Contains(l, "secrets") ||
+			strings.HasPrefix(l, "verbs:") && strings.ContainsAny(strings.TrimPrefix(l, "verbs:"), "*") {
+			t.Errorf("agent RBAC must stay read-only without Secrets: %q", l)
+		}
+	}
+}
+
+func TestOverrideEndpoints(t *testing.T) {
+	srv, _, token := setup(t)
+	u := srv.URL + "/api/v1"
+	push(t, srv.URL, token, snap("v1.36.4+k3s1", map[string]string{"tool": "ghcr.io/acme/tool:0.4.0"}))
+	if code, _ := call(t, "PUT", u+"/catalog/overrides", `{"repository":"ghcr.io/acme/tool","kind":"map","component":"nope"}`, true); code != 400 {
+		t.Errorf("unknown component: %d", code)
+	}
+	if code, _ := call(t, "PUT", u+"/catalog/overrides", `{"repository":"ghcr.io/acme/tool:0.4.0","kind":"ignore"}`, true); code != 400 {
+		t.Errorf("repository with tag: %d", code)
+	}
+	if code, _ := call(t, "PUT", u+"/catalog/overrides", `{"repository":"ghcr.io/acme/tool","kind":"inhouse"}`, true); code != 200 {
+		t.Fatalf("set: %d", code)
+	}
+	_, inv := call(t, "GET", u+"/inventory", "", false)
+	if len(inv["inHouse"].([]any)) != 1 || len(inv["unrecognized"].([]any)) != 0 {
+		t.Errorf("override not applied: %v", inv)
+	}
+	if code, _ := call(t, "DELETE", u+"/catalog/overrides?repository=ghcr.io/acme/tool", "", true); code != 200 {
+		t.Errorf("delete: %d", code)
+	}
+	_, inv = call(t, "GET", u+"/inventory", "", false)
+	if len(inv["unrecognized"].([]any)) != 1 {
+		t.Errorf("undo must bring it back: %v", inv)
 	}
 }

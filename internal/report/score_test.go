@@ -103,11 +103,11 @@ func TestDrift(t *testing.T) {
 	in := func(stage, cluster, v string) ScoredInstance {
 		return ScoredInstance{Instance: inventory.Instance{Stage: stage, Cluster: cluster, Version: v, Status: "identified"}}
 	}
-	d := drift([]ScoredInstance{in("staging", "it-hetzner", "1.11.3"), in("prelive", "it-aws-test", "1.10.4"), in("live", "it-aws-prod", "1.11.5")})
+	d := driftDefault([]ScoredInstance{in("staging", "it-hetzner", "1.11.3"), in("prelive", "it-aws-test", "1.10.4"), in("live", "it-aws-prod", "1.11.5")})
 	if len(d) != 2 || d[0].Kind != DriftPending || d[1].Kind != DriftAnomaly {
 		t.Fatalf("drift: %+v", d)
 	}
-	if d := drift([]ScoredInstance{in("staging", "a", "1.0.0"), in("live", "b", "1.0.0")}); len(d) != 0 {
+	if d := driftDefault([]ScoredInstance{in("staging", "a", "1.0.0"), in("live", "b", "1.0.0")}); len(d) != 0 {
 		t.Errorf("equal versions: %+v", d)
 	}
 }
@@ -148,8 +148,13 @@ func TestDriftPartialPromotion(t *testing.T) {
 	in := func(stage, cluster, v string) ScoredInstance {
 		return ScoredInstance{Instance: inventory.Instance{Stage: stage, Cluster: cluster, Version: v, Status: "identified"}}
 	}
-	d := drift([]ScoredInstance{in("staging", "stg", "1.11.5"), in("live", "prod-a", "1.11.5"), in("live", "prod-b", "1.10.4")})
+	d := driftDefault([]ScoredInstance{in("staging", "stg", "1.11.5"), in("live", "prod-a", "1.11.5"), in("live", "prod-b", "1.10.4")})
 	if len(d) != 1 || d[0].Kind != DriftPending || !strings.Contains(d[0].Text, "prod-b") {
 		t.Errorf("partial promotion must name the lagging cluster: %+v", d)
 	}
+}
+
+// driftDefault: the default stage order, one tenant, no "only in" info (no cluster list).
+func driftDefault(insts []ScoredInstance) []Drift {
+	return drift(insts, map[string]int{"staging": 1, "prelive": 2, "live": 3}, nil)
 }

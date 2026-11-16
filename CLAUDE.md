@@ -9,7 +9,8 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1–6 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI) done; next 6.5 (UI redesign + cluster management), then 7 (backups/logging/audit). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–6.5 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
+redesign + cluster management) done; next 7 (backups/restore/logging/audit). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -38,7 +39,8 @@ make dev-down
 
 ## Layout / architecture
 - `cmd/inv` — single binary: `agent`, `server`, `cluster add|list|rotate-token|delete` (operator
-  command that works directly on the DB file; prints the agent token once) and `upstream` (debug:
+  fallback that works directly on the DB file; prints the agent token once — the UI does the same via
+  Settings → Clusters) and `upstream` (debug:
   print upstream lines/advisories for a component, optionally for one `--version`).
 - `internal/snapshot` — **wire contract** agent → server. Contains no cluster identity (server derives
   it from the token). Bump `SchemaVersion` on breaking changes.
@@ -47,10 +49,13 @@ make dev-down
   operator CRDs, are grouped under that owner). Workload *templates* give the intended image (so
   scaled-to-0 workloads count); pods give what actually runs (several `Running` entries = rollout in
   progress). `Agent` pushes gzipped JSON with retry on 5xx/429/network errors, never on 4xx.
-- `internal/store` — `Store` interface + `Diff` (pure; history tracks *template* image changes only,
+- `internal/store` — `Store` interface (clusters, user-defined ordered **stages**, **tenants**, catalog
+  overrides, settings, history) + `Diff` (pure; history tracks *template* image changes only,
   not replicas/running pods, to avoid noise). First snapshot of a cluster is one `first_snapshot`
   event, not N "added". `internal/store/sqlite` — schema in `schema.sql`, versioned via
-  `PRAGMA user_version`; single connection (SQLite single-writer).
+  `PRAGMA user_version`; single connection (SQLite single-writer). Migrations run with foreign keys off
+  (needed to rebuild a referenced table) and `foreign_key_check` before commit. `clusters.stage/tenant`
+  reference `stages`/`tenants` (rename cascades, delete in use fails).
 - `internal/server` — HTTP API. Ingest authenticates by SHA-256 token hash (`internal/auth`), enforces
   compressed/decompressed size limits (413) and `SchemaVersion`. Read endpoints are unauthenticated
   until milestone 8 and only answer allowlisted `Host` headers (localhost + `INV_ALLOWED_HOSTS`) to
@@ -63,8 +68,8 @@ make dev-down
   pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
   "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
   version, not images.
-- `internal/inventory` — computed on read from current state + catalog (catalog changes apply
-  without re-ingest). Server flag `--internal-registries` marks in-house images.
+- `internal/inventory` — computed on read from current state + catalog + catalog overrides (map /
+  inhouse / ignore per repository, applied **only to images the catalog doesn't recognize**). Server flag `--internal-registries` marks in-house images.
 - `internal/upstream` — `Fetcher` (cached GET/POST in `upstream_cache`, ETag revalidation, stale
   fallback) and `Client.Refresh` (endoflife.date lines, GitHub releases/archived, advisories).
   `AdvisoriesFor` matches versions against ranges **locally** for both OSV and GitHub advisories —
@@ -73,12 +78,18 @@ make dev-down
 - `internal/policy` — parse/resolve version policies to a target (line + version). `UsableLines`,
   `Position` and `IsEOL` are the single definition of "release line", shared with the scorer — don't
   re-implement line matching elsewhere.
+- Admin endpoints (`internal/server/admin.go`: clusters, stages, tenants, overrides, settings, export)
+  validate names strictly (they end up in YAML/kubectl) and reject anything but JSON bodies.
 - Write endpoints require `INV_ADMIN_TOKEN` (bearer, constant-time compare, ≥24 chars); unset = writes
   disabled. Interim until Google sign-in; also JSON-only (cross-site form posts can't write).
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
-  table-tested in `score_test.go`); `Build` combines inventory + upstream + policies + drift
-  (newest version per stage along staging→prelive→live: pending promotion vs anomaly).
-- `web/` — Vite + React + TS UI. `web/embed.go` embeds `web/dist` (`.keep` keeps the dir for
+  table-tested in `score_test.go`); `ActionFor` derives the "Recommended action" sentence from a score
+  (never the reverse). `Build` combines inventory + upstream + policies + drift: per **tenant**, along
+  the configured stage order; entries carry the clusters involved so the UI hides drift between
+  clusters that aren't selected; `only_in` is info, not an anomaly.
+- `web/` — Vite + React + TS UI. Sidebar layout; cluster picker (Overview + Changes only) keeps its
+  selection in `?clusters=`; `model.tsx` (selection, notes), `clusterview.ts` (workloads per cluster).
+  Fonts bundled via `@fontsource-variable/*`. `web/embed.go` embeds `web/dist` (`.keep` keeps the dir for
   `go build` without a UI build; the build script recreates it). Server serves it with SPA fallback
   and a strict CSP (`default-src 'self'`) — don't add inline scripts/styles or third-party origins.
   `web/src/api.ts` mirrors the Go JSON types; keep them in sync when changing API structs. The admin
@@ -86,8 +97,10 @@ make dev-down
 - SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
 - Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
-- `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment. The ClusterRole must
-  match exactly what `collector.go` lists.
+- `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment (no token). Embedded
+  via `deploy/embed.go` and served at `/api/v1/agent/manifest` with the configured image. The
+  ClusterRole must match exactly what `collector.go` lists. The token Secret is generated in the
+  browser (never in a URL) — `agentSecretYAML` in `web/src/api.ts`.
 - `dev/seed/seed.sh` — per-cluster version tables; heavy components are scaled to 0.
 
 ## Invariants (easy to violate, hard to notice)

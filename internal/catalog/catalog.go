@@ -83,6 +83,7 @@ const (
 	StatusUnpinned     Status = "unpinned"     // known component, but tag doesn't pin a version
 	StatusInHouse      Status = "in_house"     // from an internal registry: inventory only
 	StatusUnrecognized Status = "unrecognized" // not in the catalog
+	StatusIgnored      Status = "ignored"      // unrecognized, and the user chose to ignore it
 )
 
 // Identification is the result of matching one image against the catalog.
@@ -111,6 +112,17 @@ func (c *Catalog) Identify(image string) Identification {
 		id.Status, id.Reason = StatusUnrecognized, "image not in catalog"
 		return id
 	}
+	return identifyAs(id, comp)
+}
+
+// IdentifyAs identifies image as the given component regardless of the catalog's image patterns
+// (a user mapped an unrecognized repository to it). The version rules are the component's own.
+func (c *Catalog) IdentifyAs(image string, comp *Component) Identification {
+	return identifyAs(Identification{Ref: ParseRef(image)}, comp)
+}
+
+func identifyAs(id Identification, comp *Component) Identification {
+	ref := id.Ref
 	id.Component = comp
 	if ref.Tag == "" { // digest-only
 		id.Status, id.Reason = StatusUnpinned, "pinned by digest only — version unknown"

@@ -104,7 +104,7 @@ func runCluster(args []string) error {
 	fs := flag.NewFlagSet("cluster "+args[0], flag.ExitOnError)
 	dbPath := fs.String("db", defaultDB(), "SQLite database path (env INV_DB)")
 	name := fs.String("name", "", "cluster name, e.g. it-hetzner")
-	stage := fs.String("stage", "", "staging | prelive | live")
+	stage := fs.String("stage", "", "a configured stage (default: staging | prelive | live)")
 	tenant := fs.String("tenant", "", "tenant using the cluster, e.g. IT or DS")
 	_ = fs.Parse(args[1:])
 
@@ -117,8 +117,8 @@ func runCluster(args []string) error {
 
 	switch args[0] {
 	case "add":
-		if *name == "" || *tenant == "" || !store.Stage(*stage).Valid() {
-			return errors.New("add requires --name, --tenant and --stage (staging|prelive|live)")
+		if *name == "" || *tenant == "" || *stage == "" {
+			return errors.New("add requires --name, --tenant and --stage (one of the configured stages, default staging|prelive|live)")
 		}
 		c, err := db.CreateCluster(ctx, *name, store.Stage(*stage), *tenant)
 		if err != nil {

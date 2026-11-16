@@ -77,6 +77,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
 	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
+	mux.HandleFunc("GET /api/v1/catalog/overrides", s.listOverrides)
+	mux.HandleFunc("GET /api/v1/stages", s.listStages)
+	mux.HandleFunc("GET /api/v1/tenants", s.listTenants)
+	mux.HandleFunc("GET /api/v1/settings", s.getSettings)
+	mux.HandleFunc("GET /api/v1/agent/manifest", s.agentManifest)
+	// Admin: cluster management, stages, tenants, overrides, settings. JSON-only bodies (decodeJSON).
+	mux.HandleFunc("POST /api/v1/clusters", s.requireAdmin(s.createCluster))
+	mux.HandleFunc("PATCH /api/v1/clusters/{name}", s.requireAdmin(s.updateCluster))
+	mux.HandleFunc("DELETE /api/v1/clusters/{name}", s.requireAdmin(s.deleteCluster))
+	mux.HandleFunc("POST /api/v1/clusters/{name}/rotate-token", s.requireAdmin(s.rotateToken))
+	mux.HandleFunc("GET /api/v1/clusters/{name}/export", s.requireAdmin(s.exportCluster))
+	mux.HandleFunc("POST /api/v1/stages", s.requireAdmin(s.createStage))
+	mux.HandleFunc("PUT /api/v1/stages", s.requireAdmin(s.reorderStages))
+	mux.HandleFunc("DELETE /api/v1/stages/{name}", s.requireAdmin(s.deleteStage))
+	mux.HandleFunc("POST /api/v1/tenants", s.requireAdmin(s.createTenant))
+	mux.HandleFunc("PATCH /api/v1/tenants/{name}", s.requireAdmin(s.renameTenant))
+	mux.HandleFunc("DELETE /api/v1/tenants/{name}", s.requireAdmin(s.deleteTenant))
+	mux.HandleFunc("PUT /api/v1/catalog/overrides", s.requireAdmin(s.setOverride))
+	mux.HandleFunc("DELETE /api/v1/catalog/overrides", s.requireAdmin(s.deleteOverride))
+	mux.HandleFunc("PUT /api/v1/settings", s.requireAdmin(s.putSettings))
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
 }
@@ -269,8 +289,8 @@ func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := []clusterJSON{}
-	for _, c := range cs {
-		out = append(out, clusterJSON{c.Name, string(c.Stage), c.Tenant, c.KubernetesVersion, c.AgentVersion, c.LastSeenAt})
+	for i := range cs {
+		out = append(out, toClusterJSON(&cs[i]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

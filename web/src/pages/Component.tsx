@@ -68,10 +68,10 @@ export default function ComponentPage() {
           {c && c.drift.length > 0 ? (
             <ul className="list">
               {c.drift.map((x, i) => (
-                <li key={i}><Tag tone={x.kind === "anomaly" ? "warn" : "neutral"}>{x.kind === "anomaly" ? "anomaly" : "pending"}</Tag> {x.text}</li>
+                <li key={i}><Tag tone={x.kind === "anomaly" ? "warn" : x.kind === "only_in" ? "info" : "neutral"}>{x.kind === "anomaly" ? "anomaly" : x.kind === "only_in" ? "info" : "pending"}</Tag> <span className="muted">{x.tenant}:</span> {x.text}</li>
               ))}
             </ul>
-          ) : <Empty>Same version along staging → prelive → live.</Empty>}
+          ) : <Empty>Same version along the promotion path in every tenant.</Empty>}
         </Card>
       </div>
 
@@ -107,7 +107,7 @@ function Instances({ c }: { c: ComponentReport }) {
     <Card title={`Where it runs (${c.instances.length})`}>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Level</th><th>Cluster</th><th>Workload</th><th>Version</th><th>Why</th></tr></thead>
+          <thead><tr><th>Level</th><th>Cluster</th><th>Workload</th><th>Version</th><th>Recommended action</th><th>Why</th></tr></thead>
           <tbody>
             {c.instances.map((i, n) => (
               <tr key={n}>
@@ -119,6 +119,7 @@ function Instances({ c }: { c: ComponentReport }) {
                   {(i.running?.length ?? 0) > 1 && <Tag tone="warn" title={i.running!.map((r) => `${r.image}: ${r.ready}/${r.pods} ready`).join("\n")}>rollout in progress</Tag>}
                 </td>
                 <td className="mono">{i.version || "?"}<div className="subtle mono" title={i.image}>{i.image.length > 48 ? "…" + i.image.slice(-46) : i.image}</div></td>
+                <td><b>{i.action.text}</b><div className="subtle">{i.action.why}</div></td>
                 <td>
                   {i.score.reasons.length === 0 ? <span className="muted">At target, latest patch.</span> : <Reasons reasons={i.score.reasons} />}
                   {i.score.notes?.map((note, k) => <div key={k} className="subtle">ℹ {note}</div>)}

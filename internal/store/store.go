@@ -11,11 +11,14 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrExists   = errors.New("already exists")
+	ErrNotFound     = errors.New("not found")
+	ErrExists       = errors.New("already exists")
+	ErrInUse        = errors.New("in use")
+	ErrUnknownStage = errors.New("unknown stage")
 )
 
-// Stage is a cluster's position in the promotion path, used for drift detection.
+// Stage is a cluster's position in the promotion path, used for drift detection. Stages are
+// user-defined and ordered (see ListStages); these are the defaults a new database starts with.
 type Stage string
 
 const (
@@ -24,20 +27,38 @@ const (
 	StageLive    Stage = "live"
 )
 
-// Rank orders stages along the promotion path (staging < prelive < live).
-func (s Stage) Rank() int {
-	switch s {
-	case StageStaging:
-		return 1
-	case StagePrelive:
-		return 2
-	case StageLive:
-		return 3
-	}
-	return 0
+// StageInfo is one entry of the ordered stage list.
+type StageInfo struct {
+	Name     string `json:"name"`
+	Position int    `json:"position"` // 1 = earliest in the promotion path
+	Clusters int    `json:"clusters"` // how many clusters use it
 }
 
-func (s Stage) Valid() bool { return s.Rank() > 0 }
+type TenantInfo struct {
+	Name     string `json:"name"`
+	Clusters int    `json:"clusters"`
+}
+
+// OverrideKind is the decision made about an image the catalog doesn't recognize.
+type OverrideKind string
+
+const (
+	OverrideMap     OverrideKind = "map"     // treat as Component
+	OverrideInHouse OverrideKind = "inhouse" // our own image: listed, not checked upstream
+	OverrideIgnore  OverrideKind = "ignore"  // hide from the unrecognized list
+)
+
+func (k OverrideKind) Valid() bool {
+	return k == OverrideMap || k == OverrideInHouse || k == OverrideIgnore
+}
+
+// CatalogOverride applies to every image of Repository (registry/repository, as catalog.Ref.Name()).
+type CatalogOverride struct {
+	Repository string       `json:"repository"`
+	Kind       OverrideKind `json:"kind"`
+	Component  string       `json:"component,omitempty"` // for OverrideMap
+	UpdatedAt  time.Time    `json:"updatedAt"`
+}
 
 type Cluster struct {
 	ID                int64
@@ -100,10 +121,36 @@ type IngestResult struct {
 }
 
 type Store interface {
+	// CreateCluster needs an existing stage (ErrUnknownStage); a new tenant is created on the fly.
 	CreateCluster(ctx context.Context, name string, stage Stage, tenant string) (*Cluster, error)
 	ListClusters(ctx context.Context) ([]Cluster, error)
 	GetCluster(ctx context.Context, name string) (*Cluster, error)
+	// UpdateCluster changes stage and tenant; both must exist (ErrUnknownStage / ErrNotFound).
+	UpdateCluster(ctx context.Context, name string, stage Stage, tenant string) (*Cluster, error)
 	DeleteCluster(ctx context.Context, name string) error
+
+	// Stages, ordered by position. DeleteStage returns ErrInUse while clusters use it;
+	// ReorderStages takes every stage name exactly once, earliest first.
+	ListStages(ctx context.Context) ([]StageInfo, error)
+	CreateStage(ctx context.Context, name string) error
+	DeleteStage(ctx context.Context, name string) error
+	ReorderStages(ctx context.Context, names []string) error
+
+	// Tenants. RenameTenant updates every cluster of that tenant; DeleteTenant returns ErrInUse while
+	// clusters use it.
+	ListTenants(ctx context.Context) ([]TenantInfo, error)
+	CreateTenant(ctx context.Context, name string) error
+	RenameTenant(ctx context.Context, from, to string) error
+	DeleteTenant(ctx context.Context, name string) error
+
+	// Catalog overrides for unrecognized images, keyed by repository.
+	ListOverrides(ctx context.Context) ([]CatalogOverride, error)
+	SetOverride(ctx context.Context, o CatalogOverride) error
+	DeleteOverride(ctx context.Context, repository string) error
+
+	// Settings: small key/value pairs edited in the UI (agent image, server URL, ...).
+	GetSettings(ctx context.Context) (map[string]string, error)
+	SetSetting(ctx context.Context, key, value string) error
 
 	// AddToken stores a token hash for the cluster; prefix is a short non-secret label for display.
 	AddToken(ctx context.Context, clusterID int64, hash, prefix string) error
@@ -116,6 +163,8 @@ type Store interface {
 	Ingest(ctx context.Context, clusterID int64, snap *snapshot.Snapshot) (*IngestResult, error)
 	CurrentImages(ctx context.Context, clusterID int64) ([]ImageRow, error)
 	ListChanges(ctx context.Context, clusterName string, limit int) ([]Change, error)
+	// AllChanges returns a cluster's full history, oldest first (for exports).
+	AllChanges(ctx context.Context, clusterID int64) ([]Change, error)
 
 	// Version policies: scope "global" or a component id -> policy spec (see internal/policy).
 	ListPolicies(ctx context.Context) (map[string]string, error)

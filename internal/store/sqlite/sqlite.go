@@ -36,6 +36,39 @@ var migrations = []string{
 		spec       TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// User-defined stages and tenants. clusters is rebuilt (SQLite can't drop a CHECK constraint) so
+	// stage/tenant reference those tables: renaming a tenant cascades, deleting one in use fails.
+	// Runs with foreign_keys=OFF (see migrate), so DROP TABLE doesn't cascade into the child tables.
+	`CREATE TABLE stages (
+		name     TEXT PRIMARY KEY,
+		position INTEGER NOT NULL
+	);
+	INSERT INTO stages(name, position) VALUES ('staging', 1), ('prelive', 2), ('live', 3);
+	CREATE TABLE tenants (name TEXT PRIMARY KEY);
+	INSERT OR IGNORE INTO tenants(name) SELECT DISTINCT tenant FROM clusters;
+	CREATE TABLE clusters_new (
+		id                 INTEGER PRIMARY KEY,
+		name               TEXT NOT NULL UNIQUE,
+		stage              TEXT NOT NULL REFERENCES stages(name) ON UPDATE CASCADE,
+		tenant             TEXT NOT NULL REFERENCES tenants(name) ON UPDATE CASCADE,
+		created_at         TEXT NOT NULL,
+		last_seen_at       TEXT,
+		kubernetes_version TEXT NOT NULL DEFAULT '',
+		agent_version      TEXT NOT NULL DEFAULT ''
+	);
+	INSERT INTO clusters_new SELECT id, name, stage, tenant, created_at, last_seen_at, kubernetes_version, agent_version FROM clusters;
+	DROP TABLE clusters;
+	ALTER TABLE clusters_new RENAME TO clusters;
+	CREATE TABLE catalog_overrides (
+		repository TEXT PRIMARY KEY,
+		kind       TEXT NOT NULL CHECK (kind IN ('map', 'inhouse', 'ignore')),
+		component  TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE settings (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);`,
 }
 
 type DB struct{ db *sql.DB }
@@ -58,24 +91,43 @@ func Open(path string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
+// migrate runs pending migrations on one pinned connection with foreign keys off (required to
+// rebuild a referenced table, see migration 4) and checks foreign keys before turning them back on.
 func migrate(db *sql.DB) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	var v int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
+	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 		return err
 	}
 	if v > len(migrations) {
 		return fmt.Errorf("database schema v%d is newer than this binary supports (v%d)", v, len(migrations))
 	}
+	if v == len(migrations) {
+		return nil
+	}
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, "PRAGMA foreign_keys = ON")
 	for ; v < len(migrations); v++ {
-		tx, err := db.Begin()
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[v]); err != nil {
+		if _, err := tx.ExecContext(ctx, migrations[v]); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration to v%d: %w", v+1, err)
 		}
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", v+1)); err != nil {
+		if err := foreignKeyCheck(ctx, tx); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration to v%d: %w", v+1, err)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", v+1)); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -84,6 +136,23 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func foreignKeyCheck(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		var table string
+		var rowid sql.NullInt64
+		var parent string
+		var fkid int
+		_ = rows.Scan(&table, &rowid, &parent, &fkid)
+		return fmt.Errorf("foreign key violation: %s row %v -> %s", table, rowid.Int64, parent)
+	}
+	return rows.Err()
 }
 
 func (d *DB) GetCache(ctx context.Context, key string) (*store.CacheEntry, error) {
@@ -149,17 +218,72 @@ func scanCluster(row interface{ Scan(...any) error }) (*store.Cluster, error) {
 }
 
 func (d *DB) CreateCluster(ctx context.Context, name string, stage store.Stage, tenant string) (*store.Cluster, error) {
-	_, err := d.db.ExecContext(ctx,
-		"INSERT INTO clusters(name, stage, tenant, created_at) VALUES (?,?,?,?)",
-		name, string(stage), tenant, now().Format(ts))
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := stageExists(ctx, tx, string(stage)); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO tenants(name) VALUES (?)", tenant); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO clusters(name, stage, tenant, created_at) VALUES (?,?,?,?)",
+		name, string(stage), tenant, now().Format(ts)); err != nil {
+		if isUnique(err) {
 			return nil, store.ErrExists
 		}
 		return nil, err
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	return d.GetCluster(ctx, name)
 }
+
+func (d *DB) UpdateCluster(ctx context.Context, name string, stage store.Stage, tenant string) (*store.Cluster, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := stageExists(ctx, tx, string(stage)); err != nil {
+		return nil, err
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM tenants WHERE name=?", tenant).Scan(&n); err != nil {
+		return nil, err
+	} else if n == 0 {
+		return nil, fmt.Errorf("tenant %q: %w", tenant, store.ErrNotFound)
+	}
+	res, err := tx.ExecContext(ctx, "UPDATE clusters SET stage=?, tenant=? WHERE name=?", string(stage), tenant, name)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, store.ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return d.GetCluster(ctx, name)
+}
+
+func stageExists(ctx context.Context, q interface {
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}, name string) error {
+	var n int
+	if err := q.QueryRowContext(ctx, "SELECT count(*) FROM stages WHERE name=?", name).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w %q", store.ErrUnknownStage, name)
+	}
+	return nil
+}
+
+func isUnique(err error) bool { return err != nil && strings.Contains(err.Error(), "UNIQUE") }
 
 func (d *DB) GetCluster(ctx context.Context, name string) (*store.Cluster, error) {
 	return scanCluster(d.db.QueryRowContext(ctx, "SELECT "+clusterCols+" FROM clusters WHERE name=?", name))
@@ -379,5 +503,219 @@ func (d *DB) SetPolicy(ctx context.Context, scope, spec string) error {
 
 func (d *DB) DeletePolicy(ctx context.Context, scope string) error {
 	_, err := d.db.ExecContext(ctx, "DELETE FROM policies WHERE scope=?", scope)
+	return err
+}
+
+func (d *DB) AllChanges(ctx context.Context, clusterID int64) ([]store.Change, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT ch.id, ch.cluster_id, c.name, ch.at, ch.type, ch.namespace, ch.kind,
+		ch.workload, ch.container, ch.old_value, ch.new_value FROM changes ch JOIN clusters c ON c.id=ch.cluster_id
+		WHERE ch.cluster_id=? ORDER BY ch.at, ch.id`, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Change
+	for rows.Next() {
+		var c store.Change
+		var at string
+		if err := rows.Scan(&c.ID, &c.ClusterID, &c.Cluster, &at, &c.Type, &c.Namespace, &c.Kind, &c.Workload,
+			&c.Container, &c.OldValue, &c.NewValue); err != nil {
+			return nil, err
+		}
+		if t := parseTime(sql.NullString{String: at, Valid: true}); t != nil {
+			c.At = *t
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) ListStages(ctx context.Context) ([]store.StageInfo, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT s.name, s.position, (SELECT count(*) FROM clusters c WHERE c.stage=s.name)
+		FROM stages s ORDER BY s.position, s.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []store.StageInfo{}
+	for rows.Next() {
+		var st store.StageInfo
+		if err := rows.Scan(&st.Name, &st.Position, &st.Clusters); err != nil {
+			return nil, err
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) CreateStage(ctx context.Context, name string) error {
+	_, err := d.db.ExecContext(ctx,
+		"INSERT INTO stages(name, position) VALUES (?, (SELECT coalesce(max(position), 0) + 1 FROM stages))", name)
+	if isUnique(err) {
+		return store.ErrExists
+	}
+	return err
+}
+
+func (d *DB) DeleteStage(ctx context.Context, name string) error {
+	return d.deleteUnused(ctx, "stages", "stage", name)
+}
+
+// deleteUnused deletes a stage/tenant row unless a cluster still uses it.
+func (d *DB) deleteUnused(ctx context.Context, table, col, name string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var used int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM clusters WHERE "+col+"=?", name).Scan(&used); err != nil {
+		return err
+	}
+	if used > 0 {
+		return fmt.Errorf("%w by %d cluster(s)", store.ErrInUse, used)
+	}
+	res, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE name=?", name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func (d *DB) ReorderStages(ctx context.Context, names []string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var total int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM stages").Scan(&total); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		seen[n] = true
+	}
+	if len(names) != total || len(seen) != total {
+		return fmt.Errorf("reorder needs every stage exactly once (%d stages, got %d names)", total, len(names))
+	}
+	for i, n := range names {
+		res, err := tx.ExecContext(ctx, "UPDATE stages SET position=? WHERE name=?", i+1, n)
+		if err != nil {
+			return err
+		}
+		if c, _ := res.RowsAffected(); c == 0 {
+			return fmt.Errorf("%w %q", store.ErrUnknownStage, n)
+		}
+	}
+	return tx.Commit()
+}
+
+func (d *DB) ListTenants(ctx context.Context) ([]store.TenantInfo, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT t.name, (SELECT count(*) FROM clusters c WHERE c.tenant=t.name)
+		FROM tenants t ORDER BY t.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []store.TenantInfo{}
+	for rows.Next() {
+		var t store.TenantInfo
+		if err := rows.Scan(&t.Name, &t.Clusters); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) CreateTenant(ctx context.Context, name string) error {
+	_, err := d.db.ExecContext(ctx, "INSERT INTO tenants(name) VALUES (?)", name)
+	if isUnique(err) {
+		return store.ErrExists
+	}
+	return err
+}
+
+// RenameTenant relies on ON UPDATE CASCADE to move the clusters along.
+func (d *DB) RenameTenant(ctx context.Context, from, to string) error {
+	res, err := d.db.ExecContext(ctx, "UPDATE tenants SET name=? WHERE name=?", to, from)
+	if isUnique(err) {
+		return store.ErrExists
+	} else if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (d *DB) DeleteTenant(ctx context.Context, name string) error {
+	return d.deleteUnused(ctx, "tenants", "tenant", name)
+}
+
+func (d *DB) ListOverrides(ctx context.Context) ([]store.CatalogOverride, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT repository, kind, component, updated_at FROM catalog_overrides ORDER BY repository")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []store.CatalogOverride{}
+	for rows.Next() {
+		var o store.CatalogOverride
+		var at string
+		if err := rows.Scan(&o.Repository, &o.Kind, &o.Component, &at); err != nil {
+			return nil, err
+		}
+		if t := parseTime(sql.NullString{String: at, Valid: true}); t != nil {
+			o.UpdatedAt = *t
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) SetOverride(ctx context.Context, o store.CatalogOverride) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO catalog_overrides(repository, kind, component, updated_at) VALUES (?,?,?,?)
+		ON CONFLICT(repository) DO UPDATE SET kind=excluded.kind, component=excluded.component, updated_at=excluded.updated_at`,
+		o.Repository, string(o.Kind), o.Component, now().Format(ts))
+	return err
+}
+
+func (d *DB) DeleteOverride(ctx context.Context, repository string) error {
+	res, err := d.db.ExecContext(ctx, "DELETE FROM catalog_overrides WHERE repository=?", repository)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (d *DB) GetSettings(ctx context.Context) (map[string]string, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT key, value FROM settings")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) SetSetting(ctx context.Context, key, value string) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO settings(key, value) VALUES (?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
 }
