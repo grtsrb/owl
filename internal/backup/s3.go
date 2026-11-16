@@ -10,6 +10,8 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"owl/internal/store"
 )
 
 // Remote is where backups are copied. The server only ever uploads, lists and reads — it never
@@ -83,6 +85,9 @@ func (s *S3) Get(ctx context.Context, name string) (io.ReadCloser, int64, error)
 	st, err := o.Stat()
 	if err != nil {
 		o.Close()
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return nil, 0, store.ErrNotFound
+		}
 		return nil, 0, err
 	}
 	return o, st.Size, nil
@@ -95,7 +100,7 @@ func (s *S3) List(ctx context.Context) ([]Object, error) {
 			return nil, o.Err
 		}
 		name := path.Base(o.Key)
-		if validName(name) {
+		if ValidName(name) {
 			out = append(out, Object{Name: name, Size: o.Size, Modified: o.LastModified})
 		}
 	}

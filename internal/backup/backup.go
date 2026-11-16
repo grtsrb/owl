@@ -66,10 +66,8 @@ func ParseTime(v string) (int, int, bool) {
 // Names: owl-20261117-030000.db.gz, optionally with a reason suffix (owl-…-pre-restore.db.gz).
 var reName = regexp.MustCompile(`^owl-(\d{8}-\d{6})(-[a-z-]+)?\.db\.gz$`)
 
-func validName(n string) bool { return reName.MatchString(n) }
-
 // ValidName reports whether n is a backup file name this package produces (safe to use as a path).
-func ValidName(n string) bool { return validName(n) }
+func ValidName(n string) bool { return reName.MatchString(n) }
 
 func nameTime(n string) time.Time {
 	m := reName.FindStringSubmatch(n)
@@ -128,10 +126,12 @@ type Info struct {
 func (m *Manager) Run(ctx context.Context, reason string) (Info, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.run(ctx, reason)
+	return m.run(ctx, reason, true)
 }
 
-func (m *Manager) run(ctx context.Context, reason string) (Info, error) {
+// run takes a backup; upload=false skips uploading and pruning (the pre-restore safety backup must not
+// wait on a slow or unreachable bucket — it's uploaded by the next run or retry).
+func (m *Manager) run(ctx context.Context, reason string, upload bool) (Info, error) {
 	at := m.now().UTC()
 	m.setStatus(func() { m.lastTry = at })
 	info, err := m.take(ctx, at, reason)
@@ -142,6 +142,9 @@ func (m *Manager) run(ctx context.Context, reason string) (Info, error) {
 	}
 	m.setStatus(func() { m.lastOK, m.lastErr = at, "" })
 	m.Log.Info("backup taken", "name", info.Name, "bytes", info.Size, "reason", reason)
+	if !upload {
+		return info, nil
+	}
 	if m.Remote != nil {
 		if err := m.uploadPending(ctx); err != nil {
 			m.setStatus(func() { m.lastErr = "upload: " + err.Error() })
@@ -156,11 +159,20 @@ func (m *Manager) take(ctx context.Context, at time.Time, reason string) (Info, 
 	if err := os.MkdirAll(m.Dir, 0o750); err != nil {
 		return Info{}, err
 	}
-	name := "owl-" + at.Format("20060102-150405")
+	suffix := ""
 	if reason != "" && reason != "scheduled" && reason != "manual" {
-		name += "-" + reason
+		suffix = "-" + reason
 	}
-	name += ".db.gz"
+	// Names have second resolution: two runs in the same second must not replace each other (the
+	// first may already be marked uploaded). Runs are serialized by m.mu, so bumping is race-free.
+	var name string
+	for {
+		name = "owl-" + at.Format("20060102-150405") + suffix + ".db.gz"
+		if _, err := os.Stat(filepath.Join(m.Dir, name)); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		at = at.Add(time.Second)
+	}
 	raw := filepath.Join(m.Dir, ".tmp-"+strings.TrimSuffix(name, ".gz"))
 	defer os.Remove(raw)
 	if err := m.Store.Backup(ctx, raw); err != nil {
@@ -200,6 +212,10 @@ func gzipTo(src, dst string) error {
 	if err != nil {
 		os.Remove(tmp)
 		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		os.Remove(tmp)
+		return fmt.Errorf("%s already exists", filepath.Base(dst)) // never replace a backup
 	}
 	return os.Rename(tmp, dst)
 }
@@ -274,7 +290,7 @@ func (m *Manager) local() ([]Info, error) {
 	}
 	var out []Info
 	for _, e := range entries {
-		if e.IsDir() || !validName(e.Name()) {
+		if e.IsDir() || !ValidName(e.Name()) {
 			continue
 		}
 		st, err := e.Info()
@@ -295,26 +311,22 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]*Info{}
 	out := local
+	idx := map[string]int{} // indices, not pointers: append below may move the array
 	for i := range out {
-		byName[out[i].Name] = &out[i]
+		idx[out[i].Name] = i
+		out[i].Remote = out[i].Uploaded
 	}
 	var remoteErr error
 	if m.Remote != nil {
 		objs, err := m.Remote.List(ctx)
 		remoteErr = err
 		for _, o := range objs {
-			if b := byName[o.Name]; b != nil {
-				b.Remote = true
+			if i, ok := idx[o.Name]; ok {
+				out[i].Remote = true
 				continue
 			}
 			out = append(out, Info{Name: o.Name, Size: o.Size, At: nameTime(o.Name), Remote: true})
-		}
-		for i := range out {
-			if out[i].Local && byName[out[i].Name] != nil && out[i].Uploaded {
-				out[i].Remote = true
-			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
@@ -323,7 +335,7 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 
 // Open returns a backup's content, preferring the local copy.
 func (m *Manager) Open(ctx context.Context, name string) (io.ReadCloser, int64, error) {
-	if !validName(name) {
+	if !ValidName(name) {
 		return nil, 0, store.ErrNotFound
 	}
 	if f, err := os.Open(filepath.Join(m.Dir, name)); err == nil {
@@ -336,6 +348,9 @@ func (m *Manager) Open(ctx context.Context, name string) (io.ReadCloser, int64, 
 	return m.Remote.Get(ctx, name)
 }
 
+// ErrInvalidBackup marks problems with the backup file itself (the caller's fault, not the server's).
+var ErrInvalidBackup = errors.New("not a valid backup")
+
 // MaxRestoreBytes bounds an uploaded/decompressed backup (gzip bombs).
 const MaxRestoreBytes = 2 << 30
 
@@ -344,8 +359,7 @@ var sqliteMagic = []byte("SQLite format 3\x00")
 // Restore checks the backup (gzip or plain SQLite), takes a safety backup of the current state, then
 // restores. Returns the safety backup's name.
 func (m *Manager) Restore(ctx context.Context, r io.Reader) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Read and check the file first, without the lock: a slow upload mustn't block backups.
 	if err := os.MkdirAll(m.Dir, 0o750); err != nil {
 		return "", err
 	}
@@ -363,7 +377,7 @@ func (m *Manager) Restore(ctx context.Context, r io.Reader) (string, error) {
 		zr, err := gzip.NewReader(br)
 		if err != nil {
 			tmp.Close()
-			return "", fmt.Errorf("not a valid backup: %w", err)
+			return "", fmt.Errorf("%w: %v", ErrInvalidBackup, err)
 		}
 		defer zr.Close()
 		src = zr
@@ -374,9 +388,9 @@ func (m *Manager) Restore(ctx context.Context, r io.Reader) (string, error) {
 	}
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("reading backup: %w", err)
+		return "", fmt.Errorf("%w: reading it failed: %v", ErrInvalidBackup, err)
 	case n > MaxRestoreBytes:
-		return "", fmt.Errorf("backup larger than %d GiB", MaxRestoreBytes>>30)
+		return "", fmt.Errorf("%w: larger than %d GiB", ErrInvalidBackup, MaxRestoreBytes>>30)
 	}
 	head := make([]byte, len(sqliteMagic))
 	if f, err := os.Open(tmp.Name()); err == nil {
@@ -384,10 +398,12 @@ func (m *Manager) Restore(ctx context.Context, r io.Reader) (string, error) {
 		f.Close()
 	}
 	if !bytes.Equal(head, sqliteMagic) {
-		return "", errors.New("not a valid backup: not an SQLite database")
+		return "", fmt.Errorf("%w: not an SQLite database", ErrInvalidBackup)
 	}
 
-	safety, err := m.run(ctx, "pre-restore")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	safety, err := m.run(ctx, "pre-restore", false)
 	if err != nil {
 		return "", fmt.Errorf("safety backup failed, nothing restored: %w", err)
 	}
@@ -407,12 +423,7 @@ type Status struct {
 	LastError      string    `json:"lastError,omitempty"`
 	PendingUploads int       `json:"pendingUploads"`
 	NextRun        time.Time `json:"nextRun"`
-	Settings       struct {
-		Time        string `json:"time"`
-		LocalDays   int    `json:"localDays"`
-		LocalCopies int    `json:"localCopies"`
-	} `json:"settings"`
-	Warnings []string `json:"warnings"`
+	Warnings       []string  `json:"warnings"`
 }
 
 func (m *Manager) Status(ctx context.Context) Status {
@@ -438,7 +449,6 @@ func (m *Manager) Status(ctx context.Context) Status {
 	ran := m.ranDay
 	m.stMu.Unlock()
 	s.NextRun = next(set, m.now(), ran)
-	s.Settings.Time, s.Settings.LocalDays, s.Settings.LocalCopies = set.TimeString(), set.LocalDays, set.LocalCopies
 	s.Warnings = []string{}
 	if m.Remote == nil {
 		s.Warnings = append(s.Warnings, "Local only — not safe: backups are on the same disk as the database. Configure OWL_BACKUP_S3_* on the server.")
@@ -457,9 +467,14 @@ func (m *Manager) Status(ctx context.Context) Status {
 	return s
 }
 
+// scheduledAt is today's scheduled time (local).
+func scheduledAt(set Settings, now time.Time) time.Time {
+	return time.Date(now.Year(), now.Month(), now.Day(), set.Hour, set.Minute, 0, 0, now.Location())
+}
+
 // next is the next scheduled run in local time.
 func next(set Settings, now time.Time, ranDay string) time.Time {
-	t := time.Date(now.Year(), now.Month(), now.Day(), set.Hour, set.Minute, 0, 0, now.Location())
+	t := scheduledAt(set, now)
 	if !now.Before(t) || ranDay == now.Format("2006-01-02") {
 		t = t.AddDate(0, 0, 1)
 	}
@@ -471,8 +486,7 @@ func next(set Settings, now time.Time, ranDay string) time.Time {
 func (m *Manager) RunScheduler(ctx context.Context) {
 	if local, _ := m.local(); len(local) > 0 {
 		set, now := m.settings(ctx), m.now()
-		today := time.Date(now.Year(), now.Month(), now.Day(), set.Hour, set.Minute, 0, 0, now.Location())
-		if !local[0].At.Before(today) {
+		if !local[0].At.Before(scheduledAt(set, now)) {
 			m.setStatus(func() { m.ranDay = now.Format("2006-01-02") })
 		}
 	}
@@ -491,7 +505,7 @@ func (m *Manager) RunScheduler(ctx context.Context) {
 func (m *Manager) tick(ctx context.Context) {
 	set, now := m.settings(ctx), m.now()
 	day := now.Format("2006-01-02")
-	sched := time.Date(now.Year(), now.Month(), now.Day(), set.Hour, set.Minute, 0, 0, now.Location())
+	sched := scheduledAt(set, now)
 	m.stMu.Lock()
 	ran := m.ranDay
 	m.stMu.Unlock()

@@ -521,8 +521,14 @@ function size(n: number) {
 }
 
 function BackupsTab() {
-  const ops = useApi(api.ops);
   const canWrite = adminToken.get() !== "";
+  if (!canWrite) return <Card title="Backups"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see and manage backups.</span></div></Card>;
+  return <BackupsTabInner />;
+}
+
+function BackupsTabInner() {
+  const ops = useApi(api.ops);
+  const canWrite = true;
   const list = useApi<{ backups: BackupInfo[]; remoteError?: string }>(() => (canWrite ? api.backups() : Promise.resolve({ backups: [] })), [canWrite]);
   const { reload: reloadData } = useAppData();
   const w = useWrite();
@@ -658,8 +664,13 @@ function BackupSettings({ ops, s3, canWrite, onSaved }: { ops: OpsSettings; s3: 
 // ---------------- logs & audit ----------------
 
 function LogsTab() {
+  if (!adminToken.get()) return <Card title="Logs & audit"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see log settings and the audit log.</span></div></Card>;
+  return <LogsTabInner />;
+}
+
+function LogsTabInner() {
   const ops = useApi(api.ops);
-  const canWrite = adminToken.get() !== "";
+  const canWrite = true;
   const audit = useApi(() => (canWrite ? api.audit() : Promise.resolve([])), [canWrite]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePageSize();

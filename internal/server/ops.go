@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,7 +29,8 @@ const (
 )
 
 func (s *Server) opsRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/ops", s.getOps)
+	// Admin: the backup status names the bucket, endpoint, paths and raw error text.
+	mux.HandleFunc("GET /api/v1/ops", s.requireAdmin(s.getOps))
 	mux.HandleFunc("PUT /api/v1/ops", s.requireAdmin(s.putOps))
 	mux.HandleFunc("GET /api/v1/backups", s.requireAdmin(s.listBackups))
 	mux.HandleFunc("POST /api/v1/backups", s.requireAdmin(s.backupNow))
@@ -55,11 +57,25 @@ func (s *Server) loadOps(ctx context.Context) (opsSettings, error) {
 	}
 	b := backup.ParseSettings(m)
 	o := opsSettings{BackupTime: b.TimeString(), BackupLocalDays: b.LocalDays, BackupLocalCopies: b.LocalCopies,
-		LogLevel: "info", LogRetentionDays: atoiOr(m[settingLogDays], defaultLogDays), AuditRetentionDays: atoiOr(m[settingAuditDays], defaultAuditDays)}
-	if l := strings.ToLower(m[settingLogLevel]); l == "debug" || l == "info" || l == "warn" || l == "error" {
-		o.LogLevel = l
+		LogRetentionDays: atoiOr(m[settingLogDays], defaultLogDays), AuditRetentionDays: atoiOr(m[settingAuditDays], defaultAuditDays)}
+	if _, ok := parseLevel(m[settingLogLevel]); ok {
+		o.LogLevel = strings.ToLower(m[settingLogLevel]) // "" = never set in the UI: OWL_LOG_LEVEL applies
 	}
 	return o, nil
+}
+
+// parseLevel accepts slog's level names (debug, info, warn, error).
+func parseLevel(v string) (slog.Level, bool) {
+	var l slog.Level
+	if v == "" || l.UnmarshalText([]byte(v)) != nil {
+		return 0, false
+	}
+	return l, true
+}
+
+func validLevelName(v string) bool {
+	_, ok := parseLevel(v)
+	return ok && v == strings.ToLower(v) && !strings.ContainsAny(v, "+-0123456789")
 }
 
 func atoiOr(v string, def int) int {
@@ -76,10 +92,8 @@ func (s *Server) ApplyOpsSettings(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if s.LogLevel != nil {
-		var l slog.Level
-		_ = l.UnmarshalText([]byte(o.LogLevel))
-		s.LogLevel.Set(l)
+	if l, ok := parseLevel(o.LogLevel); ok && s.LogLevel != nil {
+		s.LogLevel.Set(l) // only a level saved in the UI overrides OWL_LOG_LEVEL
 	}
 	if s.LogFile != nil {
 		s.LogFile.SetRetentionDays(o.LogRetentionDays)
@@ -91,6 +105,9 @@ func (s *Server) getOps(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if o.LogLevel == "" && s.LogLevel != nil {
+		o.LogLevel = strings.ToLower(s.LogLevel.Level().String()) // show what's in effect (env/default)
 	}
 	out := map[string]any{"settings": o, "backupsEnabled": s.Backups != nil, "logFile": s.LogFile != nil}
 	if s.Backups != nil {
@@ -112,7 +129,7 @@ func (s *Server) putOps(w http.ResponseWriter, r *http.Request) {
 	case o.BackupLocalDays < 1 || o.BackupLocalDays > 3650, o.BackupLocalCopies < 1 || o.BackupLocalCopies > 1000:
 		httpError(w, http.StatusBadRequest, "backup retention: 1–3650 days, 1–1000 copies")
 		return
-	case o.LogLevel != "debug" && o.LogLevel != "info" && o.LogLevel != "warn" && o.LogLevel != "error":
+	case !validLevelName(o.LogLevel):
 		httpError(w, http.StatusBadRequest, "logLevel: debug, info, warn or error")
 		return
 	case o.LogRetentionDays < 1 || o.LogRetentionDays > 365, o.AuditRetentionDays < 1 || o.AuditRetentionDays > 3650:
@@ -231,7 +248,11 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 	safety, err := s.Backups.Restore(ctx, body)
 	if err != nil {
 		s.Log.Error("restore failed", "from", from, "err", err)
-		httpError(w, http.StatusBadRequest, err.Error())
+		code := http.StatusInternalServerError // disk, safety backup, transaction: the server's problem
+		if errors.Is(err, backup.ErrInvalidBackup) || errors.Is(err, store.ErrInvalid) {
+			code = http.StatusBadRequest // the file
+		}
+		httpError(w, code, err.Error())
 		return
 	}
 	s.ApplyOpsSettings(ctx)

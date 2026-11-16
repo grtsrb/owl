@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -82,13 +81,13 @@ var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "c
 func (d *DB) Restore(ctx context.Context, path string) error {
 	bak, err := Open(path) // migrates in place: callers pass a private temp copy
 	if err != nil {
-		return fmt.Errorf("not a usable backup: %w", err)
+		return fmt.Errorf("%w: %v", store.ErrInvalid, err)
 	}
 	var n int
 	err = bak.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='clusters'").Scan(&n)
 	bak.Close()
 	if err != nil || n == 0 {
-		return errors.New("not an Owl backup (no clusters table)")
+		return fmt.Errorf("%w: not an Owl backup (no clusters table)", store.ErrInvalid)
 	}
 
 	conn, err := d.db.Conn(ctx)
