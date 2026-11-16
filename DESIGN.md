@@ -146,6 +146,9 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   - Long tables (Overview components, cluster workloads) are paged: 10 rows by default (10/25/50/All,
     remembered per browser). Level filter, search and page are in the URL (history replaced, not
     pushed) so Back and bookmarks restore the view; any filter or selection change goes to page 1.
+  - Explanations next to every judgement: each workload row shows its action and reasons under the
+    level, every flag (scaled to 0, unpinned, …) has a tooltip and a legend, and “What do the levels
+    mean?” spells out the Priority rules.
   - **Component detail**: reasons per instance, advisories, release-line/EOL timeline, drift, policy editor.
   - **Clusters** (replaces Images): header (k8s/RKE2 version + EOL, last report, counts per level) and every
     workload (unpinned/in-house as row flags); unrecognized images with map/in-house/ignore actions.

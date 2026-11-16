@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, LEVELS, type Cluster, type ComponentReport, type Level, type ScoredInstance } from "../api";
 import { useAppData, useReporting } from "../App";
 import ComponentPanel from "../components/ComponentPanel";
+import LevelHelp from "../components/LevelHelp";
 import { LEGEND, needsByCluster, Note, notesFor, paginate, useClusterSelection, usePageSize, useQueryState, worstInstance, type NoteItem } from "../model";
 import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, Pager, useApi, worstLevel } from "../ui";
 
@@ -132,6 +133,7 @@ export default function Overview() {
         <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
           onPage={(p) => qs.set({ page: p })} onSize={(n) => { setPageSize(n); qs.set({ page: null }); }} />
         <div className="legend" aria-label="Legend">{LEGEND.map((n) => <Note key={n.kind} n={n} />)}</div>
+        <LevelHelp />
       </Card>
 
       {open && <ComponentPanel row={open} stageNames={stageNames} selected={sel.selected} onClose={() => setPanel(null)} />}

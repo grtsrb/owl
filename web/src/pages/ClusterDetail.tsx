@@ -3,7 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { adminToken, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
 import { useAppData } from "../App";
 import { paginate, usePageSize, useQueryState } from "../model";
-import { unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } from "../clusterview";
+import { FLAG, unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } from "../clusterview";
+import LevelHelp from "../components/LevelHelp";
 import { ago, Card, Empty, ErrorBox, LevelBadge, LevelBar, levelLabel, Loading, Msg, Pager, useApi } from "../ui";
 import { clusterCounts, k8sStatus } from "./Overview";
 
@@ -79,6 +80,8 @@ export default function ClusterDetail() {
         </div>
       }>
         {shown.length === 0 ? <Empty>Nothing in this view.</Empty> : <WorkloadTable rows={pg.items} />}
+        <FlagLegend rows={rows} />
+        <LevelHelp />
         <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
           onPage={(p) => qs.set({ page: p })} onSize={(n) => { setPageSize(n); qs.set({ page: null }); }} />
       </Card>
@@ -88,11 +91,24 @@ export default function ClusterDetail() {
   );
 }
 
+/** Explains the flags that occur in this cluster. */
+function FlagLegend({ rows }: { rows: WorkloadRow[] }) {
+  const used = Object.values(FLAG).filter((f) => rows.some((r) => r.flags.some((x) => x.text === f.text)));
+  if (used.length === 0) return null;
+  return (
+    <dl className="flag-legend">
+      {used.map((f) => (
+        <div key={f.text}><dt><span className={`tag ${f.tone ? `tone-${f.tone}` : ""}`}>{f.text}</span></dt><dd>{f.title}</dd></div>
+      ))}
+    </dl>
+  );
+}
+
 function WorkloadTable({ rows }: { rows: WorkloadRow[] }) {
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Namespace / workload</th><th>Kind</th><th>Image</th><th>Component</th><th>Version</th><th>Level</th></tr></thead>
+        <thead><tr><th>Namespace / workload</th><th>Kind</th><th>Image</th><th>Component</th><th>Version</th><th>Level and why</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
@@ -101,11 +117,17 @@ function WorkloadTable({ rows }: { rows: WorkloadRow[] }) {
               <td className="mono" style={{ wordBreak: "break-all" }}>{r.image}</td>
               <td>{r.componentId ? <Link to={`/components/${encodeURIComponent(r.componentId)}`}>{r.componentName}</Link> : <span className="muted">—</span>}</td>
               <td className="mono">{r.version || "—"}</td>
-              <td>
+              <td className="why-cell">
                 <div className="row" style={{ gap: 6 }}>
                   {r.level && <LevelBadge level={r.level} />}
                   {r.flags.map((f, k) => <span key={k} className={`tag ${f.tone ? `tone-${f.tone}` : ""}`} title={f.title}>{f.text}</span>)}
                 </div>
+                {r.level && r.level !== "ok" && r.action && (
+                  <div className="subtle" title={r.reasons?.join("\n")}>
+                    <b>{r.action}</b>{r.why && ` — ${r.why}`}
+                    {(r.reasons?.length ?? 0) > 0 && r.componentId && <> · <Link to={`/components/${encodeURIComponent(r.componentId)}`}>{r.reasons!.length} {r.reasons!.length === 1 ? "reason" : "reasons"}</Link></>}
+                  </div>
+                )}
               </td>
             </tr>
           ))}

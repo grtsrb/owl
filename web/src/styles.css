@@ -271,3 +271,14 @@ a.cc2:hover { box-shadow: var(--shadow); }
   .kv-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.why-cell { min-width: 240px; }
+.why-cell .subtle { margin-top: 4px; }
+.flag-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 20px; margin: 0; font-size: 12.5px; color: var(--text-2); }
+.flag-legend > div { display: flex; gap: 8px; align-items: baseline; }
+.flag-legend dt { flex: none; }
+.flag-legend dd { margin: 0; }
+.level-help { font-size: 13px; }
+.level-help summary { cursor: pointer; color: var(--accent); width: fit-content; }
+.level-help dl { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 6px; }
+.level-help dl > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; }
+.level-help dd { margin: 0; color: var(--text-2); }
