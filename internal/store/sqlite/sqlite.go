@@ -78,6 +78,15 @@ var migrations = []string{
 		actor   TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX idx_audit_at ON audit_log(at);`,
+	// Revocations outlive restores: a restore never touches this table, re-revokes what's listed, and
+	// ingest refuses listed tokens — restoring an old backup can't bring a rotated (maybe leaked) or
+	// deleted cluster's token back to life.
+	`CREATE TABLE revoked_tokens (
+		token_hash TEXT PRIMARY KEY,
+		revoked_at TEXT NOT NULL
+	);
+	INSERT OR IGNORE INTO revoked_tokens(token_hash, revoked_at)
+		SELECT token_hash, revoked_at FROM agent_tokens WHERE revoked_at IS NOT NULL;`,
 }
 
 type DB struct{ db *sql.DB }
@@ -328,14 +337,34 @@ func (d *DB) ListClusters(ctx context.Context) ([]store.Cluster, error) {
 }
 
 func (d *DB) DeleteCluster(ctx context.Context, name string) error {
-	res, err := d.db.ExecContext(ctx, "DELETE FROM clusters WHERE name=?", name)
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	at := now().Format(ts)
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO revoked_tokens(token_hash, revoked_at)
+		SELECT t.token_hash, ? FROM agent_tokens t JOIN clusters c ON c.id=t.cluster_id WHERE c.name=?`, at, name); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, "DELETE FROM clusters WHERE name=?", name)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	return tx.Commit()
+}
+
+// revokeAll marks a cluster's active tokens revoked and records them in revoked_tokens.
+func revokeAll(ctx context.Context, tx *sql.Tx, clusterID int64, at string) error {
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO revoked_tokens(token_hash, revoked_at)
+		SELECT token_hash, ? FROM agent_tokens WHERE cluster_id=? AND revoked_at IS NULL`, at, clusterID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "UPDATE agent_tokens SET revoked_at=? WHERE cluster_id=? AND revoked_at IS NULL", at, clusterID)
+	return err
 }
 
 func (d *DB) AddToken(ctx context.Context, clusterID int64, hash, prefix string) error {
@@ -346,10 +375,15 @@ func (d *DB) AddToken(ctx context.Context, clusterID int64, hash, prefix string)
 }
 
 func (d *DB) RevokeTokens(ctx context.Context, clusterID int64) error {
-	_, err := d.db.ExecContext(ctx,
-		"UPDATE agent_tokens SET revoked_at=? WHERE cluster_id=? AND revoked_at IS NULL",
-		now().Format(ts), clusterID)
-	return err
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := revokeAll(ctx, tx, clusterID, now().Format(ts)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (d *DB) RotateToken(ctx context.Context, clusterID int64, hash, prefix string) error {
@@ -359,7 +393,7 @@ func (d *DB) RotateToken(ctx context.Context, clusterID int64, hash, prefix stri
 	}
 	defer tx.Rollback()
 	at := now().Format(ts)
-	if _, err := tx.ExecContext(ctx, "UPDATE agent_tokens SET revoked_at=? WHERE cluster_id=? AND revoked_at IS NULL", at, clusterID); err != nil {
+	if err := revokeAll(ctx, tx, clusterID, at); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO agent_tokens(cluster_id, token_hash, prefix, created_at) VALUES (?,?,?,?)",
@@ -371,7 +405,8 @@ func (d *DB) RotateToken(ctx context.Context, clusterID int64, hash, prefix stri
 
 func (d *DB) ClusterByTokenHash(ctx context.Context, hash string) (*store.Cluster, error) {
 	c, err := scanCluster(d.db.QueryRowContext(ctx, "SELECT c."+strings.ReplaceAll(clusterCols, ", ", ", c.")+
-		" FROM agent_tokens t JOIN clusters c ON c.id=t.cluster_id WHERE t.token_hash=? AND t.revoked_at IS NULL", hash))
+		" FROM agent_tokens t JOIN clusters c ON c.id=t.cluster_id WHERE t.token_hash=? AND t.revoked_at IS NULL"+
+		" AND NOT EXISTS (SELECT 1 FROM revoked_tokens r WHERE r.token_hash=t.token_hash)", hash))
 	if err != nil {
 		return nil, err
 	}

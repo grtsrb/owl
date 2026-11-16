@@ -178,7 +178,10 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   S3 region defaults to us-east-1 (skips the bucket-location lookup some S3-compatible stores lack).
 - **Restore** (admin, UI): full restore from the list or an upload — validated (SQLite, schema not newer;
   older backups are migrated first), safety backup taken first, tables replaced in one transaction. The
-  **audit log and upstream cache are kept** (a restore doesn't rewrite who-did-what). Import of a per-cluster JSON export restores one deleted cluster
+  **audit log and upstream cache are kept** (a restore doesn't rewrite who-did-what).
+  **Revocations survive restores**: rotated tokens and deleted clusters' tokens are recorded in
+  `revoked_tokens`, which a restore never touches and ingest checks — an old backup can't revive a
+  leaked token. A cluster deleted after the backup comes back but needs Rotate token. Import of a per-cluster JSON export restores one deleted cluster
   (new token, shown once).
 - **Logs**: JSON to stderr and `/data/logs/server.log` on the data volume — daily rotation, gzip, 5 days
   (set in the UI), 50 MB per-file cap; Docker's own log copy capped (10 MB × 3). Agent: stderr only (k8s

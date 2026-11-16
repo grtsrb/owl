@@ -621,7 +621,7 @@ function RestoreDialog({ what, onClose, onConfirm }: { what: string; onClose: ()
     <Dialog title="Restore the database?" onClose={busy ? undefined : onClose}>
       <p style={{ margin: 0 }}>Clusters, tokens, state, history, stages, tenants, policies, overrides and settings are replaced with the contents of <b>{what}</b>. Before that, the server:</p>
       <ul className="bullets"><li>checks it's a valid backup it can read (older backups are upgraded to the current format)</li><li>takes a safety backup of the current state</li></ul>
-      <div className="callout warn"><Icon.warn /><span>Clusters added after this backup won't exist afterwards — add them again. Agents keep working if their cluster was in the backup. The audit log is kept as it is.</span></div>
+      <div className="callout warn"><Icon.warn /><span>Clusters added after this backup won't exist afterwards — add them again. Agents keep working if their cluster was in the backup, except tokens rotated or clusters deleted since: those stay revoked (a restore never brings an old token back), so use Rotate token for them. The audit log is kept as it is.</span></div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" disabled={busy} onClick={onClose}>Cancel</button>
         <button className="btn danger solid" disabled={busy} onClick={() => { setBusy(true); onConfirm(); }}>{busy ? "Restoring…" : "Restore"}</button>

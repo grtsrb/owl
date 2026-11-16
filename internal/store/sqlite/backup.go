@@ -73,7 +73,7 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	return nil
 }
 
-// tables restored from a backup; audit_log and upstream_cache stay as they are.
+// tables restored from a backup; audit_log, revoked_tokens and upstream_cache stay as they are.
 var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "current_images", "changes",
 	"policies", "catalog_overrides", "settings"}
 
@@ -120,6 +120,12 @@ func (d *DB) Restore(ctx context.Context, path string) error {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO main."+t+" SELECT * FROM bak."+t); err != nil {
 			return fmt.Errorf("restore %s: %w", t, err)
 		}
+	}
+	// Revocations made after the backup stay in force (revoked_tokens isn't restored).
+	if _, err := tx.ExecContext(ctx, `UPDATE main.agent_tokens SET revoked_at =
+		(SELECT r.revoked_at FROM main.revoked_tokens r WHERE r.token_hash = agent_tokens.token_hash)
+		WHERE revoked_at IS NULL AND token_hash IN (SELECT token_hash FROM main.revoked_tokens)`); err != nil {
+		return err
 	}
 	if err := foreignKeyCheck(ctx, tx); err != nil {
 		return err

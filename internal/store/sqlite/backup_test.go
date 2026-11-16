@@ -42,8 +42,11 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	if err := db.Restore(ctx, cp); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := db.ClusterByTokenHash(ctx, "h1"); err != nil || got.ID != c.ID {
-		t.Errorf("cluster/token not restored: %v %v", got, err)
+	if got, err := db.GetCluster(ctx, "prod"); err != nil || got.ID != c.ID {
+		t.Errorf("cluster not restored: %v %v", got, err)
+	}
+	if _, err := db.ClusterByTokenHash(ctx, "h1"); !errors.Is(err, store.ErrNotFound) {
+		t.Error("prod was deleted after the backup: its old token must stay revoked (rotate to reconnect)")
 	}
 	if _, err := db.GetCluster(ctx, "new"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("cluster created after the backup must be gone: %v", err)
@@ -98,5 +101,32 @@ func TestImportAndAuditPrune(t *testing.T) {
 	_ = db.AddAudit(ctx, store.AuditEntry{Action: "a"})
 	if n, _ := db.PruneAudit(ctx, time.Now().Add(time.Hour)); n != 1 {
 		t.Errorf("prune: %d", n)
+	}
+}
+
+// A restore must not bring back a token that was rotated or a cluster that was deleted after the
+// backup (the token may have leaked — that's why it was rotated).
+func TestRestoreKeepsLaterRevocations(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	a, _ := db.CreateClusterWithToken(ctx, "a", store.StageLive, "IT", "leaked", "p")
+	_, _ = db.CreateClusterWithToken(ctx, "b", store.StageLive, "IT", "b-token", "p")
+	bak := filepath.Join(t.TempDir(), "b.db")
+	if err := db.Backup(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.RotateToken(ctx, a.ID, "fresh", "p")
+	_ = db.DeleteCluster(ctx, "b")
+	if err := db.Restore(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ClusterByTokenHash(ctx, "leaked"); !errors.Is(err, store.ErrNotFound) {
+		t.Error("a token rotated after the backup must stay revoked")
+	}
+	if _, err := db.ClusterByTokenHash(ctx, "b-token"); !errors.Is(err, store.ErrNotFound) {
+		t.Error("a deleted cluster's token must stay revoked")
+	}
+	if _, err := db.GetCluster(ctx, "b"); err != nil {
+		t.Errorf("the cluster itself is restored (only its token stays dead): %v", err)
 	}
 }
