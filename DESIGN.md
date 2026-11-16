@@ -171,9 +171,14 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   only — **it never deletes in the bucket** (retention there = bucket lifecycle rule set by the operator).
   Local retention set in the UI: 15 days without S3; with S3, last 3 local copies — a copy is never deleted
   before it's uploaded (retried next run, warning in Settings). Warning if last backup failed or is > 36 h old.
-  Dev stack runs MinIO to test the S3 path.
-- **Restore** (admin, UI): full restore from the list or an upload — validated (known schema version), safety
-  backup taken first, DB swapped in place. Import of a per-cluster JSON export restores one deleted cluster
+  Dev stack runs **S3Mock** (adobe/s3mock) to test the S3 path — MinIO stopped publishing images; S3Mock
+  accepts any credentials, so the no-delete permission can only be tested on real S3. A missed daily
+  backup (server was down at the scheduled time) runs as soon as the server is up; pending uploads are
+  retried every 10 minutes. Backups leave out the upstream cache (refetched) — ~15 KB instead of ~70 MB.
+  S3 region defaults to us-east-1 (skips the bucket-location lookup some S3-compatible stores lack).
+- **Restore** (admin, UI): full restore from the list or an upload — validated (SQLite, schema not newer;
+  older backups are migrated first), safety backup taken first, tables replaced in one transaction. The
+  **audit log and upstream cache are kept** (a restore doesn't rewrite who-did-what). Import of a per-cluster JSON export restores one deleted cluster
   (new token, shown once).
 - **Logs**: JSON to stderr and `/data/logs/server.log` on the data volume — daily rotation, gzip, 5 days
   (set in the UI), 50 MB per-file cap; Docker's own log copy capped (10 MB × 3). Agent: stderr only (k8s

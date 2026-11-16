@@ -9,8 +9,8 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1–6.5 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
-redesign + cluster management) done; next 7 (backups/restore/logging/audit). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–7 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
+redesign + cluster management, backups/restore/logging/audit) done; next 8 (Claude summaries). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -82,6 +82,15 @@ make dev-down
   validate names strictly (they end up in YAML/kubectl) and reject anything but JSON bodies.
 - Write endpoints require `OWL_ADMIN_TOKEN` (bearer, constant-time compare, ≥24 chars); unset = writes
   disabled. Interim until Google sign-in; also JSON-only (cross-site form posts can't write).
+- `internal/backup` — `Manager`: daily/manual backups (`Store.Backup` = `VACUUM INTO`, gzip), upload to an
+  S3-compatible `Remote` (minio-go; the server **never deletes** in the bucket), local retention (never
+  deletes a copy not yet uploaded), restore with a safety backup first, status warnings. S3 config only
+  from env `OWL_BACKUP_S3_*` (endpoint, bucket, prefix, region, access/secret key, insecure).
+- `internal/logfile` — rotating log file (daily or 50 MB, gzip, retention days from the UI). Server logs JSON
+  to stderr + `<db dir>/logs/server.log`; level from `OWL_LOG_LEVEL`, then the UI setting (slog.LevelVar).
+  Request lines carry a request id (`X-Request-ID`); never log headers or tokens (tested).
+- Audit log: `Server.audit` writes every admin action to the `audit_log` table (and the log); pruned daily
+  to its retention. Restore keeps the audit log.
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
   table-tested in `score_test.go`); `ActionFor` derives the "Recommended action" sentence from a score
   (never the reverse). `Build` combines inventory + upstream + policies + drift: per **tenant**, along

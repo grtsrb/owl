@@ -4,7 +4,9 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"owl/internal/auth"
+	"owl/internal/backup"
 	"owl/internal/catalog"
 	"owl/internal/inventory"
 	"owl/internal/policy"
@@ -52,7 +55,13 @@ type Server struct {
 	// login (Google sign-in, roles) in a later milestone.
 	AdminToken string
 	// UI is the built web app (web.Dist()); nil = API only.
-	UI      fs.FS
+	UI fs.FS
+	// Backups is nil when backups are disabled. LogLevel and LogFile (optional) follow the settings
+	// edited in the UI (applyOpsSettings).
+	Backups  *backup.Manager
+	LogLevel *slog.LevelVar
+	LogFile  interface{ SetRetentionDays(int) }
+
 	uiOnce  sync.Once
 	uiIndex []byte
 	uiFiles http.Handler
@@ -97,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/catalog/overrides", s.requireAdmin(s.setOverride))
 	mux.HandleFunc("DELETE /api/v1/catalog/overrides", s.requireAdmin(s.deleteOverride))
 	mux.HandleFunc("PUT /api/v1/settings", s.requireAdmin(s.putSettings))
+	s.opsRoutes(mux)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
 }
@@ -359,16 +369,35 @@ type statusRecorder struct {
 
 func (r *statusRecorder) WriteHeader(code int) { r.code = code; r.ResponseWriter.WriteHeader(code) }
 
+type ctxKey int
+
+const requestIDKey ctxKey = 1
+
+// requestID returns the id logRequests gave this request ("" outside a request).
+func requestID(r *http.Request) string {
+	id, _ := r.Context().Value(requestIDKey).(string)
+	return id
+}
+
+// logRequests logs one line per request with a request id (also sent as X-Request-ID, so a user can
+// quote it). Only method, path, status, duration and remote are logged — never headers (Authorization)
+// or query strings. Health checks and static assets log at debug.
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		var b [6]byte
+		_, _ = rand.Read(b[:])
+		id := hex.EncodeToString(b[:])
+		w.Header().Set("X-Request-ID", id)
+		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
 		rec := &statusRecorder{ResponseWriter: w, code: 200}
 		next.ServeHTTP(rec, r)
-		if r.URL.Path == "/healthz" {
-			return
+		level := slog.LevelInfo
+		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/assets/") || !strings.HasPrefix(r.URL.Path, "/api/") && r.Method == http.MethodGet {
+			level = slog.LevelDebug
 		}
-		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.code,
-			"took", time.Since(start).Round(time.Millisecond), "remote", r.RemoteAddr)
+		log.Log(r.Context(), level, "http", "method", r.Method, "path", r.URL.Path, "status", rec.code,
+			"took", time.Since(start).Round(time.Millisecond), "remote", r.RemoteAddr, "req", id)
 	})
 }
 

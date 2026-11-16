@@ -136,6 +136,28 @@ type CacheEntry struct {
 	Body      []byte
 }
 
+// AuditEntry is one admin action ("who changed what"). Actor is empty until real sign-in exists.
+type AuditEntry struct {
+	ID      int64     `json:"id"`
+	At      time.Time `json:"at"`
+	Action  string    `json:"action"`
+	Details string    `json:"details"`
+	Remote  string    `json:"remote"`
+	Actor   string    `json:"actor,omitempty"`
+}
+
+// ClusterImport is a cluster export brought back after a delete (milestone 7).
+type ClusterImport struct {
+	Name              string
+	Stage             string
+	Tenant            string
+	CreatedAt         time.Time
+	KubernetesVersion string
+	AgentVersion      string
+	Images            []ImageRow
+	Changes           []Change
+}
+
 type IngestResult struct {
 	Changes []Change
 	First   bool
@@ -196,6 +218,21 @@ type Store interface {
 	ListPolicies(ctx context.Context) (map[string]string, error)
 	SetPolicy(ctx context.Context, scope, spec string) error
 	DeletePolicy(ctx context.Context, scope string) error
+
+	// Audit log of admin actions, newest first.
+	AddAudit(ctx context.Context, e AuditEntry) error
+	ListAudit(ctx context.Context, limit int) ([]AuditEntry, error)
+	PruneAudit(ctx context.Context, before time.Time) (int64, error)
+
+	// Backup writes a consistent copy of the database to path while it's in use (upstream cache left
+	// out: it's refetched). Restore replaces clusters, tokens, state, history, stages, tenants,
+	// policies, overrides and settings with the backup's — after migrating the backup to this binary's
+	// schema — and keeps the audit log and upstream cache (who-did-what isn't rewritten by a restore).
+	Backup(ctx context.Context, path string) error
+	Restore(ctx context.Context, path string) error
+	// ImportCluster recreates a deleted cluster from its export, with a new agent token. Missing
+	// stages/tenants are created (a stage is appended last).
+	ImportCluster(ctx context.Context, imp ClusterImport, tokenHash, tokenPrefix string) (*Cluster, error)
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

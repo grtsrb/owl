@@ -55,5 +55,5 @@ stack-up: image
 	dev/stack-up.sh
 
 stack-down:
-	docker rm -f owl-server
+	docker rm -f owl-server owl-s3
 	@for c in $(CLUSTERS); do kubectl --context k3d-$$c delete -f deploy/agent/agent.yaml --ignore-not-found >/dev/null; done

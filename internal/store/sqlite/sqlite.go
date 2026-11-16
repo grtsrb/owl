@@ -69,6 +69,15 @@ var migrations = []string{
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);`,
+	`CREATE TABLE audit_log (
+		id      INTEGER PRIMARY KEY,
+		at      TEXT NOT NULL,
+		action  TEXT NOT NULL,
+		details TEXT NOT NULL DEFAULT '',
+		remote  TEXT NOT NULL DEFAULT '',
+		actor   TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX idx_audit_at ON audit_log(at);`,
 }
 
 type DB struct{ db *sql.DB }

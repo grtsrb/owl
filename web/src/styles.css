@@ -282,3 +282,6 @@ a.cc2:hover { box-shadow: var(--shadow); }
 .level-help dl { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 6px; }
 .level-help dl > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; }
 .level-help dd { margin: 0; color: var(--text-2); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+label.btn { position: relative; }
+label.btn.disabled { opacity: .45; cursor: not-allowed; }

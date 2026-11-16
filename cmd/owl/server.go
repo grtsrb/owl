@@ -5,17 +5,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"owl/internal/auth"
+	"owl/internal/backup"
 	"owl/internal/catalog"
+	"owl/internal/logfile"
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
@@ -39,9 +43,33 @@ func runServer(args []string) error {
 		"comma-separated extra Host names the UI/read API answers to (localhost always allowed; env OWL_ALLOWED_HOSTS)")
 	internal := fs.String("internal-registries", os.Getenv("OWL_INTERNAL_REGISTRIES"),
 		"comma-separated registries of in-house images, e.g. registry.gitlab.example.com (env OWL_INTERNAL_REGISTRIES)")
+	logDir := fs.String("log-dir", os.Getenv("OWL_LOG_DIR"), "directory for rotated log files (default: <db dir>/logs; \"-\" = stderr only; env OWL_LOG_DIR)")
+	backupDir := fs.String("backup-dir", os.Getenv("OWL_BACKUP_DIR"), "local backup directory (default: <db dir>/backups; env OWL_BACKUP_DIR)")
 	_ = fs.Parse(args)
 
-	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// Logs: JSON to stderr and to a rotating file. The level starts from OWL_LOG_LEVEL and then
+	// follows the UI setting (ApplyOpsSettings).
+	level := new(slog.LevelVar)
+	if v := os.Getenv("OWL_LOG_LEVEL"); v != "" {
+		if err := level.UnmarshalText([]byte(v)); err != nil {
+			return fmt.Errorf("OWL_LOG_LEVEL: %w", err)
+		}
+	}
+	var logOut io.Writer = os.Stderr
+	var logFile *logfile.Writer
+	if *logDir != "-" {
+		dir := *logDir
+		if dir == "" {
+			dir = filepath.Join(filepath.Dir(*dbPath), "logs")
+		}
+		lf, err := logfile.Open(dir, "server", 5, 50<<20)
+		if err != nil {
+			return fmt.Errorf("log file: %w", err)
+		}
+		defer lf.Close()
+		logFile, logOut = lf, io.MultiWriter(os.Stderr, lf)
+	}
+	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: level}))
 	cat, err := catalog.Builtin()
 	if err != nil {
 		return err
@@ -58,7 +86,31 @@ func runServer(args []string) error {
 	defer db.Close()
 
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		AdminToken: os.Getenv("OWL_ADMIN_TOKEN"), UI: web.Dist()}
+		AdminToken: os.Getenv("OWL_ADMIN_TOKEN"), UI: web.Dist(), LogLevel: level}
+	if logFile != nil {
+		app.LogFile = logFile
+	}
+	bdir := *backupDir
+	if bdir == "" {
+		bdir = filepath.Join(filepath.Dir(*dbPath), "backups")
+	}
+	app.Backups = &backup.Manager{Store: db, Dir: bdir, Log: log}
+	if os.Getenv("OWL_BACKUP_S3_BUCKET") != "" {
+		remote, err := backup.NewS3(backup.S3Config{
+			Endpoint: os.Getenv("OWL_BACKUP_S3_ENDPOINT"), Region: os.Getenv("OWL_BACKUP_S3_REGION"),
+			Bucket: os.Getenv("OWL_BACKUP_S3_BUCKET"), Prefix: os.Getenv("OWL_BACKUP_S3_PREFIX"),
+			AccessKey: os.Getenv("OWL_BACKUP_S3_ACCESS_KEY"), SecretKey: os.Getenv("OWL_BACKUP_S3_SECRET_KEY"),
+			Insecure: os.Getenv("OWL_BACKUP_S3_INSECURE") == "true",
+		})
+		if err != nil {
+			return fmt.Errorf("S3 backups: %w", err)
+		}
+		app.Backups.Remote = remote
+		log.Info("backups go to S3", "target", remote.String(), "localDir", bdir)
+	} else {
+		log.Warn("OWL_BACKUP_S3_BUCKET not set: backups are local only (same disk as the database)", "dir", bdir)
+	}
+	app.ApplyOpsSettings(context.Background())
 	if app.AdminToken == "" {
 		log.Warn("OWL_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
 	} else if len(app.AdminToken) < 24 {
@@ -82,6 +134,8 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go app.RunUpstreamRefresher(ctx, 6*time.Hour)
+	go app.Backups.RunScheduler(ctx)
+	go app.RunMaintenance(ctx)
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)

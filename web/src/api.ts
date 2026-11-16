@@ -88,6 +88,18 @@ export interface CatalogOverride { repository: string; kind: "map" | "inhouse" |
 export interface ServerSettings { serverURL: string; agentImage: string }
 export interface CatalogComponent { id: string; name: string; source?: string }
 
+export interface OpsSettings {
+  backupTime: string; backupLocalDays: number; backupLocalCopies: number;
+  logLevel: "debug" | "info" | "warn" | "error"; logRetentionDays: number; auditRetentionDays: number;
+}
+export interface BackupStatus {
+  target: string; dir: string; lastOK: string; lastAttempt: string; lastError?: string; pendingUploads: number;
+  nextRun: string; warnings: string[];
+}
+export interface Ops { settings: OpsSettings; backupsEnabled: boolean; logFile: boolean; backup?: BackupStatus }
+export interface BackupInfo { name: string; size: number; at: string; local: boolean; remote: boolean; uploaded: boolean }
+export interface AuditEntry { id: number; at: string; action: string; details: string; remote: string; actor?: string }
+
 export interface Policies { global: string; overrides: Record<string, string>; presets: string[] }
 
 export class ApiError extends Error {
@@ -158,7 +170,35 @@ export const api = {
   settings: () => request<ServerSettings>("GET", "/api/v1/settings"),
   saveSettings: (s: ServerSettings) => request<ServerSettings>("PUT", "/api/v1/settings", s),
   agentManifestURL: "/api/v1/agent/manifest",
+
+  ops: () => request<Ops>("GET", "/api/v1/ops"),
+  saveOps: (o: OpsSettings) => request<Ops>("PUT", "/api/v1/ops", o),
+  backups: () => request<{ backups: BackupInfo[]; remoteError?: string }>("GET", "/api/v1/backups", undefined, true),
+  backupNow: () => request<BackupInfo>("POST", "/api/v1/backups"),
+  restoreBackup: (name: string) => request<{ safetyBackup: string }>("POST", `/api/v1/backups/${encodeURIComponent(name)}/restore`),
+  restoreUpload: (file: File) => rawPost<{ safetyBackup: string }>("/api/v1/restore", file,
+    file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream"),
+  importCluster: (exportJSON: string) => rawPost<{ cluster: Cluster; token: string }>("/api/v1/clusters/import", exportJSON, "application/json"),
+  audit: (limit = 1000) => request<AuditEntry[]>("GET", `/api/v1/audit?limit=${limit}`, undefined, true),
+  /** Fetches an admin-only file (the token goes in a header, never in a URL) and saves it. */
+  downloadBackup: async (name: string) => {
+    const res = await fetch(`/api/v1/backups/${encodeURIComponent(name)}`, { headers: { Authorization: `Bearer ${adminToken.get()}` } });
+    if (!res.ok) throw new ApiError(res.status, (await res.text()) || res.statusText);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };
+
+async function rawPost<T>(path: string, body: BodyInit, contentType: string): Promise<T> {
+  const res = await fetch(path, { method: "POST", body, headers: { "Content-Type": contentType, Accept: "application/json", Authorization: `Bearer ${adminToken.get()}` } });
+  const text = await res.text();
+  let data: unknown = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+  if (!res.ok) throw new ApiError(res.status, (data as { error?: string } | null)?.error ?? (text || res.statusText));
+  return data as T;
+}
 
 // The admin token lives only in this tab's sessionStorage (cleared when the tab closes) — never in
 // localStorage or a cookie. Interim until real sign-in.

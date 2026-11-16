@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 
 	"owl/internal/auth"
+	"owl/internal/backup"
 	"owl/internal/catalog"
 	"owl/internal/snapshot"
 	"owl/internal/store"
@@ -465,5 +466,118 @@ func TestOverrideEndpoints(t *testing.T) {
 	_, inv = call(t, "GET", u+"/inventory", "", false)
 	if len(inv["unrecognized"].([]any)) != 1 {
 		t.Errorf("undo must bring it back: %v", inv)
+	}
+}
+
+// Admin actions go to the audit log; the bearer token and Authorization header never reach the logs.
+func TestAuditAndLogHygiene(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cat, _ := catalog.Builtin()
+	var logs bytes.Buffer
+	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, AdminToken: testAdminToken,
+		Log: slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}).Handler())
+	defer srv.Close()
+
+	code, out := call(t, "POST", srv.URL+"/api/v1/clusters", `{"name":"c1","stage":"live","tenant":"IT"}`, true)
+	if code != 201 {
+		t.Fatal(code, out)
+	}
+	agentToken := out["token"].(string)
+	push(t, srv.URL, agentToken, snap("v1.36.4+k3s1", nil))
+	if code, _ := call(t, "GET", srv.URL+"/api/v1/audit", "", false); code != 401 {
+		t.Errorf("audit log needs the admin token: %d", code)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/api/v1/audit", nil)
+	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []store.AuditEntry
+	_ = json.NewDecoder(resp.Body).Decode(&entries)
+	resp.Body.Close()
+	if len(entries) != 1 || entries[0].Action != "cluster added" || !strings.Contains(entries[0].Details, "cluster=c1") || entries[0].Remote == "" {
+		t.Errorf("audit: %+v", entries)
+	}
+	if resp.Header.Get("X-Request-ID") == "" {
+		t.Error("responses must carry X-Request-ID")
+	}
+	for _, secret := range []string{testAdminToken, agentToken, "Bearer"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("logs contain %q:\n%s", secret, logs.String())
+		}
+	}
+	if !strings.Contains(logs.String(), `"req":"`) {
+		t.Error("request lines must carry the request id")
+	}
+}
+
+func TestOpsSettingsAndBackupFlow(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cat, _ := catalog.Builtin()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	level := new(slog.LevelVar)
+	app := &Server{Store: db, Catalog: cat, AdminToken: testAdminToken, Log: log, LogLevel: level,
+		Backups: &backup.Manager{Store: db, Dir: filepath.Join(t.TempDir(), "b"), Log: log}}
+	srv := httptest.NewServer(app.Handler())
+	defer srv.Close()
+	u := srv.URL + "/api/v1"
+
+	for _, bad := range []string{
+		`{"backupTime":"25:00","backupLocalDays":15,"backupLocalCopies":3,"logLevel":"info","logRetentionDays":5,"auditRetentionDays":365}`,
+		`{"backupTime":"03:00","backupLocalDays":0,"backupLocalCopies":3,"logLevel":"info","logRetentionDays":5,"auditRetentionDays":365}`,
+		`{"backupTime":"03:00","backupLocalDays":15,"backupLocalCopies":3,"logLevel":"loud","logRetentionDays":5,"auditRetentionDays":365}`,
+	} {
+		if code, _ := call(t, "PUT", u+"/ops", bad, true); code != 400 {
+			t.Errorf("accepted %s: %d", bad, code)
+		}
+	}
+	code, out := call(t, "PUT", u+"/ops", `{"backupTime":"4:30","backupLocalDays":15,"backupLocalCopies":3,"logLevel":"debug","logRetentionDays":5,"auditRetentionDays":365}`, true)
+	if code != 200 || out["settings"].(map[string]any)["backupTime"] != "04:30" || level.Level() != slog.LevelDebug {
+		t.Errorf("ops settings: %d %v level=%v", code, out, level.Level())
+	}
+
+	// Backup -> delete cluster -> restore the backup -> cluster is back.
+	_, _ = db.CreateCluster(context.Background(), "keep", store.StageLive, "IT")
+	code, out = call(t, "POST", u+"/backups", "", true)
+	name, _ := out["name"].(string)
+	if code != 201 || name == "" {
+		t.Fatalf("backup now: %d %v", code, out)
+	}
+	call(t, "DELETE", u+"/clusters/keep", "", true)
+	if code, out := call(t, "POST", u+"/backups/"+name+"/restore", "", true); code != 200 || out["safetyBackup"] == "" {
+		t.Fatalf("restore: %d %v", code, out)
+	}
+	if _, err := db.GetCluster(context.Background(), "keep"); err != nil {
+		t.Errorf("not restored: %v", err)
+	}
+	if code, _ := call(t, "GET", u+"/backups/..%2f..%2fetc%2fpasswd", "", true); code != 404 {
+		t.Errorf("path traversal: %d", code)
+	}
+	req, _ := http.NewRequest("POST", u+"/restore", strings.NewReader("x"))
+	req.Header.Set("Content-Type", "multipart/form-data")
+	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	if resp, _ := http.DefaultClient.Do(req); resp.StatusCode != 415 {
+		t.Errorf("form uploads must be refused: %d", resp.StatusCode)
+	}
+
+	// Export -> delete -> import gives the cluster back with a new token.
+	_, exp := call(t, "GET", u+"/clusters/keep/export", "", true)
+	body, _ := json.Marshal(exp)
+	call(t, "DELETE", u+"/clusters/keep", "", true)
+	code, out = call(t, "POST", u+"/clusters/import", string(body), true)
+	if code != 201 || out["token"] == "" {
+		t.Fatalf("import: %d %v", code, out)
+	}
+	if code, _ := call(t, "POST", u+"/clusters/import", `{"format":"other","version":1}`, true); code != 400 {
+		t.Errorf("foreign export: %d", code)
 	}
 }

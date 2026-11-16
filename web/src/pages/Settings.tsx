@@ -1,16 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type Cluster, type ServerSettings } from "../api";
+import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type BackupInfo, type Cluster, type OpsSettings, type ServerSettings } from "../api";
+import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
-import { ago, Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
+import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
 import { overrideText } from "./ClusterDetail";
 
 type M = { ok: boolean; text: string } | null;
 
 const TABS: [string, string][] = [
   ["clusters", "Clusters"], ["stages", "Stages"], ["tenants", "Tenants"], ["policy", "Version policy"],
-  ["overrides", "Catalog overrides"], ["token", "Admin token"],
+  ["overrides", "Catalog overrides"], ["backups", "Backups & restore"], ["logs", "Logs & audit"], ["token", "Admin token"],
 ];
 
 export default function Settings() {
@@ -35,6 +36,8 @@ export default function Settings() {
       {tab === "tenants" && <TenantsTab />}
       {tab === "policy" && <PolicyTab />}
       {tab === "overrides" && <OverridesTab />}
+      {tab === "backups" && <BackupsTab />}
+      {tab === "logs" && <LogsTab />}
       {tab === "token" && <TokenTab />}
       {!TABS.some(([id]) => id === tab) && <Empty>Unknown section.</Empty>}
     </>
@@ -507,6 +510,215 @@ function TokenTab() {
           <button className="btn primary" disabled={!value.trim()}>Use</button>
         </form>
       )}
+    </Card>
+  );
+}
+
+// ---------------- backups & restore ----------------
+
+function size(n: number) {
+  return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
+function BackupsTab() {
+  const ops = useApi(api.ops);
+  const canWrite = adminToken.get() !== "";
+  const list = useApi<{ backups: BackupInfo[]; remoteError?: string }>(() => (canWrite ? api.backups() : Promise.resolve({ backups: [] })), [canWrite]);
+  const { reload: reloadData } = useAppData();
+  const w = useWrite();
+  const [confirm, setConfirm] = useState<{ what: string; run: () => Promise<{ safetyBackup: string }> } | null>(null);
+  const [token, setToken] = useState<{ cluster: string; token: string } | null>(null);
+  const settings = useApi(api.settings);
+
+  if (ops.error) return <ErrorBox error={ops.error} retry={ops.reload} />;
+  if (!ops.data) return <Loading />;
+  if (!ops.data.backupsEnabled) return <Card title="Backups"><Empty>Backups are disabled on this server.</Empty></Card>;
+  const st = ops.data.backup!;
+  const refresh = () => { ops.reload(); list.reload(); };
+
+  async function importFile(f: File) {
+    const r = await w.run(async () => api.importCluster(await f.text()));
+    if (r) { setToken({ cluster: r.cluster.name, token: r.token }); reloadData(); }
+  }
+
+  return (
+    <>
+      <Card title="Backups" actions={<button className="btn primary" disabled={!canWrite || w.busy}
+        onClick={async () => { if (await w.run(() => api.backupNow(), "Backup taken.")) refresh(); }}>{w.busy ? "Working…" : "Back up now"}</button>}>
+        {st.warnings.map((x) => <div key={x} className="callout warn"><Icon.warn /><span>{x}</span></div>)}
+        <div className="kv-grid">
+          <div><span>Copies go to</span>{st.target ? <span className="mono">{st.target}</span> : <b>this server only</b>}</div>
+          <div><span>Last backup</span>{st.lastOK && !st.lastOK.startsWith("0001") ? `${ago(st.lastOK)} (${date(st.lastOK)})` : "never"}</div>
+          <div><span>Next scheduled</span>{ago(st.nextRun)} <span className="subtle">({new Date(st.nextRun).toLocaleString()})</span></div>
+        </div>
+        <Msg msg={w.msg} />
+      </Card>
+
+      <BackupSettings ops={ops.data.settings} s3={!!st.target} canWrite={canWrite} onSaved={ops.reload} />
+
+      <Card title="Stored backups" actions={<span className="subtle">{st.target ? "Local copies and the bucket" : `Local folder ${st.dir}`}</span>}>
+        {!canWrite ? <div className="callout info"><Icon.info /><span>Set the admin token to list, download or restore backups.</span></div> :
+          list.error ? <ErrorBox error={list.error} retry={list.reload} /> : !list.data ? <Loading /> : (
+          <>
+            {list.data.remoteError && <div className="callout warn"><Icon.warn /><span>Bucket listing failed: {list.data.remoteError}</span></div>}
+            {list.data.backups.length === 0 ? <Empty>No backups yet. “Back up now” takes the first one.</Empty> : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Taken</th><th>Size</th><th>Where</th><th></th></tr></thead>
+                  <tbody>
+                    {list.data.backups.map((b) => (
+                      <tr key={b.name}>
+                        <td>{new Date(b.at).toLocaleString()}<div className="subtle mono">{b.name}</div></td>
+                        <td>{size(b.size)}</td>
+                        <td><div className="row" style={{ gap: 4 }}>
+                          {b.local && <Tag>this server</Tag>}
+                          {b.remote && <Tag tone="ok">bucket</Tag>}
+                          {b.local && st.target && !b.uploaded && <Tag tone="warn">not uploaded yet</Tag>}
+                        </div></td>
+                        <td><div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                          <button className="btn small" disabled={w.busy} onClick={() => w.run(() => api.downloadBackup(b.name))}>Download</button>
+                          <button className="btn small danger" disabled={w.busy} onClick={() => setConfirm({ what: `backup ${b.name}`, run: () => api.restoreBackup(b.name) })}>Restore</button>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+        <div className="row">
+          <FileButton label="Restore from file…" accept=".gz,.db" disabled={!canWrite || w.busy}
+            onFile={(f) => setConfirm({ what: `file ${f.name}`, run: () => api.restoreUpload(f) })} />
+          <FileButton label="Import cluster export…" accept=".json,application/json" disabled={!canWrite || w.busy} onFile={importFile} />
+        </div>
+        <p className="subtle" style={{ margin: 0 }}>Import brings back one deleted cluster from its export (Delete → “Export cluster data”), with a new agent token.</p>
+      </Card>
+
+      {confirm && <RestoreDialog what={confirm.what} onClose={() => setConfirm(null)} onConfirm={async () => {
+        const r = await w.run(confirm.run);
+        setConfirm(null);
+        if (r) { w.setMsg({ ok: true, text: `Restored from ${confirm.what}. Safety backup of the previous state: ${r.safetyBackup}.` }); refresh(); reloadData(); }
+      }} />}
+      {token && <TokenDialog cluster={token.cluster} token={token.token} rotated={false} serverURL={settings.data?.serverURL ?? ""} onClose={() => { setToken(null); reloadData(); }} />}
+    </>
+  );
+}
+
+function FileButton({ label, accept, disabled, onFile }: { label: string; accept: string; disabled: boolean; onFile: (f: File) => void }) {
+  return (
+    <label className={`btn${disabled ? " disabled" : ""}`} aria-disabled={disabled}>
+      {label}
+      <input type="file" accept={accept} disabled={disabled} className="visually-hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }} />
+    </label>
+  );
+}
+
+function RestoreDialog({ what, onClose, onConfirm }: { what: string; onClose: () => void; onConfirm: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog title="Restore the database?" onClose={busy ? undefined : onClose}>
+      <p style={{ margin: 0 }}>Clusters, tokens, state, history, stages, tenants, policies, overrides and settings are replaced with the contents of <b>{what}</b>. Before that, the server:</p>
+      <ul className="bullets"><li>checks it's a valid backup it can read (older backups are upgraded to the current format)</li><li>takes a safety backup of the current state</li></ul>
+      <div className="callout warn"><Icon.warn /><span>Clusters added after this backup won't exist afterwards — add them again. Agents keep working if their cluster was in the backup. The audit log is kept as it is.</span></div>
+      <div className="row" style={{ justifyContent: "flex-end" }}>
+        <button className="btn" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn danger solid" disabled={busy} onClick={() => { setBusy(true); onConfirm(); }}>{busy ? "Restoring…" : "Restore"}</button>
+      </div>
+    </Dialog>
+  );
+}
+
+function BackupSettings({ ops, s3, canWrite, onSaved }: { ops: OpsSettings; s3: boolean; canWrite: boolean; onSaved: () => void }) {
+  const [v, setV] = useState(ops);
+  const w = useWrite();
+  const dirty = JSON.stringify(v) !== JSON.stringify(ops);
+  return (
+    <Card title="Schedule & retention">
+      <form className="stack" onSubmit={async (e) => { e.preventDefault(); if (await w.run(() => api.saveOps(v), "Saved.")) onSaved(); }}>
+        <div className="kv-grid">
+          <label className="field">Daily backup at (server time)
+            <input className="input mono" type="time" value={v.backupTime} onChange={(e) => setV({ ...v, backupTime: e.target.value })} />
+          </label>
+          <label className="field">{s3 ? "Local copies to keep" : "Keep local backups (days)"}
+            {s3
+              ? <input className="input" type="number" min={1} max={1000} value={v.backupLocalCopies} onChange={(e) => setV({ ...v, backupLocalCopies: Number(e.target.value) })} />
+              : <input className="input" type="number" min={1} max={3650} value={v.backupLocalDays} onChange={(e) => setV({ ...v, backupLocalDays: Number(e.target.value) })} />}
+          </label>
+          <div><span className="subtle" style={{ display: "block", margin: 0 }}>Bucket retention</span>{s3 ? "Set by a lifecycle rule on the bucket. The server never deletes there." : "No bucket configured."}</div>
+        </div>
+        <p className="subtle" style={{ margin: 0 }}>{s3 ? "A local copy is never deleted before it's in the bucket." : "The newest backup is always kept."}</p>
+        <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
+      </form>
+    </Card>
+  );
+}
+
+// ---------------- logs & audit ----------------
+
+function LogsTab() {
+  const ops = useApi(api.ops);
+  const canWrite = adminToken.get() !== "";
+  const audit = useApi(() => (canWrite ? api.audit() : Promise.resolve([])), [canWrite]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize();
+  if (ops.error) return <ErrorBox error={ops.error} retry={ops.reload} />;
+  if (!ops.data) return <Loading />;
+  const pg = paginate(audit.data ?? [], page, pageSize);
+  return (
+    <>
+      <LogSettings ops={ops.data.settings} logFile={ops.data.logFile} canWrite={canWrite} onSaved={ops.reload} />
+      <Card title="Audit log" actions={<span className="subtle">Every admin action: what, when, from where. Kept {ops.data.settings.auditRetentionDays} days.</span>}>
+        {!canWrite ? <div className="callout info"><Icon.info /><span>Set the admin token to read the audit log (it contains IP addresses).</span></div> :
+          audit.error ? <ErrorBox error={audit.error} retry={audit.reload} /> : !audit.data ? <Loading /> :
+          audit.data.length === 0 ? <Empty>No admin actions recorded yet.</Empty> : (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>When</th><th>Action</th><th>Details</th><th>From</th></tr></thead>
+                <tbody>{pg.items.map((e) => (
+                  <tr key={e.id}>
+                    <td title={e.at}>{ago(e.at)}<div className="subtle">{new Date(e.at).toLocaleString()}</div></td>
+                    <td><b>{e.action}</b>{e.actor && <div className="subtle">{e.actor}</div>}</td>
+                    <td className="mono small" style={{ wordBreak: "break-word" }}>{e.details || "—"}</td>
+                    <td className="mono">{e.remote}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
+              onPage={setPage} onSize={(n) => { setPageSize(n); setPage(1); }} />
+          </>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function LogSettings({ ops, logFile, canWrite, onSaved }: { ops: OpsSettings; logFile: boolean; canWrite: boolean; onSaved: () => void }) {
+  const [v, setV] = useState(ops);
+  const w = useWrite();
+  const dirty = JSON.stringify(v) !== JSON.stringify(ops);
+  return (
+    <Card title="Application logs">
+      <form className="stack" onSubmit={async (e) => { e.preventDefault(); if (await w.run(() => api.saveOps(v), "Saved.")) onSaved(); }}>
+        <div className="kv-grid">
+          <label className="field">Log level
+            <select className="select" value={v.logLevel} onChange={(e) => setV({ ...v, logLevel: e.target.value as OpsSettings["logLevel"] })}>
+              <option value="debug">debug (every request, incl. static files)</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option>
+            </select>
+          </label>
+          <label className="field">Keep log files (days)
+            <input className="input" type="number" min={1} max={365} value={v.logRetentionDays} disabled={!logFile} onChange={(e) => setV({ ...v, logRetentionDays: Number(e.target.value) })} />
+          </label>
+          <label className="field">Keep audit entries (days)
+            <input className="input" type="number" min={1} max={3650} value={v.auditRetentionDays} onChange={(e) => setV({ ...v, auditRetentionDays: Number(e.target.value) })} />
+          </label>
+        </div>
+        <p className="subtle" style={{ margin: 0 }}>{logFile ? "JSON logs go to stderr and to logs/server.log next to the database: a new file every day (or at 50 MB), older files gzipped." : "Logs go to stderr only (no log directory configured)."} Tokens and Authorization headers are never logged.</p>
+        <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
+      </form>
     </Card>
   );
 }

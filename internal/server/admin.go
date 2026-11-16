@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -59,9 +61,22 @@ func (s *Server) storeError(w http.ResponseWriter, err error) {
 	}
 }
 
-// audit logs an admin action. Milestone 7 also writes these to the audit log table.
+// audit records an admin action in the audit log (DB) and the application log. args are key/value
+// pairs, like slog's.
 func (s *Server) audit(r *http.Request, action string, args ...any) {
-	s.Log.Info("admin: "+action, append(args, "by", "admin-token", "remote", r.RemoteAddr)...)
+	s.Log.Info("admin: "+action, append(args, "by", "admin-token", "remote", r.RemoteAddr, "req", requestID(r))...)
+	var parts []string
+	for i := 0; i+1 < len(args); i += 2 {
+		parts = append(parts, fmt.Sprintf("%v=%v", args[i], args[i+1]))
+	}
+	remote := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(remote); err == nil {
+		remote = h
+	}
+	// The action already happened: a failed audit write is logged, not turned into an error response.
+	if err := s.Store.AddAudit(context.WithoutCancel(r.Context()), store.AuditEntry{Action: action, Details: strings.Join(parts, " "), Remote: remote}); err != nil {
+		s.Log.Error("audit log write failed", "action", action, "err", err)
+	}
 }
 
 func toClusterJSON(c *store.Cluster) clusterJSON {
@@ -154,6 +169,8 @@ func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }
 
+const exportFormat = "owl/cluster-export"
+
 // ClusterExport is everything about one cluster except its token hashes (useless once deleted).
 // Milestone 7 adds importing it back.
 type ClusterExport struct {
@@ -192,7 +209,7 @@ func (s *Server) exportCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "cluster exported", "cluster", c.Name)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="cluster-%s-%s.json"`, c.Name, time.Now().UTC().Format("20060102")))
-	writeJSON(w, http.StatusOK, ClusterExport{Format: "owl/cluster-export", Version: 1,
+	writeJSON(w, http.StatusOK, ClusterExport{Format: exportFormat, Version: 1,
 		ExportedAt: time.Now().UTC(), Cluster: toClusterJSON(c), CreatedAt: c.CreatedAt, Images: imgs, Changes: changes})
 }
 

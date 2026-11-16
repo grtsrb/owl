@@ -21,9 +21,19 @@ fi
 export OWL_ADMIN_TOKEN
 [[ -n ${GITHUB_TOKEN:-} ]] || echo "warning: GITHUB_TOKEN not set (.env); upstream data will be rate limited" >&2
 
+# Local S3 for backups (S3Mock: S3-compatible test server; MinIO no longer publishes images). It
+# accepts any credentials — permissions (no delete for the server) can only be tested on real S3.
+docker network create owl-net >/dev/null 2>&1 || true
+docker rm -f owl-s3 >/dev/null 2>&1 || true
+docker run -d --name owl-s3 --network owl-net -e initialBuckets=owl-backups adobe/s3mock:3.12.0 >/dev/null
+
 docker rm -f owl-server >/dev/null 2>&1 || true
-docker run -d --name owl-server -p 127.0.0.1:8080:8080 -v owl-data:/data \
+# Docker's own copy of the logs is capped (the server also writes rotated files to /data/logs).
+docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-data:/data \
+  --log-opt max-size=10m --log-opt max-file=3 \
   -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example -e GITHUB_TOKEN -e OWL_ADMIN_TOKEN \
+  -e OWL_BACKUP_S3_ENDPOINT=owl-s3:9090 -e OWL_BACKUP_S3_BUCKET=owl-backups -e OWL_BACKUP_S3_PREFIX=dev \
+  -e OWL_BACKUP_S3_ACCESS_KEY=dev -e OWL_BACKUP_S3_SECRET_KEY=dev-only-not-a-secret -e OWL_BACKUP_S3_INSECURE=true \
   "$IMAGE" server >/dev/null
 until curl -sf 127.0.0.1:8080/healthz >/dev/null; do sleep 1; done
 echo "server: http://127.0.0.1:8080"
