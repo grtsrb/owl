@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 type Config struct {
@@ -32,7 +32,7 @@ type Config struct {
 // token is never sent in cleartext by accident.
 func (c Config) Validate() error {
 	if c.ServerURL == "" || c.Token == "" {
-		return errors.New("server URL (INV_SERVER_URL) and token (INV_TOKEN) are required")
+		return errors.New("server URL (OWL_SERVER_URL) and token (OWL_TOKEN) are required")
 	}
 	u, err := url.Parse(c.ServerURL)
 	if err != nil || u.Host == "" {
@@ -42,7 +42,7 @@ func (c Config) Validate() error {
 	case "https":
 	case "http":
 		if !c.AllowInsecureHTTP {
-			return errors.New("refusing to send the token over plain http; use https or set INV_ALLOW_INSECURE_HTTP=true (local dev only)")
+			return errors.New("refusing to send the token over plain http; use https or set OWL_ALLOW_INSECURE_HTTP=true (local dev only)")
 		}
 	default:
 		return fmt.Errorf("unsupported server URL scheme %q", u.Scheme)
@@ -162,7 +162,7 @@ func (a *Agent) pushOnce(ctx context.Context, url string, body []byte) (retry bo
 	req.Header.Set("Authorization", "Bearer "+a.Config.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("User-Agent", "service-inventory-agent/"+a.Collector.Version)
+	req.Header.Set("User-Agent", "service-owl-agent/"+a.Collector.Version)
 	resp, err := a.HTTP.Do(req)
 	if err != nil {
 		return true, err

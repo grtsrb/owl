@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/deploy"
-	"service-inventory/internal/auth"
-	"service-inventory/internal/store"
+	"owl/deploy"
+	"owl/internal/auth"
+	"owl/internal/store"
 )
 
 var (
@@ -157,7 +157,7 @@ func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
 // ClusterExport is everything about one cluster except its token hashes (useless once deleted).
 // Milestone 7 adds importing it back.
 type ClusterExport struct {
-	Format     string           `json:"format"` // "service-inventory/cluster-export"
+	Format     string           `json:"format"` // "owl/cluster-export"
 	Version    int              `json:"version"`
 	ExportedAt time.Time        `json:"exportedAt"`
 	Cluster    clusterJSON      `json:"cluster"`
@@ -192,7 +192,7 @@ func (s *Server) exportCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "cluster exported", "cluster", c.Name)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="cluster-%s-%s.json"`, c.Name, time.Now().UTC().Format("20060102")))
-	writeJSON(w, http.StatusOK, ClusterExport{Format: "service-inventory/cluster-export", Version: 1,
+	writeJSON(w, http.StatusOK, ClusterExport{Format: "owl/cluster-export", Version: 1,
 		ExportedAt: time.Now().UTC(), Cluster: toClusterJSON(c), CreatedAt: c.CreatedAt, Images: imgs, Changes: changes})
 }
 
@@ -405,7 +405,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		b.ServerURL = strings.TrimRight(b.ServerURL, "/")
 	}
 	if b.AgentImage != "" && !reImage.MatchString(b.AgentImage) {
-		httpError(w, http.StatusBadRequest, "agentImage: an image reference like registry.example.com/team/service-inventory:0.7.0")
+		httpError(w, http.StatusBadRequest, "agentImage: an image reference like registry.example.com/team/owl:0.7.0")
 		return
 	}
 	for k, v := range map[string]string{settingServerURL: b.ServerURL, settingAgentImage: b.AgentImage} {

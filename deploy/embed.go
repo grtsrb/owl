@@ -5,11 +5,11 @@ package deploy
 import _ "embed"
 
 // AgentManifest is deploy/agent/agent.yaml: namespace, read-only RBAC and the agent Deployment. It
-// contains no token; the token goes into the inventory-agent Secret separately.
+// contains no token; the token goes into the owl-agent Secret separately.
 //
 //go:embed agent/agent.yaml
 var AgentManifest string
 
 // AgentImagePlaceholder is the image line in AgentManifest that the server replaces with the
 // configured agent image.
-const AgentImagePlaceholder = "image: service-inventory:dev # replace with your registry image"
+const AgentImagePlaceholder = "image: owl:dev # replace with your registry image"

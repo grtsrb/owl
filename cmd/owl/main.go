@@ -1,5 +1,5 @@
-// Command inv is the service-inventory binary: `inv agent` runs in each cluster, `inv server` is the
-// central service, `inv cluster` manages cluster registrations and agent tokens.
+// Command owl is the owl binary: `owl agent` runs in each cluster, `owl server` is the
+// central service, `owl cluster` manages cluster registrations and agent tokens.
 package main
 
 import (
@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"service-inventory/internal/agent"
+	"owl/internal/agent"
 )
 
 // version is set at build time: -ldflags "-X main.version=..."
@@ -51,7 +51,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `usage: inv <command> [flags]
+	fmt.Fprintln(os.Stderr, `usage: owl <command> [flags]
 
 commands:
   agent     collect workload inventory from a cluster and push it to the server
@@ -67,8 +67,8 @@ func runAgent(args []string) error {
 	kubeContext := fs.String("context", "", "kubeconfig context to use (out-of-cluster only)")
 	once := fs.Bool("once", false, "collect and push once, then exit")
 	printOnly := fs.Bool("print", false, "collect once and print the snapshot as JSON instead of pushing")
-	interval := fs.Duration("interval", envDuration("INV_INTERVAL", 15*time.Minute), "collection interval")
-	server := fs.String("server", os.Getenv("INV_SERVER_URL"), "server base URL (env INV_SERVER_URL)")
+	interval := fs.Duration("interval", envDuration("OWL_INTERVAL", 15*time.Minute), "collection interval")
+	server := fs.String("server", os.Getenv("OWL_SERVER_URL"), "server base URL (env OWL_SERVER_URL)")
 	_ = fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -76,7 +76,7 @@ func runAgent(args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg.UserAgent = "service-inventory-agent/" + version
+	cfg.UserAgent = "service-owl-agent/" + version
 	cfg.QPS, cfg.Burst = 5, 10 // be gentle with the API server
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -103,11 +103,11 @@ func runAgent(args []string) error {
 		HTTP:      agent.NewHTTPClient(),
 		Config: agent.Config{
 			ServerURL: *server,
-			Token:     os.Getenv("INV_TOKEN"), // env only: never accept the token as a flag (shows in ps)
+			Token:     os.Getenv("OWL_TOKEN"), // env only: never accept the token as a flag (shows in ps)
 			Interval:  *interval,
 			Timeout:   5 * time.Minute,
 
-			AllowInsecureHTTP: os.Getenv("INV_ALLOW_INSECURE_HTTP") == "true",
+			AllowInsecureHTTP: os.Getenv("OWL_ALLOW_INSECURE_HTTP") == "true",
 		},
 	}
 	if *once {

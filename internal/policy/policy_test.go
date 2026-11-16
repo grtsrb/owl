@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"service-inventory/internal/upstream"
+	"owl/internal/upstream"
 )
 
 var k8sLines = []upstream.ReleaseLine{

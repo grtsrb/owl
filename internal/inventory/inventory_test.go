@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
-	"service-inventory/internal/store/sqlite"
+	"owl/internal/catalog"
+	"owl/internal/snapshot"
+	"owl/internal/store"
+	"owl/internal/store/sqlite"
 )
 
 func TestBuild(t *testing.T) {

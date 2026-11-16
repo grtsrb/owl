@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
-Service Inventory: tracks third-party components running in Kubernetes clusters (RKE2), compares them
+Owl: tracks third-party components running in Kubernetes clusters (RKE2), compares them
 with upstream releases / EOL / advisories, scores upgrade priority, and uses Claude to summarize
 version jumps. **`DESIGN.md` is the source of truth for decisions** — read it before non-trivial work,
 and update it when a decision changes.
@@ -15,7 +15,7 @@ layout in sync as milestones land.
 
 ## Commands
 ```bash
-make build test lint        # bin/inv, go test ./..., go vet + gofmt check
+make build test lint        # bin/owl, go test ./..., go vet + gofmt check
 make ui                     # build web/ (React) into web/dist, embedded by the next `make build`
 make ui-dev                 # Vite dev server :5173 with /api proxied to :8080 (needs make stack-up)
 cd web && npm run typecheck # TypeScript check only
@@ -25,20 +25,20 @@ make seed                   # re-apply seed workloads (dev/seed/seed.sh — bash
 make agent-print CLUSTER=it-aws-prod   # what the agent would send, as JSON (uses k3d-<name> context)
 make image                  # Docker image (same image for agent and server)
 make stack-up               # server in Docker (127.0.0.1:8080) + agent in every k3d cluster
-docker exec inventory-server /inv cluster list         # registered clusters, last seen
+docker exec owl-server /owl cluster list         # registered clusters, last seen
 curl -s 127.0.0.1:8080/api/v1/changes?cluster=it-hetzner  # change history
 curl -s 127.0.0.1:8080/api/v1/inventory                   # components x clusters, unpinned, unrecognized
 curl -s 127.0.0.1:8080/api/v1/components/coredns          # + upstream lines/EOL + advisories per version
-./bin/inv upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
+./bin/owl upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
 curl -s 127.0.0.1:8080/api/v1/report                      # levels + reasons + targets + drift
-set -a; . ./.env; set +a   # GITHUB_TOKEN, INV_ADMIN_TOKEN (stack-up generates the admin token once)
-curl -s -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $INV_ADMIN_TOKEN" \
+set -a; . ./.env; set +a   # GITHUB_TOKEN, OWL_ADMIN_TOKEN (stack-up generates the admin token once)
+curl -s -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $OWL_ADMIN_TOKEN" \
   -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/policies/grafana
 make dev-down
 ```
 
 ## Layout / architecture
-- `cmd/inv` — single binary: `agent`, `server`, `cluster add|list|rotate-token|delete` (operator
+- `cmd/owl` — single binary: `agent`, `server`, `cluster add|list|rotate-token|delete` (operator
   fallback that works directly on the DB file; prints the agent token once — the UI does the same via
   Settings → Clusters) and `upstream` (debug:
   print upstream lines/advisories for a component, optionally for one `--version`).
@@ -58,7 +58,7 @@ make dev-down
   reference `stages`/`tenants` (rename cascades, delete in use fails).
 - `internal/server` — HTTP API. Ingest authenticates by SHA-256 token hash (`internal/auth`), enforces
   compressed/decompressed size limits (413) and `SchemaVersion`. Read endpoints are unauthenticated
-  until milestone 8 and only answer allowlisted `Host` headers (localhost + `INV_ALLOWED_HOSTS`) to
+  until milestone 8 and only answer allowlisted `Host` headers (localhost + `OWL_ALLOWED_HOSTS`) to
   block DNS rebinding — don't bind the server to a public interface before auth lands.
 - SQLite timestamps use a fixed-width layout so `ORDER BY` on the text column is chronological.
 - `internal/catalog` — `catalog.yaml` (embedded) maps image names → component → GitHub repo /
@@ -80,7 +80,7 @@ make dev-down
   re-implement line matching elsewhere.
 - Admin endpoints (`internal/server/admin.go`: clusters, stages, tenants, overrides, settings, export)
   validate names strictly (they end up in YAML/kubectl) and reject anything but JSON bodies.
-- Write endpoints require `INV_ADMIN_TOKEN` (bearer, constant-time compare, ≥24 chars); unset = writes
+- Write endpoints require `OWL_ADMIN_TOKEN` (bearer, constant-time compare, ≥24 chars); unset = writes
   disabled. Interim until Google sign-in; also JSON-only (cross-site form posts can't write).
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
   table-tested in `score_test.go`); `ActionFor` derives the "Recommended action" sentence from a score
@@ -95,7 +95,7 @@ make dev-down
   `web/src/api.ts` mirrors the Go JSON types; keep them in sync when changing API structs. The admin
   token is held in sessionStorage only and sent only on writes.
 - SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
-- Agent refuses `http://` server URLs unless `INV_ALLOW_INSECURE_HTTP=true` (local dev only).
+- Agent refuses `http://` server URLs unless `OWL_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
 - `deploy/agent/agent.yaml` — namespace, SA, read-only ClusterRole, Deployment (no token). Embedded
   via `deploy/embed.go` and served at `/api/v1/agent/manifest` with the configured image. The

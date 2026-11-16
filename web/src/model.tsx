@@ -149,7 +149,7 @@ export function useQueryState() {
   return { get, set };
 }
 
-const PAGE_SIZE_KEY = "inv-page-size";
+const PAGE_SIZE_KEY = "owl-page-size";
 export const PAGE_SIZES = [10, 25, 50, 0] as const; // 0 = all
 
 /** Rows per page: a per-browser preference (not in the URL). Storage may be blocked: default 10. */

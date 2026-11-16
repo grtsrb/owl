@@ -1,4 +1,7 @@
-# Service Inventory — Design
+# Owl — Design
+
+*Named after Owl from Winnie-the-Pooh: the one in the Hundred Acre Wood who knows things (and, like
+our upstream data, is occasionally wrong, hence "needs review").* Formerly "Service Inventory".
 
 Tracks third-party components running in our Kubernetes clusters, shows what is outdated / EOL /
 vulnerable / retired, and uses Claude to explain what an upgrade involves.
@@ -30,7 +33,7 @@ agreed 2026-11-16). Changes to decisions below should update this file.
 - Environments don't run the same things. **Drift** compares only clusters of the **same tenant**, in stage
   order, and only components present in both; "runs only in X" is an info note, never an anomaly.
 - **Cluster management in the UI** (admin token): add (name, stage, tenant), edit, rotate token, delete,
-  live status (waiting for first report → OK → stale). `inv cluster …` stays as a fallback.
+  live status (waiting for first report → OK → stale). `owl cluster …` stays as a fallback.
   - Agent manifest generated from the embedded `deploy/agent/agent.yaml` (single source of RBAC), no token
     inside, downloadable any time. Agent image and server URL are server settings (placeholders + warning
     until set); image later in the GitLab registry.
@@ -46,7 +49,7 @@ One Go binary, two modes; React UI embedded via `go:embed`.
 ```
 cluster (each)                               server (Docker locally, later one EC2 instance)
 ┌───────────────────────┐   HTTPS POST      ┌──────────────────────────────────────────────┐
-│ inv agent             │  Bearer <token>   │ ingest API ── SQLite (Postgres later)         │
+│ owl agent             │  Bearer <token>   │ ingest API ── SQLite (Postgres later)         │
 │ read-only RBAC:       │ ────────────────▶ │ upstream checker (GitHub, endoflife.date, OSV)│
 │ workloads, pods, nodes│  every ~15 min    │ policy + scoring + drift                      │
 │ (no Secrets)          │                   │ Claude summaries (cached per version jump)    │
@@ -155,7 +158,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   - **Changes**; **Settings** (policies, stages, tenants, clusters + agent install, catalog overrides, backups, audit
     log, admin token).
   - v2: trend charts (needs score history).
-- CLI (`inv scan`, `inv outdated`, …).
+- CLI (`owl scan`, `owl outdated`, …).
 - Mattermost: weekly digest (Mon 09:00: counts per level, top 5 actions with summaries, drift) +
   instant alert when something *newly* becomes Critical. Google Chat/email later.
 - Auth v1: single admin password (local: none). v2: Google sign-in, viewer/admin roles.
@@ -174,7 +177,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   (new token, shown once).
 - **Logs**: JSON to stderr and `/data/logs/server.log` on the data volume — daily rotation, gzip, 5 days
   (set in the UI), 50 MB per-file cap; Docker's own log copy capped (10 MB × 3). Agent: stderr only (k8s
-  rotates). `INV_LOG_LEVEL`; one line per request (method, path, status, duration; health/static at debug);
+  rotates). `OWL_LOG_LEVEL`; one line per request (method, path, status, duration; health/static at debug);
   request ID; tokens and `Authorization` never logged (tested).
 - **Audit log** (DB, viewable in UI, 365 days, set in the UI, included in backups): cluster add/edit/rotate/
   delete, policies, catalog overrides, settings, backup/restore/import — what, when, from which IP (who, once

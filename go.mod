@@ -1,4 +1,4 @@
-module service-inventory
+module owl
 
 go 1.27.3
 

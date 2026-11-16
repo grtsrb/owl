@@ -20,14 +20,14 @@ import (
 	"sync"
 	"time"
 
-	"service-inventory/internal/auth"
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/inventory"
-	"service-inventory/internal/policy"
-	"service-inventory/internal/report"
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
-	"service-inventory/internal/upstream"
+	"owl/internal/auth"
+	"owl/internal/catalog"
+	"owl/internal/inventory"
+	"owl/internal/policy"
+	"owl/internal/report"
+	"owl/internal/snapshot"
+	"owl/internal/store"
+	"owl/internal/upstream"
 )
 
 // Limits protect against oversized or malicious payloads (gzip bombs).
@@ -181,7 +181,7 @@ func (s *Server) checkHost(next http.Handler) http.Handler {
 			host = h
 		}
 		if !allowed[strings.ToLower(strings.Trim(host, "[]"))] {
-			httpError(w, http.StatusMisdirectedRequest, "host not allowed (set INV_ALLOWED_HOSTS)")
+			httpError(w, http.StatusMisdirectedRequest, "host not allowed (set OWL_ALLOWED_HOSTS)")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -557,7 +557,7 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.AdminToken == "" {
-			httpError(w, http.StatusForbidden, "write endpoints are disabled: set INV_ADMIN_TOKEN on the server")
+			httpError(w, http.StatusForbidden, "write endpoints are disabled: set OWL_ADMIN_TOKEN on the server")
 			return
 		}
 		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))

@@ -13,8 +13,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
+	"owl/internal/snapshot"
+	"owl/internal/store"
 )
 
 //go:embed schema.sql

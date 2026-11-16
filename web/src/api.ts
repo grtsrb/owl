@@ -162,7 +162,7 @@ export const api = {
 
 // The admin token lives only in this tab's sessionStorage (cleared when the tab closes) — never in
 // localStorage or a cookie. Interim until real sign-in.
-const KEY = "inv-admin-token";
+const KEY = "owl-admin-token";
 export const adminToken = {
   get: (): string => { try { return sessionStorage.getItem(KEY) ?? ""; } catch { return ""; } },
   set: (t: string) => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } },
@@ -183,18 +183,18 @@ export function download(filename: string, text: string, type = "application/yam
 /** The token Secret for a cluster's agent. Values are JSON strings, which are valid YAML scalars. */
 export function agentSecretYAML(serverURL: string, token: string): string {
   const lines = [
-    "# Agent token for Service Inventory. Apply, then delete this file:",
+    "# Agent token for Owl. Apply, then delete this file:",
     "#   kubectl apply -f <this file>",
     "apiVersion: v1",
     "kind: Secret",
     "metadata:",
-    "  name: inventory-agent",
-    "  namespace: service-inventory",
+    "  name: owl-agent",
+    "  namespace: owl",
     "type: Opaque",
     "stringData:",
-    `  INV_SERVER_URL: ${JSON.stringify(serverURL || "https://SET-SERVER-URL-IN-SETTINGS")}`,
-    `  INV_TOKEN: ${JSON.stringify(token)}`,
+    `  OWL_SERVER_URL: ${JSON.stringify(serverURL || "https://SET-SERVER-URL-IN-SETTINGS")}`,
+    `  OWL_TOKEN: ${JSON.stringify(token)}`,
   ];
-  if (serverURL.startsWith("http://")) lines.push(`  INV_ALLOW_INSECURE_HTTP: "true" # plain HTTP: local development only`);
+  if (serverURL.startsWith("http://")) lines.push(`  OWL_ALLOW_INSECURE_HTTP: "true" # plain HTTP: local development only`);
   return lines.join("\n") + "\n";
 }

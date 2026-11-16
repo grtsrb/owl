@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/store/sqlite"
+	"owl/internal/catalog"
+	"owl/internal/store/sqlite"
 )
 
 func TestInRange(t *testing.T) {

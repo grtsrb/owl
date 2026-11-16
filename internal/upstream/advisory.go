@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"service-inventory/internal/catalog"
+	"owl/internal/catalog"
 )
 
 type AffectedRange struct {

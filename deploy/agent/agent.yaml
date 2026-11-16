@@ -1,12 +1,12 @@
-# Service Inventory agent. Easiest: Settings → Clusters → Add cluster in the UI, which gives you this
+# Owl agent. Easiest: Settings → Clusters → Add cluster in the UI, which gives you this
 # file (with your agent image filled in) and a separate agent-secret-<cluster>.yaml with the token:
 #
 #   kubectl apply -f agent.yaml
 #   kubectl apply -f agent-secret-<cluster>.yaml
 #
 # By hand: create the Secret yourself (the token is shown once by the server):
-#   kubectl -n service-inventory create secret generic inventory-agent \
-#     --from-literal=INV_SERVER_URL=https://inventory.example.com --from-literal=INV_TOKEN=<token>
+#   kubectl -n owl create secret generic owl-agent \
+#     --from-literal=OWL_SERVER_URL=https://inventory.example.com --from-literal=OWL_TOKEN=<token>
 # (that leaves the token in your shell history — prefer a file you apply and delete).
 #
 # Permissions are read-only (get/list) and exclude Secrets and ConfigMaps. Keep this in sync with
@@ -14,19 +14,19 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: service-inventory
+  name: owl
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: inventory-agent
-  namespace: service-inventory
+  name: owl-agent
+  namespace: owl
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: inventory-agent-read
+  name: owl-agent-read
 rules:
   - apiGroups: [""]
     resources: [pods, nodes]
@@ -41,43 +41,43 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: inventory-agent-read
+  name: owl-agent-read
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: inventory-agent-read
+  name: owl-agent-read
 subjects:
   - kind: ServiceAccount
-    name: inventory-agent
-    namespace: service-inventory
+    name: owl-agent
+    namespace: owl
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: inventory-agent
-  namespace: service-inventory
-  labels: {app.kubernetes.io/name: inventory-agent}
+  name: owl-agent
+  namespace: owl
+  labels: {app.kubernetes.io/name: owl-agent}
 spec:
   replicas: 1
   strategy: {type: Recreate}
   selector:
-    matchLabels: {app.kubernetes.io/name: inventory-agent}
+    matchLabels: {app.kubernetes.io/name: owl-agent}
   template:
     metadata:
-      labels: {app.kubernetes.io/name: inventory-agent}
+      labels: {app.kubernetes.io/name: owl-agent}
     spec:
-      serviceAccountName: inventory-agent
+      serviceAccountName: owl-agent
       securityContext:
         runAsNonRoot: true
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: agent
-          image: service-inventory:dev # replace with your registry image
+          image: owl:dev # replace with your registry image
           args: [agent]
           envFrom:
-            - secretRef: {name: inventory-agent}
+            - secretRef: {name: owl-agent}
           env:
-            - {name: INV_INTERVAL, value: 15m}
+            - {name: OWL_INTERVAL, value: 15m}
           resources:
             requests: {cpu: 10m, memory: 32Mi}
             limits: {memory: 128Mi}

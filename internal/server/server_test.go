@@ -16,11 +16,11 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"service-inventory/internal/auth"
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
-	"service-inventory/internal/store/sqlite"
+	"owl/internal/auth"
+	"owl/internal/catalog"
+	"owl/internal/snapshot"
+	"owl/internal/store"
+	"owl/internal/store/sqlite"
 )
 
 const testAdminToken = "test-admin-token-0123456789abcdef"
@@ -369,7 +369,7 @@ func TestClusterManagement(t *testing.T) {
 		t.Errorf("export without admin: %d", code)
 	}
 	code, out = call(t, "GET", u+"/clusters/ds-prod/export", "", true)
-	if code != 200 || out["format"] != "service-inventory/cluster-export" || len(out["images"].([]any)) != 1 || len(out["changes"].([]any)) != 1 {
+	if code != 200 || out["format"] != "owl/cluster-export" || len(out["images"].([]any)) != 1 || len(out["changes"].([]any)) != 1 {
 		t.Errorf("export: %d %v", code, out)
 	}
 	if strings.Contains(fmt.Sprint(out), "token") {
@@ -417,7 +417,7 @@ func TestSettingsAndManifest(t *testing.T) {
 		t.Errorf("form posts must be refused: %v %v", resp.StatusCode, err)
 	}
 
-	code, out := call(t, "PUT", u+"/settings", `{"serverURL":"https://inv.example.com/","agentImage":"registry.example.com/devops/service-inventory:0.7.0"}`, true)
+	code, out := call(t, "PUT", u+"/settings", `{"serverURL":"https://inv.example.com/","agentImage":"registry.example.com/devops/owl:0.7.0"}`, true)
 	if code != 200 || out["serverURL"] != "https://inv.example.com" {
 		t.Fatalf("settings: %d %v", code, out)
 	}
@@ -427,7 +427,7 @@ func TestSettingsAndManifest(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	m, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(m), "image: registry.example.com/devops/service-inventory:0.7.0\n") ||
+	if !strings.Contains(string(m), "image: registry.example.com/devops/owl:0.7.0\n") ||
 		strings.Contains(string(m), "replace with your registry image") {
 		t.Errorf("manifest image not substituted:\n%s", m)
 	}

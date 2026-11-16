@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/pager"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 // Collector builds snapshots using read-only list calls. It needs exactly the permissions of the

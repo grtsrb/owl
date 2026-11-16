@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/catalog"
+	"owl/internal/catalog"
 )
 
 // ReleaseLine is one supported/unsupported release series (endoflife.date "cycle", otherwise a minor).

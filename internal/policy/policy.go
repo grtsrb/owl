@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/upstream"
+	"owl/internal/catalog"
+	"owl/internal/upstream"
 )
 
 // Default is the global default: the newest LTS line if the product has one, otherwise the

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"service-inventory/internal/inventory"
-	"service-inventory/internal/policy"
-	"service-inventory/internal/upstream"
+	"owl/internal/inventory"
+	"owl/internal/policy"
+	"owl/internal/upstream"
 )
 
 func day(s string) *time.Time { t, _ := time.Parse("2006-01-02", s); return &t }

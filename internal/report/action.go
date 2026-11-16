@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/inventory"
-	"service-inventory/internal/policy"
-	"service-inventory/internal/upstream"
+	"owl/internal/catalog"
+	"owl/internal/inventory"
+	"owl/internal/policy"
+	"owl/internal/upstream"
 )
 
 // ActionKind is what to do about an instance. It is derived from the Score (never the other way

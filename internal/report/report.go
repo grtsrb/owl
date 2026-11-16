@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/inventory"
-	"service-inventory/internal/policy"
-	"service-inventory/internal/store"
-	"service-inventory/internal/upstream"
+	"owl/internal/catalog"
+	"owl/internal/inventory"
+	"owl/internal/policy"
+	"owl/internal/store"
+	"owl/internal/upstream"
 )
 
 type ScoredInstance struct {

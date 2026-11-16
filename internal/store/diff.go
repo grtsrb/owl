@@ -3,7 +3,7 @@ package store
 import (
 	"sort"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 // RowsFromSnapshot flattens a snapshot into one row per workload container.

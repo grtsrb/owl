@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/store"
+	"owl/internal/store"
 )
 
 // Fetcher does cached HTTP requests. Responses are stored in the database; fresh entries are served

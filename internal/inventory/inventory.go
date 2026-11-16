@@ -6,9 +6,9 @@ import (
 	"context"
 	"sort"
 
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
+	"owl/internal/catalog"
+	"owl/internal/snapshot"
+	"owl/internal/store"
 )
 
 // Instance is one place a component runs.

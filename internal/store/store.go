@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 var (

@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 func ctrl(kind, name string) []metav1.OwnerReference {

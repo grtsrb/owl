@@ -1,5 +1,5 @@
 VERSION  ?= 0.1.0-dev
-IMAGE    ?= service-inventory:dev
+IMAGE    ?= owl:dev
 CLUSTERS := it-hetzner it-aws-test it-aws-prod
 # Different k3s versions per cluster so the demo shows Kubernetes drift/EOL (staging newest, prod oldest).
 K3S_it-hetzner  := v1.36.4-k3s1
@@ -16,7 +16,7 @@ ui-dev: ## Vite dev server on :5173, proxying /api to the server on :8080
 	cd web && npm run dev
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/inv ./cmd/inv
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/owl ./cmd/owl
 
 test:
 	go test ./...
@@ -48,12 +48,12 @@ seed:
 ## Print what the agent would send for one cluster: make agent-print CLUSTER=it-aws-prod
 CLUSTER ?= it-hetzner
 agent-print: build
-	./bin/inv agent --print --context k3d-$(CLUSTER)
+	./bin/owl agent --print --context k3d-$(CLUSTER)
 
 ## Server in Docker + an agent in every dev cluster (rotates agent tokens; keeps the DB volume).
 stack-up: image
 	dev/stack-up.sh
 
 stack-down:
-	docker rm -f inventory-server
+	docker rm -f owl-server
 	@for c in $(CLUSTERS); do kubectl --context k3d-$$c delete -f deploy/agent/agent.yaml --ignore-not-found >/dev/null; done

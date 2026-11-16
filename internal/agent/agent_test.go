@@ -15,7 +15,7 @@ import (
 
 	"k8s.io/client-go/kubernetes/fake"
 
-	"service-inventory/internal/snapshot"
+	"owl/internal/snapshot"
 )
 
 func newTestAgent(url string) *Agent {

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"service-inventory/internal/snapshot"
-	"service-inventory/internal/store"
+	"owl/internal/snapshot"
+	"owl/internal/store"
 )
 
 // A database at schema v3 (before user-defined stages) must keep its clusters, current state, history

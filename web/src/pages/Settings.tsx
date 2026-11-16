@@ -163,7 +163,7 @@ function AgentSettings({ initial, onSaved, canWrite }: { initial: ServerSettings
       {(!initial.serverURL || !initial.agentImage) && (
         <div className="callout warn"><Icon.warn /><span>
           {!initial.serverURL && "No server URL yet: the token Secret will contain a placeholder. "}
-          {!initial.agentImage && "No agent image yet: agent.yaml uses service-inventory:dev, which only exists on dev clusters."}
+          {!initial.agentImage && "No agent image yet: agent.yaml uses owl:dev, which only exists on dev clusters."}
         </span></div>
       )}
       <form className="grid-2" style={{ gap: 16 }} onSubmit={async (e) => {
@@ -174,7 +174,7 @@ function AgentSettings({ initial, onSaved, canWrite }: { initial: ServerSettings
           <input className="input mono" placeholder="https://inventory.example.internal" value={v.serverURL} onChange={(e) => setV({ ...v, serverURL: e.target.value })} />
         </label>
         <label className="field">Agent image
-          <input className="input mono" placeholder="registry.example.com/devops/service-inventory:0.7.0" value={v.agentImage} onChange={(e) => setV({ ...v, agentImage: e.target.value })} />
+          <input className="input mono" placeholder="registry.example.com/devops/owl:0.7.0" value={v.agentImage} onChange={(e) => setV({ ...v, agentImage: e.target.value })} />
         </label>
         <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
       </form>
@@ -312,7 +312,7 @@ function TokenDialog({ cluster, token, rotated, serverURL, onClose }: {
   const ctx = `--context ${cluster}`;
   const secretFile = `agent-secret-${cluster}.yaml`;
   const commands = rotated
-    ? `kubectl ${ctx} apply -f ${secretFile}\nkubectl ${ctx} -n service-inventory rollout restart deploy/inventory-agent\nrm ${secretFile}`
+    ? `kubectl ${ctx} apply -f ${secretFile}\nkubectl ${ctx} -n owl rollout restart deploy/owl-agent\nrm ${secretFile}`
     : `kubectl ${ctx} apply -f agent.yaml\nkubectl ${ctx} apply -f ${secretFile}\nrm ${secretFile}`;
   async function copy(what: string, text: string) {
     try { await navigator.clipboard.writeText(text); setCopied(what); } catch { setCopied("failed"); }
@@ -327,7 +327,7 @@ function TokenDialog({ cluster, token, rotated, serverURL, onClose }: {
           <button className="btn primary" onClick={() => download(secretFile, agentSecretYAML(serverURL, token))}>Download {secretFile}</button>
           <button className="btn" onClick={() => copy("token", token)}>{copied === "token" ? "Token copied" : "Copy raw token"}</button>
         </div>
-        <p className="subtle" style={{ margin: 0 }}>The file is the safe default: typing <code>--from-literal=INV_TOKEN=…</code> leaves the token in your shell history. Use the raw token if you manage Secrets another way (Sealed Secrets, Vault).</p>
+        <p className="subtle" style={{ margin: 0 }}>The file is the safe default: typing <code>--from-literal=OWL_TOKEN=…</code> leaves the token in your shell history. Use the raw token if you manage Secrets another way (Sealed Secrets, Vault).</p>
       </div>
       <div className="stack">
         <h2>2 · Apply</h2>
@@ -503,7 +503,7 @@ function TokenTab() {
         <div className="row"><Tag tone="ok">token set for this tab</Tag><button className="btn" onClick={() => { adminToken.set(""); setHas(false); }}>Forget</button></div>
       ) : (
         <form className="row" onSubmit={(e) => { e.preventDefault(); adminToken.set(value.trim()); setValue(""); setHas(true); }}>
-          <input className="input mono wide" type="password" autoComplete="off" placeholder="INV_ADMIN_TOKEN" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Admin token" />
+          <input className="input mono wide" type="password" autoComplete="off" placeholder="OWL_ADMIN_TOKEN" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Admin token" />
           <button className="btn primary" disabled={!value.trim()}>Use</button>
         </form>
       )}

@@ -48,7 +48,7 @@ export default function App() {
     <DataCtx.Provider value={data}>
       <div className="shell">
         <nav className="side" aria-label="Main">
-          <NavLink to="/" className="brand"><span className="brand-mark"><Icon.logo /></span>Service Inventory</NavLink>
+          <NavLink to="/" className="brand"><span className="brand-mark"><Icon.logo /></span>Owl</NavLink>
           <NavItem to="/" end icon={<Icon.overview />}>Overview</NavItem>
           <NavItem to="/clusters" icon={<Icon.clusters />}>Clusters</NavItem>
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>

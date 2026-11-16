@@ -14,31 +14,31 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"service-inventory/internal/auth"
-	"service-inventory/internal/catalog"
-	"service-inventory/internal/server"
-	"service-inventory/internal/store"
-	"service-inventory/internal/store/sqlite"
-	"service-inventory/internal/upstream"
-	"service-inventory/web"
+	"owl/internal/auth"
+	"owl/internal/catalog"
+	"owl/internal/server"
+	"owl/internal/store"
+	"owl/internal/store/sqlite"
+	"owl/internal/upstream"
+	"owl/web"
 )
 
 func defaultDB() string {
-	if v := os.Getenv("INV_DB"); v != "" {
+	if v := os.Getenv("OWL_DB"); v != "" {
 		return v
 	}
-	return "inventory.db"
+	return "owl.db"
 }
 
 func runServer(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	listen := fs.String("listen", envOr("INV_LISTEN", "127.0.0.1:8080"), "listen address (env INV_LISTEN)")
-	dbPath := fs.String("db", defaultDB(), "SQLite database path (env INV_DB)")
+	listen := fs.String("listen", envOr("OWL_LISTEN", "127.0.0.1:8080"), "listen address (env OWL_LISTEN)")
+	dbPath := fs.String("db", defaultDB(), "SQLite database path (env OWL_DB)")
 	noUpstream := fs.Bool("no-upstream", false, "disable upstream checks (GitHub, endoflife.date, OSV)")
-	allowedHosts := fs.String("allowed-hosts", os.Getenv("INV_ALLOWED_HOSTS"),
-		"comma-separated extra Host names the UI/read API answers to (localhost always allowed; env INV_ALLOWED_HOSTS)")
-	internal := fs.String("internal-registries", os.Getenv("INV_INTERNAL_REGISTRIES"),
-		"comma-separated registries of in-house images, e.g. registry.gitlab.example.com (env INV_INTERNAL_REGISTRIES)")
+	allowedHosts := fs.String("allowed-hosts", os.Getenv("OWL_ALLOWED_HOSTS"),
+		"comma-separated extra Host names the UI/read API answers to (localhost always allowed; env OWL_ALLOWED_HOSTS)")
+	internal := fs.String("internal-registries", os.Getenv("OWL_INTERNAL_REGISTRIES"),
+		"comma-separated registries of in-house images, e.g. registry.gitlab.example.com (env OWL_INTERNAL_REGISTRIES)")
 	_ = fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -58,11 +58,11 @@ func runServer(args []string) error {
 	defer db.Close()
 
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		AdminToken: os.Getenv("INV_ADMIN_TOKEN"), UI: web.Dist()}
+		AdminToken: os.Getenv("OWL_ADMIN_TOKEN"), UI: web.Dist()}
 	if app.AdminToken == "" {
-		log.Warn("INV_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
+		log.Warn("OWL_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
 	} else if len(app.AdminToken) < 24 {
-		return errors.New("INV_ADMIN_TOKEN must be at least 24 characters")
+		return errors.New("OWL_ADMIN_TOKEN must be at least 24 characters")
 	}
 	if *noUpstream {
 		log.Warn("upstream checks disabled")
@@ -99,10 +99,10 @@ func runServer(args []string) error {
 // the server host (or `docker exec` into the server container); a UI/API with admin auth comes later.
 func runCluster(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: inv cluster <add|list|rotate-token|delete> [flags]")
+		return errors.New("usage: owl cluster <add|list|rotate-token|delete> [flags]")
 	}
 	fs := flag.NewFlagSet("cluster "+args[0], flag.ExitOnError)
-	dbPath := fs.String("db", defaultDB(), "SQLite database path (env INV_DB)")
+	dbPath := fs.String("db", defaultDB(), "SQLite database path (env OWL_DB)")
 	name := fs.String("name", "", "cluster name, e.g. it-hetzner")
 	stage := fs.String("stage", "", "a configured stage (default: staging | prelive | live)")
 	tenant := fs.String("tenant", "", "tenant using the cluster, e.g. IT or DS")
@@ -185,7 +185,7 @@ func newUpstreamClient(db store.Store) *upstream.Client {
 		HTTP:        &http.Client{Timeout: 30 * time.Second},
 		Cache:       db,
 		GitHubToken: os.Getenv("GITHUB_TOKEN"),
-		UserAgent:   "service-inventory/" + version,
+		UserAgent:   "owl/" + version,
 		TTL:         6 * time.Hour,
 	}}
 }
@@ -193,7 +193,7 @@ func newUpstreamClient(db store.Store) *upstream.Client {
 // runUpstream is a debugging aid: fetch (or read cached) upstream info and print it.
 func runUpstream(args []string) error {
 	fs := flag.NewFlagSet("upstream", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDB(), "SQLite database path (used as cache; env INV_DB)")
+	dbPath := fs.String("db", defaultDB(), "SQLite database path (used as cache; env OWL_DB)")
 	comp := fs.String("component", "", "component id (default: all)")
 	version := fs.String("version", "", "also list advisories affecting this version (needs --component)")
 	_ = fs.Parse(args)

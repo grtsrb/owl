@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"service-inventory/internal/inventory"
-	"service-inventory/internal/policy"
-	"service-inventory/internal/store"
-	"service-inventory/internal/upstream"
+	"owl/internal/inventory"
+	"owl/internal/policy"
+	"owl/internal/store"
+	"owl/internal/upstream"
 )
 
 func actionFor(version, status string, info *upstream.Info, matches []upstream.Match) Action {
