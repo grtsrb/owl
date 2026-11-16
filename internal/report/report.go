@@ -56,6 +56,9 @@ type ComponentReport struct {
 	Instances []ScoredInstance `json:"instances"`
 	Drift     []Drift          `json:"drift"`
 	Notes     string           `json:"notes,omitempty"`
+	// Action is the component's goal across all its instances — the same whatever clusters the UI
+	// shows. Per-instance actions say what each cluster needs to get there.
+	Action Action `json:"action"`
 }
 
 type Report struct {
@@ -145,6 +148,7 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 			return a.Cluster+a.Namespace+a.Workload < b.Cluster+b.Namespace+b.Workload
 		})
 		cr.Drift = drift(cr.Instances, order, clusters)
+		cr.Action = ComponentAction(cr.Instances, cr.Target)
 		rep.Summary[cr.Level]++
 		rep.Components = append(rep.Components, cr)
 	}

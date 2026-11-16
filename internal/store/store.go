@@ -5,16 +5,37 @@ package store
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"service-inventory/internal/snapshot"
 )
 
 var (
-	ErrNotFound     = errors.New("not found")
-	ErrExists       = errors.New("already exists")
-	ErrInUse        = errors.New("in use")
-	ErrUnknownStage = errors.New("unknown stage")
+	ErrNotFound      = errors.New("not found")
+	ErrExists        = errors.New("already exists")
+	ErrInUse         = errors.New("in use")
+	ErrUnknownStage  = errors.New("unknown stage")
+	ErrUnknownTenant = errors.New("unknown tenant")
+	ErrInvalid       = errors.New("invalid input")
+)
+
+// Names end up in kubectl contexts, file names, HTTP headers and YAML, so every entry point (API and
+// CLI) checks them with these.
+var (
+	reClusterName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	reTenantName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$`)
+)
+
+func ValidClusterName(s string) bool { return reClusterName.MatchString(s) }
+func ValidStageName(s string) bool   { return reClusterName.MatchString(s) }
+func ValidTenantName(s string) bool  { return reTenantName.MatchString(s) && strings.TrimSpace(s) == s }
+
+const (
+	ClusterNameRule = "lowercase letters, digits and '-', up to 63 characters"
+	StageNameRule   = ClusterNameRule
+	TenantNameRule  = "letters, digits, space, '_', '.', '-', up to 40 characters"
 )
 
 // Stage is a cluster's position in the promotion path, used for drift detection. Stages are
@@ -123,14 +144,16 @@ type IngestResult struct {
 type Store interface {
 	// CreateCluster needs an existing stage (ErrUnknownStage); a new tenant is created on the fly.
 	CreateCluster(ctx context.Context, name string, stage Stage, tenant string) (*Cluster, error)
+	// CreateClusterWithToken creates the cluster and its first agent token atomically.
+	CreateClusterWithToken(ctx context.Context, name string, stage Stage, tenant, tokenHash, tokenPrefix string) (*Cluster, error)
 	ListClusters(ctx context.Context) ([]Cluster, error)
 	GetCluster(ctx context.Context, name string) (*Cluster, error)
-	// UpdateCluster changes stage and tenant; both must exist (ErrUnknownStage / ErrNotFound).
+	// UpdateCluster changes stage and tenant; both must exist (ErrUnknownStage / ErrUnknownTenant).
 	UpdateCluster(ctx context.Context, name string, stage Stage, tenant string) (*Cluster, error)
 	DeleteCluster(ctx context.Context, name string) error
 
 	// Stages, ordered by position. DeleteStage returns ErrInUse while clusters use it;
-	// ReorderStages takes every stage name exactly once, earliest first.
+	// ReorderStages takes every stage name exactly once, earliest first (else ErrInvalid).
 	ListStages(ctx context.Context) ([]StageInfo, error)
 	CreateStage(ctx context.Context, name string) error
 	DeleteStage(ctx context.Context, name string) error
@@ -156,6 +179,9 @@ type Store interface {
 	AddToken(ctx context.Context, clusterID int64, hash, prefix string) error
 	// RevokeTokens revokes all active tokens of a cluster.
 	RevokeTokens(ctx context.Context, clusterID int64) error
+	// RotateToken revokes the cluster's active tokens and adds a new one in one transaction, so a
+	// failure never leaves the agent locked out without a replacement.
+	RotateToken(ctx context.Context, clusterID int64, hash, prefix string) error
 	// ClusterByTokenHash returns the cluster for an active token and records its use.
 	ClusterByTokenHash(ctx context.Context, hash string) (*Cluster, error)
 

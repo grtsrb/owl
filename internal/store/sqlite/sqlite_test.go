@@ -127,7 +127,7 @@ func TestStagesAndTenants(t *testing.T) {
 	if got, _ := db.GetCluster(ctx, "prod"); got.Tenant != "Platform" {
 		t.Errorf("rename must move clusters along: %q", got.Tenant)
 	}
-	if _, err := db.UpdateCluster(ctx, "prod", "dev", "nope"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.UpdateCluster(ctx, "prod", "dev", "nope"); !errors.Is(err, store.ErrUnknownTenant) {
 		t.Errorf("unknown tenant on update: %v", err)
 	}
 	if err := db.CreateTenant(ctx, "DS"); err != nil {

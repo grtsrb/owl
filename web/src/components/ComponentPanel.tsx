@@ -39,6 +39,7 @@ export default function ComponentPanel({ row, stageNames, selected, onClose }: {
           <div><span>Policy</span><span className="mono">{c.target?.policy ?? "—"}</span></div>
           <div><span>Latest upstream</span><span className="mono big">{c.upstream.latestStable ?? "—"}</span></div>
         </div>
+        <div className="callout"><span><b>{c.action.text}</b> <span className="muted">— {c.action.why}</span></span></div>
         {row.notes.length > 0 && <div className="notes">{row.notes.map((n, k) => <Note key={k} n={n} />)}</div>}
 
         <div className="stack">

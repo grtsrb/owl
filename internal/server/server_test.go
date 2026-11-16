@@ -344,7 +344,7 @@ func TestClusterManagement(t *testing.T) {
 	}
 
 	// Edit: stage and tenant must exist; tenant DS was created along with the cluster.
-	if code, _ := call(t, "PATCH", u+"/clusters/ds-prod", `{"stage":"prelive","tenant":"nope"}`, true); code != 404 {
+	if code, _ := call(t, "PATCH", u+"/clusters/ds-prod", `{"stage":"prelive","tenant":"nope"}`, true); code != 400 {
 		t.Errorf("edit to unknown tenant: %d", code)
 	}
 	if code, out := call(t, "PATCH", u+"/clusters/ds-prod", `{"stage":"prelive","tenant":"DS"}`, true); code != 200 || out["stage"] != "prelive" {

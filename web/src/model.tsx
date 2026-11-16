@@ -82,19 +82,39 @@ export function notesFor(c: ComponentReport, insts: ScoredInstance[], selected: 
   }
   const unpinned = insts.filter((i) => i.status === "unpinned");
   if (unpinned.length) out.push({ kind: "unpinned", text: `${unpinned.map((i) => i.workload ?? i.image).join(", ")} unpinned` });
-  const review = Math.max(0, ...insts.map((i) => reviewCount(i)));
+  const review = Math.max(0, ...insts.map((i) => i.score.review ?? 0));
   if (review > 0) out.push({ kind: "review", text: `${review} ${review === 1 ? "advisory needs" : "advisories need"} review` });
   if (!c.upstream.advisorySource) out.push({ kind: "nocve", text: "No advisory data upstream" });
   if (c.upstream.stale) out.push({ kind: "stale", text: "Upstream data stale" });
   return out;
 }
 
-function reviewCount(i: ScoredInstance): number {
-  for (const n of i.score.notes ?? []) {
-    const m = /^(\d+) advisories need review/.exec(n);
-    if (m) return Number(m[1]);
+/** What one instance needs to reach the component's target, in a couple of words. */
+export function need(i: ScoredInstance): string {
+  switch (i.action.kind) {
+    case "none": return "up to date";
+    case "patch": return "patch";
+    case "upgrade":
+      if (i.score.eol) return "EOL line";
+      return i.score.linesBehind > 0 ? `${i.score.linesBehind} ${i.score.linesBehind === 1 ? "line" : "lines"} behind` : "upgrade";
+    case "replace": return "replace";
+    case "pin": return "unpinned";
+    default: return "check";
   }
-  return 0;
+}
+
+/** Instances grouped by (version, need): "it-aws-test, it-aws-prod 1.13.1 → 1 line behind". */
+export function needsByCluster(insts: ScoredInstance[]): string[] {
+  const groups = new Map<string, { clusters: string[]; version: string; need: string }>();
+  for (const i of insts) {
+    const version = i.version || i.image.split(":").pop() || "?";
+    const n = need(i);
+    const key = `${version}|${n}`;
+    const g = groups.get(key) ?? { clusters: [], version, need: n };
+    if (!g.clusters.includes(i.cluster)) g.clusters.push(i.cluster);
+    groups.set(key, g);
+  }
+  return [...groups.values()].map((g) => `${g.clusters.join(", ")} ${g.version} → ${g.need}`);
 }
 
 /** The instance that decides a component's level among the given ones (worst, then most reasons). */

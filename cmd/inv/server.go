@@ -117,24 +117,31 @@ func runCluster(args []string) error {
 
 	switch args[0] {
 	case "add":
-		if *name == "" || *tenant == "" || *stage == "" {
-			return errors.New("add requires --name, --tenant and --stage (one of the configured stages, default staging|prelive|live)")
+		switch {
+		case !store.ValidClusterName(*name):
+			return errors.New("--name: " + store.ClusterNameRule)
+		case !store.ValidTenantName(*tenant):
+			return errors.New("--tenant: " + store.TenantNameRule)
+		case *stage == "":
+			return errors.New("--stage: one of the configured stages (default staging|prelive|live)")
 		}
-		c, err := db.CreateCluster(ctx, *name, store.Stage(*stage), *tenant)
+		token, hash, prefix := auth.NewToken()
+		c, err := db.CreateClusterWithToken(ctx, *name, store.Stage(*stage), *tenant, hash, prefix)
 		if err != nil {
 			return fmt.Errorf("create cluster %q: %w", *name, err)
 		}
-		return issueToken(ctx, db, c)
+		return printToken(c, token)
 	case "rotate-token":
 		c, err := db.GetCluster(ctx, *name)
 		if err != nil {
 			return fmt.Errorf("cluster %q: %w", *name, err)
 		}
-		if err := db.RevokeTokens(ctx, c.ID); err != nil {
+		token, hash, prefix := auth.NewToken()
+		if err := db.RotateToken(ctx, c.ID, hash, prefix); err != nil {
 			return err
 		}
 		fmt.Fprintln(os.Stderr, "previous tokens revoked")
-		return issueToken(ctx, db, c)
+		return printToken(c, token)
 	case "list":
 		cs, err := db.ListClusters(ctx)
 		if err != nil {
@@ -160,11 +167,7 @@ func runCluster(args []string) error {
 	return fmt.Errorf("unknown cluster command %q", args[0])
 }
 
-func issueToken(ctx context.Context, db store.Store, c *store.Cluster) error {
-	token, hash, prefix := auth.NewToken()
-	if err := db.AddToken(ctx, c.ID, hash, prefix); err != nil {
-		return err
-	}
+func printToken(c *store.Cluster, token string) error {
 	fmt.Fprintf(os.Stderr, "cluster %s (%s, %s) — agent token (shown only once, store it in the cluster's Secret):\n", c.Name, c.Stage, c.Tenant)
 	fmt.Println(token)
 	return nil

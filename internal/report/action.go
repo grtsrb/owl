@@ -21,6 +21,7 @@ const (
 	ActionReplace ActionKind = "replace" // upstream retired
 	ActionPin     ActionKind = "pin"     // unpinned tag: pin a version first
 	ActionCheck   ActionKind = "check"   // no data to decide on
+	ActionUpdate  ActionKind = "update"  // component level: bring every instance to the target
 )
 
 // Action is the recommended next step as one sentence: Text says what ("Upgrade to 1.14.7"), Why the
@@ -52,11 +53,12 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 	if s := advisorySummary(sc.Advisories); s != "" {
 		why = append(why, "fixes "+s)
 	}
-	for _, r := range sc.Reasons {
-		if strings.HasPrefix(r.Text, "release line ") && strings.Contains(r.Text, "end-of-life") {
-			why = append(why, strings.Replace(strings.TrimPrefix(r.Text, "release line "), "is end-of-life", "is EOL", 1))
-			break
+	if sc.EOL != nil {
+		e := sc.EOL.Line + " is EOL"
+		if sc.EOL.Since != nil {
+			e += " since " + sc.EOL.Since.Format("2006-01-02")
 		}
+		why = append(why, e)
 	}
 	if sc.LinesBehind >= 1 && len(why) < 2 {
 		why = append(why, plural(sc.LinesBehind, "release line")+" behind")
@@ -69,8 +71,16 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 	tv, okT := catalog.ParseVersion(target.Version, "")
 	if sc.LinesBehind == 0 {
 		to := target.Version
-		if okV && okT && v.Compare(tv) >= 0 && sc.LatestInLine != "" {
+		if okV && okT && v.Compare(tv) >= 0 {
 			to = sc.LatestInLine // already at/above target: the patch is the newest of its own line
+		}
+		if lv, ok := catalog.ParseVersion(to, ""); to == "" || !okV || !ok || lv.Compare(v) <= 0 {
+			// Nothing newer in this line, yet the level isn't OK: EOL line (e.g. a pin on it) or an
+			// advisory fixed only in a later line. Patching can't help — say what can.
+			if sc.EOL != nil {
+				return Action{ActionUpgrade, "Move to a supported release line", strings.Join(append(why, "policy "+target.Policy+" targets it"), "; ")}
+			}
+			return Action{ActionCheck, "Review advisories", strings.Join(append(why, "no newer patch in "+sc.Line), "; ")}
 		}
 		if len(why) == 0 {
 			why = append(why, "patch release")
@@ -136,4 +146,34 @@ func tagOf(image string) string {
 		return "(digest only)"
 	}
 	return image
+}
+
+// ComponentAction is the headline for a component: one goal for all instances, so it doesn't change
+// with which clusters are looked at. Why comes from the worst instance (most reasons on a tie).
+func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
+	var worst *ScoredInstance
+	needs := map[ActionKind]bool{}
+	for i := range insts {
+		in := &insts[i]
+		needs[in.Action.Kind] = true
+		if worst == nil || in.Score.Level.Rank() > worst.Score.Level.Rank() ||
+			in.Score.Level.Rank() == worst.Score.Level.Rank() && len(in.Score.Reasons) > len(worst.Score.Reasons) {
+			worst = in
+		}
+	}
+	switch {
+	case worst == nil:
+		return Action{ActionCheck, "Check manually", "not running anywhere"}
+	case needs[ActionReplace]:
+		return Action{ActionReplace, "Replace", worst.Action.Why}
+	case needs[ActionPatch] || needs[ActionUpgrade]:
+		if target != nil {
+			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why}
+		}
+	case needs[ActionPin]:
+		return Action{ActionPin, "Pin an exact version", worst.Action.Why}
+	case needs[ActionCheck]:
+		return Action{ActionCheck, worst.Action.Text, worst.Action.Why}
+	}
+	return worst.Action
 }

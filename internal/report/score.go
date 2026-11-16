@@ -60,6 +60,15 @@ type Score struct {
 	LatestInLine string   `json:"latestInLine,omitempty"`
 	// Advisories that count (certain, with a fix) — the evidence behind security reasons.
 	Advisories []upstream.Match `json:"advisories,omitempty"`
+	// EOL is set when the running release line is past end-of-life (structured, so callers don't parse
+	// reason text). Review counts advisories that need a human look (no clear fixed range).
+	EOL    *EOLInfo `json:"eol,omitempty"`
+	Review int      `json:"review,omitempty"`
+}
+
+type EOLInfo struct {
+	Line  string     `json:"line"`
+	Since *time.Time `json:"since,omitempty"`
 }
 
 func (s *Score) add(l Level, format string, args ...any) {
@@ -143,6 +152,7 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 	if noFix > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d advisories affect this version with no fixed version listed", noFix))
 	}
+	s.Review = review
 	if review > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d advisories need review (upstream data doesn't say which versions are fixed)", review))
 	}
@@ -163,6 +173,7 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 				when = " since " + l.EOLDate.Format("2006-01-02")
 			}
 			s.add(LevelCritical, "release line %s is end-of-life%s", l.Name, when)
+			s.EOL = &EOLInfo{Line: l.Name, Since: l.EOLDate}
 		case l.EOLDate != nil && l.EOLDate.Sub(now) <= EOLSoon:
 			s.add(LevelHigh, "release line %s reaches end-of-life on %s", l.Name, l.EOLDate.Format("2006-01-02"))
 		}
@@ -177,6 +188,7 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		switch {
 		case olderEOL || pos == len(lines) && policy.IsEOL(lines[len(lines)-1], now):
 			s.add(LevelCritical, "version %s is older than end-of-life release lines (not tracked upstream any more)", in.Version)
+			s.EOL = &EOLInfo{Line: in.Version}
 		case pos == len(lines):
 			s.Notes = append(s.Notes, "version is older than every release line upstream data covers")
 		}

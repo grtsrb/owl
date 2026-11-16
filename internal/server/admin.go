@@ -15,13 +15,11 @@ import (
 	"service-inventory/internal/store"
 )
 
-// Names end up in kubectl contexts, file names and YAML, so they're kept to safe characters.
 var (
-	reClusterName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	reStageName   = reClusterName
-	reTenantName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$`)
 	// The agent image is pasted into a YAML manifest: no whitespace, quotes or YAML syntax.
 	reImage = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}$`)
+	// A repository as catalog.Ref.Name() prints it: registry (may have a port) / path, no tag or digest.
+	reRepository = regexp.MustCompile(`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+$`)
 )
 
 const (
@@ -54,7 +52,7 @@ func (s *Server) storeError(w http.ResponseWriter, err error) {
 		httpError(w, http.StatusConflict, "already exists")
 	case errors.Is(err, store.ErrInUse):
 		httpError(w, http.StatusConflict, err.Error())
-	case errors.Is(err, store.ErrUnknownStage):
+	case errors.Is(err, store.ErrUnknownStage), errors.Is(err, store.ErrUnknownTenant), errors.Is(err, store.ErrInvalid):
 		httpError(w, http.StatusBadRequest, err.Error())
 	default:
 		s.fail(w, err)
@@ -81,12 +79,12 @@ type clusterBody struct {
 func (b *clusterBody) validate(needName bool) string {
 	b.Tenant = strings.TrimSpace(b.Tenant)
 	switch {
-	case needName && !reClusterName.MatchString(b.Name):
-		return "name: lowercase letters, digits and '-', up to 63 characters"
-	case !reStageName.MatchString(b.Stage):
+	case needName && !store.ValidClusterName(b.Name):
+		return "name: " + store.ClusterNameRule
+	case !store.ValidStageName(b.Stage):
 		return "stage: pick one of the configured stages"
-	case !reTenantName.MatchString(b.Tenant):
-		return "tenant: letters, digits, space, '_', '.', '-', up to 40 characters"
+	case !store.ValidTenantName(b.Tenant):
+		return "tenant: " + store.TenantNameRule
 	}
 	return ""
 }
@@ -101,23 +99,14 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, msg)
 		return
 	}
-	c, err := s.Store.CreateCluster(r.Context(), b.Name, store.Stage(b.Stage), b.Tenant)
+	token, hash, prefix := auth.NewToken()
+	c, err := s.Store.CreateClusterWithToken(r.Context(), b.Name, store.Stage(b.Stage), b.Tenant, hash, prefix)
 	if err != nil {
 		s.storeError(w, err)
 		return
 	}
-	token, err := s.issueToken(r, c)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
 	s.audit(r, "cluster added", "cluster", c.Name, "stage", c.Stage, "tenant", c.Tenant)
 	writeJSON(w, http.StatusCreated, map[string]any{"cluster": toClusterJSON(c), "token": token})
-}
-
-func (s *Server) issueToken(r *http.Request, c *store.Cluster) (string, error) {
-	token, hash, prefix := auth.NewToken()
-	return token, s.Store.AddToken(r.Context(), c.ID, hash, prefix)
 }
 
 func (s *Server) updateCluster(w http.ResponseWriter, r *http.Request) {
@@ -146,12 +135,8 @@ func (s *Server) rotateToken(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
-	if err := s.Store.RevokeTokens(r.Context(), c.ID); err != nil {
-		s.fail(w, err)
-		return
-	}
-	token, err := s.issueToken(r, c)
-	if err != nil {
+	token, hash, prefix := auth.NewToken()
+	if err := s.Store.RotateToken(r.Context(), c.ID, hash, prefix); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -172,14 +157,13 @@ func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
 // ClusterExport is everything about one cluster except its token hashes (useless once deleted).
 // Milestone 7 adds importing it back.
 type ClusterExport struct {
-	Format     string            `json:"format"` // "service-inventory/cluster-export"
-	Version    int               `json:"version"`
-	ExportedAt time.Time         `json:"exportedAt"`
-	Cluster    clusterJSON       `json:"cluster"`
-	CreatedAt  time.Time         `json:"createdAt"`
-	Images     []store.ImageRow  `json:"images"`
-	Changes    []store.Change    `json:"changes"`
-	Settings   map[string]string `json:"settings,omitempty"`
+	Format     string           `json:"format"` // "service-inventory/cluster-export"
+	Version    int              `json:"version"`
+	ExportedAt time.Time        `json:"exportedAt"`
+	Cluster    clusterJSON      `json:"cluster"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	Images     []store.ImageRow `json:"images"`
+	Changes    []store.Change   `json:"changes"`
 }
 
 // exportCluster is admin-only: the read API is open on the private network for now, but a full
@@ -230,8 +214,8 @@ func (s *Server) createStage(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	if !reStageName.MatchString(b.Name) {
-		httpError(w, http.StatusBadRequest, "stage: lowercase letters, digits and '-', up to 63 characters")
+	if !store.ValidStageName(b.Name) {
+		httpError(w, http.StatusBadRequest, "stage: "+store.StageNameRule)
 		return
 	}
 	if err := s.Store.CreateStage(r.Context(), b.Name); err != nil {
@@ -250,11 +234,7 @@ func (s *Server) reorderStages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.ReorderStages(r.Context(), b.Order); err != nil {
-		if errors.Is(err, store.ErrUnknownStage) {
-			s.storeError(w, err)
-		} else {
-			httpError(w, http.StatusBadRequest, err.Error())
-		}
+		s.storeError(w, err) // ErrInvalid / ErrUnknownStage -> 400, anything else -> 500 (logged)
 		return
 	}
 	s.audit(r, "stages reordered", "order", strings.Join(b.Order, ","))
@@ -284,8 +264,8 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 
 func tenantName(w http.ResponseWriter, raw string) (string, bool) {
 	n := strings.TrimSpace(raw)
-	if !reTenantName.MatchString(n) {
-		httpError(w, http.StatusBadRequest, "tenant: letters, digits, space, '_', '.', '-', up to 40 characters")
+	if !store.ValidTenantName(n) {
+		httpError(w, http.StatusBadRequest, "tenant: "+store.TenantNameRule)
 		return "", false
 	}
 	return n, true
@@ -358,7 +338,7 @@ func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	o.Repository = strings.TrimSpace(o.Repository)
 	switch {
-	case o.Repository == "" || len(o.Repository) > 255 || strings.ContainsAny(o.Repository, " \t\n:@"):
+	case len(o.Repository) > 255 || !reRepository.MatchString(o.Repository):
 		httpError(w, http.StatusBadRequest, "repository: registry/repository without tag or digest")
 		return
 	case !o.Kind.Valid():

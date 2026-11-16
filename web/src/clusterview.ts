@@ -26,22 +26,22 @@ export function workloadsFor(cluster: string, report: Report, inv: Inventory): W
       if (i.override === "map") flags.push({ text: "mapped", tone: "info", title: `You mapped ${i.repository} to ${c.name}` });
       if (i.desiredReplicas === 0 && i.kind !== "CronJob" && i.kind !== "Job") flags.push({ text: "scaled to 0", tone: "" });
       if ((i.running?.length ?? 0) > 1) flags.push({ text: "rollout in progress", tone: "warn" });
-      rows.push({ ...base(i), key: `${c.id}/${i.namespace}/${i.workload}/${i.container}`, componentId: c.id, componentName: c.name,
+      rows.push({ ...base(i), key: `${c.id}/${i.namespace}/${i.kind}/${i.workload}/${i.container}`, componentId: c.id, componentName: c.name,
         version: i.version, level: i.score.level, group: "third", flags });
     }
   }
   for (const i of inv.inHouse.filter((x) => x.cluster === cluster)) {
-    rows.push({ ...base(i), key: `ih/${i.namespace}/${i.workload}/${i.container}`, version: i.version, group: "inhouse",
+    rows.push({ ...base(i), key: `ih/${i.namespace}/${i.kind}/${i.workload}/${i.container}`, version: i.version, group: "inhouse",
       flags: [{ text: i.override === "inhouse" ? "in-house (marked)" : "in-house", tone: "info" }] });
   }
   for (const u of inv.unrecognized) {
     for (const i of u.instances.filter((x) => x.cluster === cluster)) {
-      rows.push({ ...base(i), key: `un/${i.namespace}/${i.workload}/${i.container}`, group: "unrecognized",
+      rows.push({ ...base(i), key: `un/${u.repository}/${i.namespace}/${i.kind}/${i.workload}/${i.container}`, group: "unrecognized",
         flags: [{ text: "unrecognized", tone: "warn", title: "Not in the catalog: nothing is checked" }] });
     }
   }
   for (const i of inv.ignored.filter((x) => x.cluster === cluster)) {
-    rows.push({ ...base(i), key: `ig/${i.namespace}/${i.workload}/${i.container}`, group: "ignored", flags: [{ text: "ignored", tone: "" }] });
+    rows.push({ ...base(i), key: `ig/${i.namespace}/${i.kind}/${i.workload}/${i.container}`, group: "ignored", flags: [{ text: "ignored", tone: "" }] });
   }
   return rows.sort((a, b) => a.namespace.localeCompare(b.namespace) || a.workload.localeCompare(b.workload) || a.container.localeCompare(b.container));
 }

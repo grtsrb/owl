@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, LEVELS, type Cluster, type ComponentReport, type Level, type ScoredInstance } from "../api";
 import { useAppData, useReporting } from "../App";
 import ComponentPanel from "../components/ComponentPanel";
-import { LEGEND, Note, notesFor, useClusterSelection, worstInstance, type NoteItem } from "../model";
+import { LEGEND, needsByCluster, Note, notesFor, useClusterSelection, worstInstance, type NoteItem } from "../model";
 import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, useApi, worstLevel } from "../ui";
 
 /** A component as seen through the cluster selection. */
@@ -96,7 +96,7 @@ export default function Overview() {
                   <span className="act-n">{n + 1}</span>
                   <span className="stack grow" style={{ gap: 2 }}>
                     <span className="row" style={{ gap: 8 }}><span className="act-name">{r.c.name}</span><LevelBadge level={r.level} /></span>
-                    <span>{r.worst.action.text} <span className="muted">— {r.worst.action.why}</span></span>
+                    <span>{r.c.action.text} <span className="muted">— {r.c.action.why}</span></span>
                     <span className="subtle">Runs in {r.clusters.length} {r.clusters.length === 1 ? "cluster" : "clusters"}{r.inLive ? ` · incl. ${lastStage}` : ""}</span>
                   </span>
                 </button>
@@ -131,12 +131,14 @@ export default function Overview() {
   );
 }
 
-function ActionCell({ r }: { r: Row }) {
-  const differs = r.insts.some((i) => i.action.text !== r.worst.action.text);
+/** The component's goal (same for every selection), then what the shown clusters each need. */
+function ActionCell({ r, perCluster }: { r: Row; perCluster: boolean }) {
+  const needs = r.c.action.kind === "none" ? [] : needsByCluster(r.insts);
   return (
     <td className="act-cell">
-      <div className="act-text">{r.worst.action.text}</div>
-      <div className="subtle">{r.worst.action.why}{differs && ` (worst: ${r.worst.cluster})`}</div>
+      <div className="act-text">{r.c.action.text}</div>
+      <div className="subtle">{r.c.action.why}</div>
+      {perCluster && needs.length > 0 && <ul className="needs">{needs.map((n) => <li key={n}>{n}</li>)}</ul>}
       {r.notes.length > 0 && <div className="notes">{r.notes.map((n, k) => <Note key={k} n={n} />)}</div>}
     </td>
   );
@@ -168,7 +170,7 @@ function MatrixTable({ rows, cols, onOpen }: { rows: Row[]; cols: Cluster[]; onO
                   </td>
                 );
               })}
-              <ActionCell r={r} />
+              <ActionCell r={r} perCluster />
             </tr>
           ))}
         </tbody>
@@ -189,7 +191,7 @@ function SingleTable({ rows, onOpen }: { rows: Row[]; onOpen: (id: string) => vo
               <td><LevelBadge level={r.level} /></td>
               <td className="mono">{[...new Set(r.insts.map((i) => i.version || "?"))].join(" · ")}</td>
               <td className="small">{r.insts.map((i) => (i.namespace ? `${i.namespace}/${i.workload}` : "cluster")).join(", ")}</td>
-              <ActionCell r={r} />
+              <ActionCell r={r} perCluster />
             </tr>
           ))}
         </tbody>

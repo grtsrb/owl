@@ -42,6 +42,13 @@ func TestActionFor(t *testing.T) {
 		{"unpinned", "", "unpinned", k8sInfo(), nil, ActionPin, "Pin an exact version", "doesn't say which version"},
 		{"no data", "1.0.0", "identified", nil, nil, ActionCheck, "Check manually", "no upstream release data"},
 	}
+	// Pinned to an EOL line and already on its last patch: never "Patch to <the same version>".
+	pinned, _ := policy.Parse("pin:1.33")
+	pt, _ := policy.Resolve(pinned, k8sInfo().Lines, now)
+	in := inventory.Instance{Version: "1.33.13", Status: "identified", Image: "img:1.33.13"}
+	if a := ActionFor(in, ScoreInstance(in, k8sInfo(), &pt, nil, now), &pt, k8sInfo()); a.Kind != ActionUpgrade || strings.Contains(a.Text, "1.33.13") {
+		t.Errorf("pinned EOL line at latest patch: %+v", a)
+	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			a := actionFor(c.version, c.status, c.info, c.matches)
@@ -85,5 +92,29 @@ func TestDriftPerTenant(t *testing.T) {
 	d = drift(insts[:2], rev, clusters[:3])
 	if len(d) == 0 || d[0].Kind != DriftAnomaly {
 		t.Errorf("reordered stages must flip the comparison: %+v", d)
+	}
+}
+
+// The component headline is the same goal whichever instance is worst — staging needing a patch and
+// prod needing an upgrade both read "Update to <target>".
+func TestComponentAction(t *testing.T) {
+	sp, _ := policy.Parse("lts-or-n-1")
+	tg, _ := policy.Resolve(sp, k8sInfo().Lines, now)
+	mk := func(cluster, v string) ScoredInstance {
+		in := inventory.Instance{Cluster: cluster, Version: v, Status: "identified", Image: "img:" + v}
+		sc := ScoreInstance(in, k8sInfo(), &tg, nil, now)
+		return ScoredInstance{Instance: in, Score: sc, Action: ActionFor(in, sc, &tg, k8sInfo())}
+	}
+	stg, prod := mk("stg", "1.36.4"), mk("prod", "1.33.6")
+	for _, set := range [][]ScoredInstance{{stg}, {prod}, {stg, prod}} {
+		if a := ComponentAction(set, &tg); a.Text != "Update to 1.36.6" {
+			t.Errorf("%d instances: %+v", len(set), a)
+		}
+	}
+	if a := ComponentAction([]ScoredInstance{stg, prod}, &tg); !strings.Contains(a.Why, "1.33 is EOL") {
+		t.Errorf("why must come from the worst instance: %q", a.Why)
+	}
+	if a := ComponentAction([]ScoredInstance{mk("x", "1.36.6")}, &tg); a.Kind != ActionNone {
+		t.Errorf("all up to date: %+v", a)
 	}
 }

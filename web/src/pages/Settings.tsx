@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { adminToken, agentSecretYAML, api, download, writeErrorText, type Cluster, type ServerSettings } from "../api";
+import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type Cluster, type ServerSettings } from "../api";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
 import { ago, Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
@@ -200,7 +200,11 @@ function AddDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (cl
   const valid = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name) && finalStage !== "" && finalTenant !== "";
 
   async function create() {
-    if (stage === NEW && !(await w.run(() => api.addStage(finalStage)))) return;
+    // Retrying after a failed create must not trip over the stage the first attempt already added.
+    if (stage === NEW) {
+      try { await api.addStage(finalStage); }
+      catch (e) { if (!(e instanceof ApiError && e.status === 409)) { w.setMsg({ ok: false, text: writeErrorText(e) }); return; } }
+    }
     const r = await w.run(() => api.addCluster({ name, stage: finalStage, tenant: finalTenant }));
     if (r) onCreated(r.cluster.name, r.token);
   }

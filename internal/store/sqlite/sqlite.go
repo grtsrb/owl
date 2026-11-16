@@ -218,6 +218,10 @@ func scanCluster(row interface{ Scan(...any) error }) (*store.Cluster, error) {
 }
 
 func (d *DB) CreateCluster(ctx context.Context, name string, stage store.Stage, tenant string) (*store.Cluster, error) {
+	return d.CreateClusterWithToken(ctx, name, stage, tenant, "", "")
+}
+
+func (d *DB) CreateClusterWithToken(ctx context.Context, name string, stage store.Stage, tenant, hash, prefix string) (*store.Cluster, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -229,12 +233,20 @@ func (d *DB) CreateCluster(ctx context.Context, name string, stage store.Stage, 
 	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO tenants(name) VALUES (?)", tenant); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO clusters(name, stage, tenant, created_at) VALUES (?,?,?,?)",
-		name, string(stage), tenant, now().Format(ts)); err != nil {
+	res, err := tx.ExecContext(ctx, "INSERT INTO clusters(name, stage, tenant, created_at) VALUES (?,?,?,?)",
+		name, string(stage), tenant, now().Format(ts))
+	if err != nil {
 		if isUnique(err) {
 			return nil, store.ErrExists
 		}
 		return nil, err
+	}
+	if hash != "" {
+		id, _ := res.LastInsertId()
+		if _, err := tx.ExecContext(ctx, "INSERT INTO agent_tokens(cluster_id, token_hash, prefix, created_at) VALUES (?,?,?,?)",
+			id, hash, prefix, now().Format(ts)); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -255,7 +267,7 @@ func (d *DB) UpdateCluster(ctx context.Context, name string, stage store.Stage, 
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM tenants WHERE name=?", tenant).Scan(&n); err != nil {
 		return nil, err
 	} else if n == 0 {
-		return nil, fmt.Errorf("tenant %q: %w", tenant, store.ErrNotFound)
+		return nil, fmt.Errorf("%w %q", store.ErrUnknownTenant, tenant)
 	}
 	res, err := tx.ExecContext(ctx, "UPDATE clusters SET stage=?, tenant=? WHERE name=?", string(stage), tenant, name)
 	if err != nil {
@@ -329,6 +341,23 @@ func (d *DB) RevokeTokens(ctx context.Context, clusterID int64) error {
 		"UPDATE agent_tokens SET revoked_at=? WHERE cluster_id=? AND revoked_at IS NULL",
 		now().Format(ts), clusterID)
 	return err
+}
+
+func (d *DB) RotateToken(ctx context.Context, clusterID int64, hash, prefix string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	at := now().Format(ts)
+	if _, err := tx.ExecContext(ctx, "UPDATE agent_tokens SET revoked_at=? WHERE cluster_id=? AND revoked_at IS NULL", at, clusterID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO agent_tokens(cluster_id, token_hash, prefix, created_at) VALUES (?,?,?,?)",
+		clusterID, hash, prefix, at); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (d *DB) ClusterByTokenHash(ctx context.Context, hash string) (*store.Cluster, error) {
@@ -600,7 +629,7 @@ func (d *DB) ReorderStages(ctx context.Context, names []string) error {
 		seen[n] = true
 	}
 	if len(names) != total || len(seen) != total {
-		return fmt.Errorf("reorder needs every stage exactly once (%d stages, got %d names)", total, len(names))
+		return fmt.Errorf("%w: reorder needs every stage exactly once (%d stages, got %d names)", store.ErrInvalid, total, len(names))
 	}
 	for i, n := range names {
 		res, err := tx.ExecContext(ctx, "UPDATE stages SET position=? WHERE name=?", i+1, n)

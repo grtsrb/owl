@@ -19,6 +19,7 @@ export interface Match extends Advisory { certain: boolean; noFix?: boolean; rel
 export interface Score {
   level: Level; reasons: Reason[]; notes?: string[]; line?: string; linesBehind: number;
   latestInLine?: string; advisories?: Match[];
+  eol?: { line: string; since?: string }; review?: number;
 }
 
 export interface Instance {
@@ -27,7 +28,7 @@ export interface Instance {
   repository?: string; override?: "map" | "inhouse" | "ignore";
   desiredReplicas: number; running?: RunningImage[];
 }
-export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check";
+export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update";
 export interface Action { kind: ActionKind; text: string; why: string }
 export interface ScoredInstance extends Instance { score: Score; action: Action }
 
@@ -41,6 +42,8 @@ export interface ComponentReport {
     advisorySource: string; stale?: boolean; fetchedAt?: string;
   };
   instances: ScoredInstance[]; drift: Drift[];
+  /** The component's goal across all instances — independent of which clusters are shown. */
+  action: Action;
 }
 
 export interface Report {
