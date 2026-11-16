@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { adminToken, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
 import { useAppData } from "../App";
+import { paginate, usePageSize, useQueryState } from "../model";
 import { unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } from "../clusterview";
-import { ago, Card, Empty, ErrorBox, LevelBadge, LevelBar, levelLabel, Loading, Msg, useApi } from "../ui";
+import { ago, Card, Empty, ErrorBox, LevelBadge, LevelBar, levelLabel, Loading, Msg, Pager, useApi } from "../ui";
 import { clusterCounts, k8sStatus } from "./Overview";
 
 type Tab = "all" | "third" | "inhouse" | "unrecognized";
@@ -14,7 +15,11 @@ export default function ClusterDetail() {
   const { clusters, error } = useAppData();
   const report = useApi(api.report);
   const inv = useApi(api.inventory);
-  const [tab, setTab] = useState<Tab>("all");
+  // Which workloads are shown and the page live in the URL (Back from a component page restores them).
+  const qs = useQueryState();
+  const tab: Tab = (TABS.map(([t]) => t) as string[]).includes(qs.get("show")) ? (qs.get("show") as Tab) : "all";
+  const setTab = (t: Tab) => qs.set({ show: t === "all" ? null : t });
+  const [pageSize, setPageSize] = usePageSize();
 
   if (error || report.error || inv.error) return <ErrorBox error={error ?? report.error ?? inv.error} retry={() => { report.reload(); inv.reload(); }} />;
   if (!clusters || !report.data || !inv.data) return <Loading />;
@@ -24,6 +29,7 @@ export default function ClusterDetail() {
   const reload = () => { report.reload(); inv.reload(); };
   const rows = workloadsFor(cl.name, report.data, inv.data);
   const shown = rows.filter((r) => tab === "all" || r.group === tab || (tab === "unrecognized" && r.group === "ignored"));
+  const pg = paginate(shown, Number(qs.get("page")), pageSize);
   const counts = clusterCounts(report.data.components, cl.name);
   const total = counts.reduce((a, c) => a + c.n, 0);
   const k8s = k8sStatus(report.data.components, cl.name);
@@ -72,7 +78,9 @@ export default function ClusterDetail() {
           ))}
         </div>
       }>
-        {shown.length === 0 ? <Empty>Nothing in this view.</Empty> : <WorkloadTable rows={shown} />}
+        {shown.length === 0 ? <Empty>Nothing in this view.</Empty> : <WorkloadTable rows={pg.items} />}
+        <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
+          onPage={(p) => qs.set({ page: p })} onSize={(n) => { setPageSize(n); qs.set({ page: null }); }} />
       </Card>
 
       <UnrecognizedCard cluster={cl.name} inv={inv.data} report={report.data} onChanged={reload} />

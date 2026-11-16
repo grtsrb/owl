@@ -121,3 +121,36 @@ export function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
   if (!msg) return null;
   return <p className={msg.ok ? "ok-text" : "err-text"} role={msg.ok ? "status" : "alert"}>{msg.text}</p>;
 }
+
+/** "11–20 of 37", Previous/Next, page numbers (with gaps when there are many), rows-per-page. */
+export function Pager({ page, pages, start, shown, total, size, onPage, onSize }: {
+  page: number; pages: number; start: number; shown: number; total: number; size: number;
+  onPage: (p: number) => void; onSize: (n: number) => void;
+}) {
+  if (total === 0) return null;
+  const nums: (number | "…")[] = [];
+  for (let p = 1; p <= pages; p++) {
+    if (pages <= 7 || p === 1 || p === pages || Math.abs(p - page) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== "…") nums.push("…");
+  }
+  return (
+    <nav className="pager" aria-label="Pages">
+      <span className="subtle" style={{ margin: 0 }}>{start + 1}–{start + shown} of {total}</span>
+      {pages > 1 && (
+        <span className="row" style={{ gap: 4 }}>
+          <button className="btn small" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
+          {nums.map((n, i) => n === "…"
+            ? <span key={`gap${i}`} className="subtle" style={{ margin: 0 }} aria-hidden>…</span>
+            : <button key={n} className={`btn small${n === page ? " primary" : ""}`} aria-current={n === page ? "page" : undefined} onClick={() => onPage(n)}>{n}</button>)}
+          <button className="btn small" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</button>
+        </span>
+      )}
+      <label className="row small" style={{ gap: 6, marginLeft: "auto" }}>Rows
+        <select className="select" value={size} onChange={(e) => onSize(Number(e.target.value))}>
+          {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+          <option value={0}>All</option>
+        </select>
+      </label>
+    </nav>
+  );
+}

@@ -270,3 +270,4 @@ a.cc2:hover { box-shadow: var(--shadow); }
   .content, .topbar { padding-left: 16px; padding-right: 16px; }
   .kv-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

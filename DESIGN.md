@@ -143,6 +143,9 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
     version"), then one line per cluster group saying what it needs ("it-hetzner 1.14.6 → patch",
     "it-aws-test, it-aws-prod 1.13.1 → 1 line behind"). Per-instance actions (patch/upgrade) stay in
     cells and the side panel. Notes with icons + legend; row click opens a side panel.
+  - Long tables (Overview components, cluster workloads) are paged: 10 rows by default (10/25/50/All,
+    remembered per browser). Level filter, search and page are in the URL (history replaced, not
+    pushed) so Back and bookmarks restore the view; any filter or selection change goes to page 1.
   - **Component detail**: reasons per instance, advisories, release-line/EOL timeline, drift, policy editor.
   - **Clusters** (replaces Images): header (k8s/RKE2 version + EOL, last report, counts per level) and every
     workload (unpinned/in-house as row flags); unrecognized images with map/in-house/ignore actions.

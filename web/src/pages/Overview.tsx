@@ -3,8 +3,8 @@ import { Link } from "react-router-dom";
 import { api, LEVELS, type Cluster, type ComponentReport, type Level, type ScoredInstance } from "../api";
 import { useAppData, useReporting } from "../App";
 import ComponentPanel from "../components/ComponentPanel";
-import { LEGEND, needsByCluster, Note, notesFor, useClusterSelection, worstInstance, type NoteItem } from "../model";
-import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, useApi, worstLevel } from "../ui";
+import { LEGEND, needsByCluster, Note, notesFor, paginate, useClusterSelection, usePageSize, useQueryState, worstInstance, type NoteItem } from "../model";
+import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, Pager, useApi, worstLevel } from "../ui";
 
 /** A component as seen through the cluster selection. */
 export interface Row {
@@ -37,8 +37,13 @@ export default function Overview() {
   const { error: dataError, stageNames } = useAppData();
   const reporting = useReporting();
   const sel = useClusterSelection(reporting);
-  const [filter, setFilter] = useState<Level | "all">("all");
-  const [query, setQuery] = useState("");
+  // Level filter, search and page live in the URL (Back / bookmarks restore the view).
+  const qs = useQueryState();
+  const level = qs.get("level");
+  const filter: Level | "all" = (LEVELS as string[]).includes(level) ? (level as Level) : "all";
+  const query = qs.get("q");
+  const setFilter = (l: Level | "all") => qs.set({ level: l === "all" ? null : l });
+  const [pageSize, setPageSize] = usePageSize();
   const [panel, setPanel] = useState<string | null>(null);
 
   const lastStage = stageNames[stageNames.length - 1] ?? "live";
@@ -60,6 +65,7 @@ export default function Overview() {
   const counts: Partial<Record<Level, number>> = {};
   for (const r of rows) counts[r.level] = (counts[r.level] ?? 0) + 1;
   const shown = rows.filter((r) => (filter === "all" || r.level === filter) && r.c.name.toLowerCase().includes(query.toLowerCase()));
+  const pg = paginate(shown, Number(qs.get("page")), pageSize);
   const top = [...rows]
     .filter((r) => levelRank[r.level] >= levelRank.medium)
     .sort((a, b) => levelRank[b.level] - levelRank[a.level] || Number(b.inLive) - Number(a.inLive) || b.clusters.length - a.clusters.length)
@@ -115,14 +121,16 @@ export default function Overview() {
         title={<>Components <span className="subtle" style={{ fontWeight: 400 }}>{single ? "One cluster selected: detailed list" : "Side by side. Click a name for details."}</span></>}
         actions={<>
           {filter !== "all" && <button className="btn small" onClick={() => setFilter("all")}>Level: {levelLabel[filter]} ✕</button>}
-          <input className="input wide" placeholder="Filter components…" aria-label="Filter components" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="input wide" placeholder="Filter components…" aria-label="Filter components" value={query} onChange={(e) => qs.set({ q: e.target.value })} />
         </>}
       >
         {shown.length === 0 ? <Empty>No components match in the selected clusters.</Empty> : single ? (
-          <SingleTable rows={shown} onOpen={setPanel} />
+          <SingleTable rows={pg.items} onOpen={setPanel} />
         ) : (
-          <MatrixTable rows={shown} cols={cols} onOpen={setPanel} />
+          <MatrixTable rows={pg.items} cols={cols} onOpen={setPanel} />
         )}
+        <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
+          onPage={(p) => qs.set({ page: p })} onSize={(n) => { setPageSize(n); qs.set({ page: null }); }} />
         <div className="legend" aria-label="Legend">{LEGEND.map((n) => <Note key={n.kind} n={n} />)}</div>
       </Card>
 

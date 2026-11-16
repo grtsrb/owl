@@ -1,6 +1,6 @@
 // View logic shared by pages: which clusters are selected (kept in the URL), and the notes shown
 // under a component. Levels and actions come from the server; nothing here decides a level.
-import { useCallback, useMemo, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Cluster, ComponentReport, ScoredInstance } from "./api";
 import { Icon } from "./icons";
@@ -32,6 +32,7 @@ export function useClusterSelection(all: Cluster[]) {
       const q = new URLSearchParams(p);
       if (next.length === 0 || next.length === names.length) q.delete("clusters");
       else q.set("clusters", next.join(","));
+      q.delete("page"); // a different selection is a different list: start at page 1
       return q;
     }, { replace: true });
   }, [names, setParams]);
@@ -124,4 +125,50 @@ export function worstInstance(insts: ScoredInstance[]): ScoredInstance | undefin
     const d = levelRank[b.score.level] - levelRank[a.score.level];
     return d > 0 || (d === 0 && b.score.reasons.length > a.score.reasons.length) ? b : a;
   }, undefined);
+}
+
+/**
+ * List view state in the URL (filters, search, page), so Back and bookmarks restore the view. Updates
+ * replace the history entry (typing in a search box doesn't create Back steps), and any change other
+ * than the page itself goes back to page 1.
+ */
+export function useQueryState() {
+  const [params, setParams] = useSearchParams();
+  const get = useCallback((k: string) => params.get(k) ?? "", [params]);
+  const set = useCallback((patch: Record<string, string | number | null>) => {
+    setParams((p) => {
+      const q = new URLSearchParams(p);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === "" || (k === "page" && Number(v) <= 1)) q.delete(k);
+        else q.set(k, String(v));
+      }
+      if (!("page" in patch)) q.delete("page");
+      return q;
+    }, { replace: true });
+  }, [setParams]);
+  return { get, set };
+}
+
+const PAGE_SIZE_KEY = "inv-page-size";
+export const PAGE_SIZES = [10, 25, 50, 0] as const; // 0 = all
+
+/** Rows per page: a per-browser preference (not in the URL). Storage may be blocked: default 10. */
+export function usePageSize(): [number, (n: number) => void] {
+  const [size, setSize] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem(PAGE_SIZE_KEY)); return (PAGE_SIZES as readonly number[]).includes(v) && localStorage.getItem(PAGE_SIZE_KEY) !== null ? v : 10; }
+    catch { return 10; }
+  });
+  const update = useCallback((n: number) => {
+    setSize(n);
+    try { localStorage.setItem(PAGE_SIZE_KEY, String(n)); } catch { /* storage blocked */ }
+  }, []);
+  return [size, update];
+}
+
+/** The rows of the current page, with the page clamped to what exists (e.g. after a filter shrinks the list). */
+export function paginate<T>(rows: T[], page: number, size: number) {
+  const pages = size === 0 ? 1 : Math.max(1, Math.ceil(rows.length / size));
+  const current = Math.min(Math.max(1, page || 1), pages);
+  const start = size === 0 ? 0 : (current - 1) * size;
+  return { items: size === 0 ? rows : rows.slice(start, start + size), page: current, pages, start, total: rows.length };
 }
