@@ -9,7 +9,7 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 ## Status
-Milestones 1–6 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI) done; milestone plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–6 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI) done; next 6.5 (UI redesign + cluster management), then 7 (backups/logging/audit). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands

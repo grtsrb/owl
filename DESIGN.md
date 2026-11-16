@@ -3,7 +3,8 @@
 Tracks third-party components running in our Kubernetes clusters, shows what is outdated / EOL /
 vulnerable / retired, and uses Claude to explain what an upgrade involves.
 
-Status: agreed design for v1 (2026-11-15). Changes to decisions below should update this file.
+Status: agreed design for v1 (2026-11-15; UI redesign, cluster management, backups, logging and audit
+agreed 2026-11-16). Changes to decisions below should update this file.
 
 ## Users & scope
 - Personal tool first, team-ready design. DevOps operates it; **IT** and **DS** are tenants (filter only).
@@ -21,7 +22,23 @@ Status: agreed design for v1 (2026-11-15). Changes to decisions below should upd
 | it-aws-prod | live | IT | AWS (RKE2) |
 | ds (later) | — | DS | — |
 
-Stage order `staging → prelive → live` drives promotion-drift detection.
+- **Stages are user-defined**: an ordered list managed in Settings (e.g. `dev → staging → prelive → live`),
+  extendable from the Add-cluster dialog; several clusters can share a stage; an unused stage can be deleted.
+- **Tenants are a managed list** too (Settings → Tenants): add, rename (applies to every cluster of that
+  tenant), delete only when unused; Add cluster picks one or creates a new one. Cluster picker presets are
+  generated per tenant. A cluster's stage and tenant are editable; its name is not (history/exports use it).
+- Environments don't run the same things. **Drift** compares only clusters of the **same tenant**, in stage
+  order, and only components present in both; "runs only in X" is an info note, never an anomaly.
+- **Cluster management in the UI** (admin token): add (name, stage, tenant), edit, rotate token, delete,
+  live status (waiting for first report → OK → stale). `inv cluster …` stays as a fallback.
+  - Agent manifest generated from the embedded `deploy/agent/agent.yaml` (single source of RBAC), no token
+    inside, downloadable any time. Agent image and server URL are server settings (placeholders + warning
+    until set); image later in the GitLab registry.
+  - Token shown **once**: download `agent-secret-<cluster>.yaml` (primary — no token in shell history) or
+    copy the raw token, plus next commands (`kubectl apply`, `rollout restart` after rotation). Never in a URL.
+  - Delete requires typing the cluster name and offers a JSON export first (settings, current workloads,
+    change history; no token hash). Delete removes all of the cluster's data; rotate is the way to cut an
+    agent off without losing data.
 
 ## Architecture
 One Go binary, two modes; React UI embedded via `go:embed`.
@@ -53,7 +70,9 @@ cluster (each)                               server (Docker locally, later one E
   `bitnami/redis:7.2.4-debian-12-r3` → Redis 7.2.4.
 - RKE2/Kubernetes version per cluster from node `kubeletVersion` (e.g. `v1.30.4+rke2r1`).
 - `:latest` / digest-only / non-version tags → **⚠ unpinned** (Medium).
-- Unknown images → "unrecognized" list, mappable from the UI.
+- Unknown images → "unrecognized" list. Per image repository, across all clusters, the UI can map it to an
+  existing component, mark it in-house, or ignore it — stored in the DB as catalog overrides over
+  `catalog.yaml`, listed with undo in Settings. New components (repo/EOL slug) stay in `catalog.yaml` (v2: UI).
 
 ## Versions & policy
 - Three targets per component: latest patch (current line), latest minor, latest major. Stable only.
@@ -101,7 +120,8 @@ Policies (`internal/policy`): `lts-or-n-1` (default), `lts` (falls back to n-1),
 `n-2`, `pin:<line or version>`; stored per scope (`global` or component id), editable via
 `PUT /api/v1/policies/{scope}` (JSON only — a cross-site form post can't change them).
 
-Promotion drift across stages: "newer in staging, not yet in prod" and anomalies like "prod newer than staging".
+Promotion drift across stages: "newer in staging, not yet in prod" and anomalies like "prod newer than staging"
+(same tenant, components present in both — see Clusters).
 
 ## Claude
 - Sees public data only: component name, version jump, upstream release notes. No cluster names,
@@ -112,15 +132,44 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 - Optional: without an API key everything else still works.
 
 ## Interfaces
-- React dashboard (embedded in the binary): Overview (level tiles + components × clusters matrix with
-  target/latest/flags), component detail (reasons per instance, advisories per version, release lines,
-  drift, policy editor), Changes, Images (unpinned/unrecognized/in-house), Settings (global policy,
-  clusters, admin token). Light/dark follow the OS.
+- React dashboard (embedded in the binary), sidebar navigation, light/dark follow the OS, bundled font and
+  icons (strict CSP stays: no CDNs, no inline styles).
+  - **Cluster picker** (multi-select, in the URL, default all, presets per tenant and stage) on **Overview
+    and Changes** only; Clusters always lists every cluster, Settings isn't filtered.
+  - **Overview**: level tiles, **Top actions** (top 5 by level → runs in live → clusters affected), cluster
+    cards; one cluster selected = detailed component list, several = components × clusters matrix. One
+    **"Recommended action"** column as a sentence ("Upgrade to 1.12.1 — 2 lines behind (n-1)", "Replace —
+    retired upstream"), notes with icons + legend; row click opens a side panel.
+  - **Component detail**: reasons per instance, advisories, release-line/EOL timeline, drift, policy editor.
+  - **Clusters** (replaces Images): header (k8s/RKE2 version + EOL, last report, counts per level) and every
+    workload (unpinned/in-house as row flags); unrecognized images with map/in-house/ignore actions.
+  - **Changes**; **Settings** (policies, stages, tenants, clusters + agent install, catalog overrides, backups, audit
+    log, admin token).
+  - v2: trend charts (needs score history).
 - CLI (`inv scan`, `inv outdated`, …).
 - Mattermost: weekly digest (Mon 09:00: counts per level, top 5 actions with summaries, drift) +
   instant alert when something *newly* becomes Critical. Google Chat/email later.
 - Auth v1: single admin password (local: none). v2: Google sign-in, viewer/admin roles.
 - v2: MCP server to query the inventory from Claude.
+
+## Operations
+- **Backups**: daily at 03:00 + "Back up now"; consistent SQLite copy. Default target an S3-compatible bucket
+  (AWS S3 / Hetzner Object Storage; credentials from env, never UI/DB); without one, local folder only with a
+  "not safe" warning. Always written locally first, then uploaded. Server's bucket access is upload/list/read
+  only — **it never deletes in the bucket** (retention there = bucket lifecycle rule set by the operator).
+  Local retention set in the UI: 15 days without S3; with S3, last 3 local copies — a copy is never deleted
+  before it's uploaded (retried next run, warning in Settings). Warning if last backup failed or is > 36 h old.
+  Dev stack runs MinIO to test the S3 path.
+- **Restore** (admin, UI): full restore from the list or an upload — validated (known schema version), safety
+  backup taken first, DB swapped in place. Import of a per-cluster JSON export restores one deleted cluster
+  (new token, shown once).
+- **Logs**: JSON to stderr and `/data/logs/server.log` on the data volume — daily rotation, gzip, 5 days
+  (set in the UI), 50 MB per-file cap; Docker's own log copy capped (10 MB × 3). Agent: stderr only (k8s
+  rotates). `INV_LOG_LEVEL`; one line per request (method, path, status, duration; health/static at debug);
+  request ID; tokens and `Authorization` never logged (tested).
+- **Audit log** (DB, viewable in UI, 365 days, set in the UI, included in backups): cluster add/edit/rotate/
+  delete, policies, catalog overrides, settings, backup/restore/import — what, when, from which IP (who, once
+  Google sign-in lands).
 
 ## Upstream access
 - GitHub API with a token that has no scopes (public read); release lists cached ~6 h.
@@ -139,5 +188,8 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 4. **Upstream data**: GitHub releases, endoflife.date, OSV/GHSA advisories, retired detection, caching.
 5. **Policy, scoring, drift**.
 6. **React UI** (embedded).
-7. **Claude summaries**.
-8. **Notifications, CLI, auth, packaging**: Mattermost digest/alerts, admin login, Dockerfile, manifests.
+6.5. **UI redesign & cluster management**: clickable mockup first, then cluster picker, user-defined stages,
+   tenant-scoped drift, Clusters page, catalog overrides, cluster/agent management, new Overview.
+7. **Backups, restore, logging, audit log**.
+8. **Claude summaries**.
+9. **Notifications, CLI, auth, packaging**: Mattermost digest/alerts, admin login, Dockerfile, manifests.
