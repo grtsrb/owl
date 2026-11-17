@@ -75,7 +75,7 @@ func (s *Server) googleStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=google_off", http.StatusFound)
 		return
 	}
-	if !s.limits.allow("google-ip:"+s.clientIP(r), 60, 15*time.Minute, true) {
+	if !s.limits.allow("google-ip:"+s.limitIP(r), 60, 15*time.Minute, true) {
 		http.Redirect(w, r, "/login?error=too_many", http.StatusFound)
 		return
 	}

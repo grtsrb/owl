@@ -14,7 +14,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
   change or delete themselves.
 - **Passwords**: 12–256 characters, hashed with argon2id (64 MiB, 3 passes; at most two hashes run at
   once so a burst of attempts can't exhaust memory). Failed sign-ins are rate-limited per IP and per
-  account-from-that-IP (so nobody can lock your account by failing on purpose). An unknown email and a wrong password get the same answer and take the same time.
+  account-from-that-IP (so nobody can lock your account by failing on purpose); IPv6 addresses count
+  per /64 network. An unknown email and a wrong password get the same answer and take the same time.
   Changing or resetting a password signs the account out everywhere else and voids its open links.
 - **Google sign-in** (OpenID Connect, authorization-code flow with PKCE, `state` bound to the browser
   by a short-lived cookie, `nonce`): only accounts whose email Google has verified, that match an

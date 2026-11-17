@@ -216,6 +216,18 @@ func (s *Server) clientIP(r *http.Request) string {
 	return host
 }
 
+// limitIP is the client address as a rate-limit key: IPv6 is grouped by /64 (one subscriber gets a
+// whole /64, so per-address keys would let one attacker mint unlimited buckets and flood the limiter).
+func (s *Server) limitIP(r *http.Request) string {
+	ip := s.clientIP(r)
+	a, err := netip.ParseAddr(ip)
+	if err != nil || a.Is4() || a.Is4In6() {
+		return ip
+	}
+	p, _ := a.Prefix(64)
+	return p.String()
+}
+
 func (s *Server) trusted(a netip.Addr) bool {
 	a = a.Unmap()
 	for _, p := range s.Auth.TrustedProxies {
@@ -235,7 +247,9 @@ type limiter struct {
 }
 
 // maxLimiterKeys bounds memory under a flood of distinct keys; past it, a random entry is evicted
-// (refusing new keys instead would let a flood lock everyone out).
+// (refusing new keys instead would let a flood lock everyone out). Evicting one particular live
+// counter this way takes ~maxLimiterKeys counted requests — far more than the attempts it limits —
+// and per-IP keys group IPv6 by /64 (limitIP), so floods need many real networks.
 const maxLimiterKeys = 100000
 
 type window struct {

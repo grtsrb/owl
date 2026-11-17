@@ -105,7 +105,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(b.Email))
-	ip := s.clientIP(r)
+	ip := s.limitIP(r)
 	// Failures are counted per IP (one source trying many accounts) and per account from that IP — not
 	// per account alone, which would let anyone lock a user out by failing on purpose. Guessing from
 	// many IPs is still bounded by argon2id's cost and the per-IP limit. A success clears the count.
@@ -138,7 +138,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		ok = false
 	}
 	if !ok || u == nil || !u.Active() {
-		s.Log.Warn("sign-in failed", "user", email, "remote", ip, "req", requestID(r))
+		s.Log.Warn("sign-in failed", "user", email, "remote", s.clientIP(r), "req", requestID(r))
 		httpError(w, http.StatusUnauthorized, wrongLogin)
 		return
 	}
@@ -222,7 +222,7 @@ func (s *Server) tokenInfo(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	if !s.limits.allow("token-ip:"+s.clientIP(r), 60, 15*time.Minute, true) {
+	if !s.limits.allow("token-ip:"+s.limitIP(r), 60, 15*time.Minute, true) {
 		httpError(w, http.StatusTooManyRequests, "Too many attempts. Wait 15 minutes and try again.")
 		return
 	}
@@ -253,7 +253,7 @@ func (s *Server) acceptToken(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	if !s.limits.allow("token-ip:"+s.clientIP(r), 60, 15*time.Minute, true) {
+	if !s.limits.allow("token-ip:"+s.limitIP(r), 60, 15*time.Minute, true) {
 		httpError(w, http.StatusTooManyRequests, "Too many attempts. Wait 15 minutes and try again.")
 		return
 	}
@@ -331,7 +331,7 @@ func (s *Server) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "Password reset by email isn't available. Ask an admin for a reset link.")
 		return
 	}
-	ip := s.clientIP(r)
+	ip := s.limitIP(r)
 	if !s.limits.allow("forgot-ip:"+ip, 10, time.Hour, true) {
 		httpError(w, http.StatusTooManyRequests, "Too many requests. Try again in an hour.")
 		return
@@ -342,7 +342,7 @@ func (s *Server) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"message": answer})
 		return
 	}
-	req := requestID(r)
+	req, remote := requestID(r), s.clientIP(r)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -358,7 +358,7 @@ func (s *Server) forgotPassword(w http.ResponseWriter, r *http.Request) {
 			s.Log.Error("password reset email failed", "user", u.Email, "err", err, "req", req)
 			return
 		}
-		s.Log.Info("password reset email sent", "user", u.Email, "remote", ip, "req", req)
+		s.Log.Info("password reset email sent", "user", u.Email, "remote", remote, "req", req)
 	}()
 	writeJSON(w, http.StatusOK, map[string]string{"message": answer})
 }
