@@ -1,0 +1,50 @@
+# Owl on one host (e.g. an EC2 instance): Owl + Caddy, which gets and renews the HTTPS certificate
+# from Let's Encrypt. Setup: docs/install.md ("Docker Compose on one host").
+#
+#   cp owl.env.example .env && chmod 600 .env   # then edit
+#   docker compose up -d
+#   docker compose exec owl /owl user invite --admin you@example.com
+name: owl
+
+services:
+  owl:
+    image: ${OWL_IMAGE:?set OWL_IMAGE in .env, e.g. registry.gitlab.example.com/devops/owl:0.9.0}
+    command: ["server"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      OWL_LISTEN: 0.0.0.0:8080 # inside the Docker network only: no ports are published
+      OWL_TRUSTED_PROXIES: 172.30.80.10 # Caddy (fixed address below): real client IPs in logs/audit
+    volumes:
+      - ${OWL_DATA_DIR:-/srv/owl}:/data # database, backups, logs — owned by uid 65532
+    tmpfs:
+      - /tmp:size=256m # SQLite's temporary files (VACUUM INTO for backups)
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [owl]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      OWL_DOMAIN: ${OWL_DOMAIN:?set OWL_DOMAIN in .env, e.g. owl.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep this volume, or Let's Encrypt rate limits bite on re-issue
+      - caddy-config:/config
+    networks:
+      owl: { ipv4_address: 172.30.80.10 }
+    depends_on: [owl]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+networks:
+  owl:
+    ipam:
+      config: [{ subnet: 172.30.80.0/24 }] # fixed, so Caddy's address (OWL_TRUSTED_PROXIES) is too
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

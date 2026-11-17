@@ -10,21 +10,27 @@ The UI uses exactly this API, so anything the UI does can be scripted. The TypeS
 
 | Kind | How | Used by |
 |---|---|---|
-| none | — | read endpoints (until sign-in, milestone 9) |
-| **admin** | `Authorization: Bearer $OWL_ADMIN_TOKEN` | every write, plus admin-only reads (marked 🔒) |
+| **session** | the `owl_session` cookie (`__Host-owl_session` over HTTPS) from signing in | every endpoint below; admin-only ones are marked 🔒 |
 | **agent** | `Authorization: Bearer <agent token>` | `POST /snapshots` only |
+| none | — | `/healthz`, `GET /agent/manifest` and the sign-in endpoints (`/auth/…` below) |
 
-- Admin endpoints return `403` if the server has no `OWL_ADMIN_TOKEN` configured, `401` for a missing
-  or wrong token.
-- Requests with a `Host` that isn't `localhost` or in `OWL_ALLOWED_HOSTS` get `421` (except
-  `/healthz` and agent ingest).
+- Without a valid session: `401`. Signed in as a viewer on an admin endpoint: `403`.
+- **Writes must come from Owl's own pages**: a browser request with `Sec-Fetch-Site` other than
+  `same-origin`, or an `Origin` that doesn't match the host, gets `403 cross-origin request refused`.
+  Non-browser clients (no such headers) aren't affected.
+- Requests with a `Host` that isn't `localhost`, the `OWL_PUBLIC_URL` host or in `OWL_ALLOWED_HOSTS`
+  get `421` (except `/healthz` and agent ingest).
 - Request bodies of writes must be `Content-Type: application/json` (`415` otherwise); unknown fields
   are rejected.
 
+Scripting with curl (until personal API tokens arrive with the CLI in milestone 10): sign in once
+and keep the cookie.
+
 ```bash
-set -a; . ./.env; set +a
-ADMIN=(-H "Authorization: Bearer $OWL_ADMIN_TOKEN" -H 'Content-Type: application/json')
-curl -s "${ADMIN[@]}" -X PUT -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/policies/grafana
+B=https://owl.example.com
+curl -s -c owl.cookies -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"…"}' $B/api/v1/auth/login
+curl -s -b owl.cookies -H 'Content-Type: application/json' -X PUT -d '{"policy":"pin:12.3"}' $B/api/v1/policies/grafana
 ```
 
 ## Status codes
@@ -33,9 +39,10 @@ curl -s "${ADMIN[@]}" -X PUT -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/po
 |---|---|
 | 200 / 201 / 202 | OK / created / snapshot accepted |
 | 400 | Invalid input (the message says what) |
-| 401 / 403 | Token missing or wrong / writes disabled on the server |
+| 401 / 403 | Not signed in (or the session ended) / not allowed: viewer on an admin endpoint, or a cross-origin write |
 | 404 | Not found |
-| 409 | Already exists, or in use (deleting a stage/tenant that clusters use) |
+| 409 | Already exists, in use (deleting a stage/tenant that clusters use), or would leave no active admin |
+| 429 | Too many attempts (sign-in, reset emails) |
 | 413 | Body too large |
 | 415 | Wrong content type |
 | 421 | Host not allowed |
@@ -46,6 +53,37 @@ curl -s "${ADMIN[@]}" -X PUT -d '{"policy":"pin:12.3"}' 127.0.0.1:8080/api/v1/po
 | | |
 |---|---|
 | `GET /healthz` | `200 ok` (plain text). No auth, no host check. |
+
+## Sign-in
+
+All under `/api/v1/auth/` except the two Google redirects.
+
+| Endpoint | |
+|---|---|
+| `GET /auth/config` | Public. `{password, google, forgot}`: which sign-in methods the login page offers. |
+| `POST /auth/login` | Public. `{email, password}` → `200 me` and the session cookie. `401 "Wrong email or password."` for any failure; `403` when password sign-in is off; `429` after 10 failures per account from one IP / 30 per IP in 15 minutes. |
+| `POST /auth/logout` | Ends the session. |
+| `GET /auth/me` | `{email, role, hasPassword, hasGoogle}` |
+| `POST /auth/password` | `{current, new}` — change your password (signs out your other sessions). |
+| `POST /auth/token` | Public. `{token}` → `{email, kind: invite \| reset, password, google}` for an invite/reset page, without using the link. |
+| `POST /auth/accept` | Public. `{token, password}` → sets the password, uses up the link, `200 me` and the session cookie. |
+| `POST /auth/forgot` | Public. `{email}` → always the same `200 {message}`; emails a reset link (1 hour) to active accounts only. `404` when email or password sign-in is off. |
+| `GET /auth/google/start` | Redirects to Google (not under `/api/v1`). |
+| `GET /auth/google/callback` | Google redirects back here; on success a session and a redirect to `/`, otherwise to `/login?error=<reason>`. |
+
+## Users 🔒
+
+| Endpoint | |
+|---|---|
+| `GET /users` | `[{id, email, role, createdAt, activatedAt?, lastLoginAt?, disabledAt?, hasPassword, hasGoogle}]` |
+| `POST /users` | `{email, role: admin \| viewer}` → `201 {user, link, emailed, emailError?}` — the invite link is returned **only here** (and emailed when SMTP is set up) |
+| `POST /users/{id}/invite` | New invite link for a pending user (the old one stops working) → `{user, link, emailed}` |
+| `POST /users/{id}/reset` | Password-reset link for an active user (1 hour) → `{user, link, emailed}`. `409` when password sign-in is off. |
+| `PATCH /users/{id}` | `{role, disabled}` → user. Disabling ends their sessions. `409` for yourself, the last active admin, or — with password sign-in off — the last admin who signs in with Google. |
+| `DELETE /users/{id}` | `409` in the same cases. |
+| `GET /auth/settings` | `{passwordLogin, google: {configured, domain, redirectURL, linkedAdmins}, mail: {configured, host, port, from, tls}, publicURL}` |
+| `PUT /auth/settings` | `{passwordLogin}` — turning it off needs Google configured and an admin who signed in with Google (`409` otherwise). |
+| `POST /mail/test` | Sends a test email to you → `{to}`; `502` with the SMTP error. |
 
 ## Inventory and reports (read)
 
@@ -136,16 +174,16 @@ Policies: `lts-or-n-1`, `lts`, `latest`, `n-1`, `n-2` (any `n-<0..10>`), `pin:<v
 | `POST /restore` | Restore an uploaded file. Raw body, `Content-Type` one of `application/gzip`, `application/x-gzip`, `application/octet-stream`, `application/vnd.sqlite3`, `application/x-sqlite3`; ≤ 2 GiB → `{restored, safetyBackup}` |
 
 ```bash
-curl -s -H "Authorization: Bearer $OWL_ADMIN_TOKEN" -X POST 127.0.0.1:8080/api/v1/backups
-curl -s -H "Authorization: Bearer $OWL_ADMIN_TOKEN" -H 'Content-Type: application/gzip' \
-  --data-binary @owl-20261117-030000.db.gz 127.0.0.1:8080/api/v1/restore
+curl -s -b owl.cookies -X POST $B/api/v1/backups
+curl -s -b owl.cookies -H 'Content-Type: application/gzip' \
+  --data-binary @owl-20261117-030000.db.gz $B/api/v1/restore
 ```
 
 ## Claude upgrade summaries
 
 | Endpoint | |
 |---|---|
-| `GET /summaries` | Public. `{mode, enabled, paused, jumps: [{component, name, from, to, state, tokens, exact, maxCostMicros, sources: [{version, url}], error, summary?}]}`. `summary` has `headline`, `breakingChanges`, `migrations`, `deprecations`, `securityFixes`, `notableFeatures` (each `[{text, version}]`), `upgradePath {direct, via, reason}`, `risk {level, reason}`, `sources`, `model`, `promptVersion`, `createdAt`. States: `ready`, `off`, `collecting`, `no_notes`, `error`, `estimate`, `no_key`, `paused`, `too_large`, `failed`, `budget`, `available`, `queued`. |
+| `GET /summaries` | `{mode, enabled, paused, jumps: [{component, name, from, to, state, tokens, exact, maxCostMicros, sources: [{version, url}], error, summary?}]}`. `summary` has `headline`, `breakingChanges`, `migrations`, `deprecations`, `securityFixes`, `notableFeatures` (each `[{text, version}]`), `upgradePath {direct, via, reason}`, `risk {level, reason}`, `sources`, `model`, `promptVersion`, `createdAt`. States: `ready`, `off`, `collecting`, `no_notes`, `error`, `estimate`, `no_key`, `paused`, `too_large`, `failed`, `budget`, `available`, `queued`. |
 | `GET /summaries/status` 🔒 | `{settings, enabled, model, fallback, price, paused, spentTodayMicros, spentMonthMicros, spentTotalMicros, maxPerSummaryMicros, summaries, requests: [last 20]}` |
 | `PUT /summaries/settings` 🔒 | `{mode: off \| estimate \| manual \| auto, dailyCapMicros, monthlyCapMicros, maxInputTokens, maxOutputTokens}` — all required → status |
 | `POST /summaries/generate` 🔒 | `{component, from, to, force}` — writes one summary now (synchronous, up to a minute). `force` = "Generate anyway" above the input limit. `409` when nothing was sent (mode, paused, too large, budget, no notes); `503` without an API key; `502` when the request was made and failed. → same as `GET /summaries` |
@@ -157,4 +195,4 @@ Money is in micro-dollars (`1000000` = $1). Days and months for the caps are UTC
 
 | Endpoint | |
 |---|---|
-| `GET /audit?limit=` | `[{id, at, action, details, remote, actor?}]`, newest first; `limit` default 500, max 5000 |
+| `GET /audit?limit=` | `[{id, at, action, details, remote, actor?}]`, newest first; `limit` default 500, max 5000. `actor` is the signed-in user's email (empty for entries from before sign-in). |

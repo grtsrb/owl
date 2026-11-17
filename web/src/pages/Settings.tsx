@@ -1,37 +1,36 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { adminToken, agentSecretYAML, api, ApiError, download, normalizeToken, useAdminToken, verifyAdminToken, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
+import { agentSecretYAML, api, ApiError, download, useIsAdmin, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
 import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
 import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
 import { overrideText } from "./ClusterDetail";
 import SummariesTab from "./SettingsSummaries";
+import { AccountTab, UsersTab } from "./SettingsUsers";
 
 type M = { ok: boolean; text: string } | null;
 
 const TABS: [string, string][] = [
   ["clusters", "Clusters"], ["stages", "Stages"], ["tenants", "Tenants"], ["policy", "Version policy"],
-  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["backups", "Backups & restore"], ["logs", "Logs & audit"], ["token", "Admin token"],
+  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["backups", "Backups & restore"], ["logs", "Logs & audit"],
+  ["users", "Users"], ["account", "Account"],
 ];
 
 export default function Settings() {
   const { tab = "clusters" } = useParams();
-  const hasToken = useAdminToken() !== "";
+  const admin = useIsAdmin();
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">Changes need the admin token{hasToken ? " (set for this tab)" : ""}.</p>
+          <p className="muted">{admin ? "You're an admin: you can change everything here." : "You're a viewer: settings are read-only. Ask an admin to make changes."}</p>
         </div>
       </div>
       <nav className="tabs" aria-label="Settings sections">
         {TABS.map(([id, label]) => <NavLink key={id} to={`/settings/${id}`} className={({ isActive }) => `tab${isActive ? " active" : ""}`}>{label}</NavLink>)}
       </nav>
-      {!hasToken && tab !== "token" && (
-        <div className="callout info"><Icon.info /><span>Read-only: <Link to="/settings/token">set the admin token</Link> to make changes.</span></div>
-      )}
       {tab === "clusters" && <ClustersTab />}
       {tab === "stages" && <StagesTab />}
       {tab === "tenants" && <TenantsTab />}
@@ -40,14 +39,15 @@ export default function Settings() {
       {tab === "summaries" && <SummariesTab />}
       {tab === "backups" && <BackupsTab />}
       {tab === "logs" && <LogsTab />}
-      {tab === "token" && <TokenTab />}
+      {tab === "users" && <UsersTab />}
+      {tab === "account" && <AccountTab />}
       {!TABS.some(([id]) => id === tab) && <Empty>Unknown section.</Empty>}
     </>
   );
 }
 
 /** Runs a write, reports the result, and tells the caller whether it worked. */
-function useWrite() {
+export function useWrite() {
   const [msg, setMsg] = useState<M>(null);
   const [busy, setBusy] = useState(false);
   async function run<T>(fn: () => Promise<T>, ok?: string): Promise<T | undefined> {
@@ -59,7 +59,7 @@ function useWrite() {
   return { msg, setMsg, busy, run };
 }
 
-function Dialog({ title, onClose, children }: { title: string; onClose?: () => void; children: ReactNode }) {
+export function Dialog({ title, onClose, children }: { title: string; onClose?: () => void; children: ReactNode }) {
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -92,7 +92,7 @@ function ClustersTab() {
   const settings = useApi(api.settings);
   const w = useWrite();
   const [dlg, setDlg] = useState<DialogState | null>(null);
-  const canWrite = useAdminToken() !== "";
+  const canWrite = useIsAdmin();
 
   if (!clusters) return <Loading />;
   const close = () => { setDlg(null); reload(); };
@@ -357,7 +357,7 @@ function StagesTab() {
   const { stages, reload } = useAppData();
   const [name, setName] = useState("");
   const w = useWrite();
-  const canWrite = useAdminToken() !== "";
+  const canWrite = useIsAdmin();
   if (!stages) return <Loading />;
   const names = stages.map((s) => s.name);
   const move = (i: number, d: number) => {
@@ -399,7 +399,7 @@ function TenantsTab() {
   const [editing, setEditing] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const w = useWrite();
-  const canWrite = useAdminToken() !== "";
+  const canWrite = useIsAdmin();
   const done = () => { tenants.reload(); reload(); };
   if (tenants.error) return <ErrorBox error={tenants.error} retry={tenants.reload} />;
   if (!tenants.data) return <Loading />;
@@ -449,7 +449,7 @@ function PolicyTab() {
   const policies = useApi(api.policies);
   const [value, setValue] = useState<string | null>(null);
   const w = useWrite();
-  const hasToken = useAdminToken() !== "";
+  const hasToken = useIsAdmin();
   if (policies.error) return <ErrorBox error={policies.error} retry={policies.reload} />;
   if (!policies.data) return <Loading />;
   const current = policies.data.global;
@@ -477,7 +477,7 @@ function OverridesTab() {
   const overrides = useApi(api.overrides);
   const catalog = useApi(api.catalog);
   const w = useWrite();
-  const hasToken = useAdminToken() !== "";
+  const hasToken = useIsAdmin();
   if (overrides.error) return <ErrorBox error={overrides.error} retry={overrides.reload} />;
   if (!overrides.data) return <Loading />;
   return (
@@ -500,31 +500,6 @@ function OverridesTab() {
   );
 }
 
-function TokenTab() {
-  const [value, setValue] = useState("");
-  const has = useAdminToken() !== "";
-  const w = useWrite();
-  async function use() {
-    const t = normalizeToken(value);
-    if (await w.run(async () => { await verifyAdminToken(t); return true; })) { adminToken.set(t); setValue(""); }
-  }
-  return (
-    <Card title="Admin token">
-      <p className="subtle" style={{ margin: 0 }}>Needed for changes and for backups, logs and the audit log. Kept only in this browser tab
-        (session storage: a new tab or window asks again) and sent only with admin requests.</p>
-      {has ? (
-        <div className="row"><Tag tone="ok">token set for this tab</Tag><button className="btn" onClick={() => adminToken.set("")}>Forget</button></div>
-      ) : (
-        <form className="row" onSubmit={(e) => { e.preventDefault(); void use(); }}>
-          <input className="input mono wide" type="password" autoComplete="off" placeholder="OWL_ADMIN_TOKEN" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Admin token" />
-          <button className="btn primary" disabled={!normalizeToken(value) || w.busy}>{w.busy ? "Checking…" : "Use"}</button>
-          <Msg msg={w.msg} />
-        </form>
-      )}
-    </Card>
-  );
-}
-
 // ---------------- backups & restore ----------------
 
 function size(n: number) {
@@ -532,8 +507,8 @@ function size(n: number) {
 }
 
 function BackupsTab() {
-  const canWrite = useAdminToken() !== "";
-  if (!canWrite) return <Card title="Backups"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see and manage backups.</span></div></Card>;
+  const canWrite = useIsAdmin();
+  if (!canWrite) return <Card title="Backups"><div className="callout info"><Icon.info /><span>Only admins can see and manage backups.</span></div></Card>;
   return <BackupsTabInner />;
 }
 
@@ -673,7 +648,7 @@ function BackupSettings({ ops, s3, onSaved }: { ops: OpsSettings; s3: boolean; o
 // ---------------- logs & audit ----------------
 
 function LogsTab() {
-  if (!useAdminToken()) return <Card title="Logs & audit"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see log settings and the audit log.</span></div></Card>;
+  if (!useIsAdmin()) return <Card title="Logs & audit"><div className="callout info"><Icon.info /><span>Only admins can see log settings and the audit log.</span></div></Card>;
   return <LogsTabInner />;
 }
 

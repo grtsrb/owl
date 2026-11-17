@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { api, useAdminToken, type Cluster, type StageInfo } from "./api";
+import { api, session, useMe, type Cluster, type StageInfo } from "./api";
 import { Icon } from "./icons";
 import { orderClusters, useClusterSelection } from "./model";
 import { useApi } from "./ui";
@@ -10,6 +10,9 @@ import Changes from "./pages/Changes";
 import Clusters from "./pages/Clusters";
 import ClusterDetail from "./pages/ClusterDetail";
 import Settings from "./pages/Settings";
+import { AcceptPage, LoginPage } from "./pages/Login";
+import { signOut } from "./pages/SettingsUsers";
+import { ErrorBox, Loading } from "./ui";
 
 interface AppData {
   clusters: Cluster[] | null; // ordered by stage order
@@ -26,7 +29,22 @@ export function useReporting(): Cluster[] {
   return useMemo(() => (clusters ?? []).filter((c) => c.lastSeenAt), [clusters]);
 }
 
+/** Signs the user in before anything else loads. Invite/reset links work signed in or not. */
 export default function App() {
+  const me = useMe();
+  const { pathname } = useLocation();
+  const [loadError, setLoadError] = useState<unknown>(null);
+  useEffect(() => { if (me === undefined) session.load().catch(setLoadError); }, [me, setLoadError]);
+  if (pathname === "/invite" || pathname === "/reset") return <AcceptPage />;
+  if (loadError) return <main className="content"><ErrorBox error={loadError} retry={() => { setLoadError(null); void session.load().catch(setLoadError); }} /></main>;
+  if (me === undefined) return <Loading />;
+  if (me === null) return <LoginPage />;
+  if (pathname === "/login") return <Navigate to="/" replace />;
+  return <Shell />;
+}
+
+function Shell() {
+  const me = useMe()!;
   const clusters = useApi(api.clusters);
   const stages = useApi(api.stages);
   const data = useMemo<AppData>(() => {
@@ -54,7 +72,8 @@ export default function App() {
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
           <div className="side-foot">
-            <AdminTokenState />
+            <span className="side-user" title={me.email}>{me.email}</span>
+            <span>{me.role} · <button className="side-link" onClick={() => void signOut()}>Sign out</button></span>
           </div>
         </nav>
         <div className="main">
@@ -109,9 +128,4 @@ function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
       <span className="topbar-r">{sel.selected.length} of {clusters.length} clusters</span>
     </div>
   );
-}
-
-function AdminTokenState() {
-  const token = useAdminToken();
-  return <span>Admin token: {token ? "set for this tab" : "not set"}</span>;
 }

@@ -3,21 +3,51 @@
 When reporting a problem, include the **request id** from the `X-Request-ID` response header (browser
 dev tools → Network) — it's in the matching server log line.
 
-## UI and admin token
+## Sign-in and UI
 
-**Buttons stay disabled / "Set the admin token" although I pasted it.**
-The token is kept per **browser tab** (session storage). A new tab, a new window, or a different
-address for the same server (`localhost` vs `127.0.0.1`, or the Vite dev server on `:5173`) each
-need it again. Set it in **Settings → Admin token** in the tab you're using; the sidebar shows
-"Admin token: set for this tab".
+**I'm signed out right after signing in / the login page keeps coming back.**
+The browser didn't keep the session cookie, which is `Secure`: Owl must be opened over **https://**
+(only `http://localhost` / `127.0.0.1` work without it). The sign-in page warns when it's on plain
+HTTP. Behind a proxy, make sure users reach it through the HTTPS address in `OWL_PUBLIC_URL`.
 
-**"The server rejected this token".**
-It doesn't match the server's `OWL_ADMIN_TOKEN`. Locally it's in `.env` (`grep OWL_ADMIN_TOKEN .env`);
-pasting the whole `OWL_ADMIN_TOKEN=…` line is fine. If you changed `.env`, restart the server
-(`make stack-up`) — the running server keeps the token it started with.
+**"This link is invalid, was already used or has expired".**
+Invite links work once for 72 hours, reset links once for an hour, and a new link replaces the
+previous one. Ask an admin for a new one (Settings → Users → Send invite again / Reset password).
 
-**"write endpoints are disabled: set OWL_ADMIN_TOKEN on the server".**
-The server was started without an admin token. Set it (≥ 24 characters) and restart.
+**"Wrong email or password" / "Too many failed sign-ins".**
+After 10 failures for an account from your IP (or 30 from your IP in total) in 15 minutes, sign-in
+from there waits 15 minutes. Use
+**Forgot password?** or ask an admin for a reset link.
+
+**Google: "That Google account hasn't been invited to Owl".**
+The invite must be for the exact address of the Google account. Ask an admin to invite that address
+(and delete the other invite). "isn't from the allowed Google Workspace domain" means
+`OWL_GOOGLE_DOMAIN` excludes it; "linked to a different Google account" means this Owl user already
+signed in with another Google account — an admin can delete and re-invite the user.
+
+**Google: "The sign-in took too long or was started in another browser".**
+Start again from the sign-in page; the round trip to Google must finish within 10 minutes in the
+same browser.
+
+**Google: `redirect_uri_mismatch` on Google's page.**
+The client's *Authorized redirect URI* in the Google Cloud console must be exactly
+`<OWL_PUBLIC_URL>/auth/google/callback` (Settings → Users shows it).
+
+<a id="locked-out"></a>
+**Locked out (no admin can sign in).**
+On the server: `docker compose exec owl /owl user reset-link --email you@example.com` prints a link
+that sets a new password and signs you in — it works even with password sign-in turned off. No users
+at all yet: `owl user invite --admin you@example.com`.
+
+**Emails don't arrive.**
+Settings → Users → **Send me a test email** shows the SMTP error. "doesn't offer STARTTLS": the port is
+for implicit TLS — use `OWL_SMTP_TLS=tls` with port 465. Check the spam folder and that `OWL_SMTP_FROM`
+is a sender your mail server may use. "Forgot password?" never sends to unknown, invited or disabled
+accounts (by design, it doesn't say so).
+
+**"cross-origin request refused".**
+A write came from another site or origin (e.g. the Vite dev server on `:5173` talking to `:8080`
+directly). Use Owl's own address; in development, the Vite proxy (`make ui-dev`) is same-origin.
 
 **`421 host not allowed (set OWL_ALLOWED_HOSTS)`.**
 You opened the UI under a host name the server doesn't know. Add it to `OWL_ALLOWED_HOSTS` and

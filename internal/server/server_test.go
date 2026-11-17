@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"owl/internal/auth"
 	"owl/internal/backup"
@@ -25,7 +26,37 @@ import (
 	"owl/internal/summary"
 )
 
-const testAdminToken = "test-admin-token-0123456789abcdef"
+// Session cookie values of the signed-in test users (addTestUsers). Requests go to 127.0.0.1, so the
+// cookie is the non-__Host- variant.
+const (
+	testAdminToken  = "test-admin-session-0123456789abcdef"
+	testViewerToken = "test-viewer-session-0123456789abcdef"
+)
+
+// addTestUsers creates an admin and a viewer, each with a session (testAdminToken, testViewerToken).
+func addTestUsers(t *testing.T, db *sqlite.DB) {
+	t.Helper()
+	ctx := context.Background()
+	for _, u := range []struct {
+		email, token string
+		role         store.Role
+	}{{"admin@example.com", testAdminToken, store.RoleAdmin}, {"viewer@example.com", testViewerToken, store.RoleViewer}} {
+		user, err := db.CreateUser(ctx, u.email, u.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.SetPassword(ctx, user.ID, "$argon2id$unused", ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateSession(ctx, auth.Hash(u.token), user.ID, time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func withSession(req *http.Request, token string) {
+	req.AddCookie(&http.Cookie{Name: "owl_session", Value: token})
+}
 
 func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 	t.Helper()
@@ -34,6 +65,7 @@ func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	addTestUsers(t, db)
 	c, err := db.CreateCluster(context.Background(), "it-hetzner", store.StageStaging, "IT")
 	if err != nil {
 		t.Fatal(err)
@@ -46,8 +78,7 @@ func setup(t *testing.T) (*httptest.Server, *sqlite.DB, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		AdminToken: testAdminToken}).Handler())
+	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Handler())
 	t.Cleanup(srv.Close)
 	return srv, db, token
 }
@@ -171,6 +202,7 @@ func TestReadAPIRejectsForeignHost(t *testing.T) {
 	get := func(host string) int {
 		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/clusters", nil)
 		req.Host = host
+		withSession(req, testViewerToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -214,10 +246,13 @@ func TestPolicyAPI(t *testing.T) {
 		return putAs(t, srv.URL, testAdminToken, ct, body)
 	}
 	if c := putAs(t, srv.URL, "", "application/json", `{"policy":"latest"}`); c != http.StatusUnauthorized {
-		t.Errorf("no admin token must be refused: %d", c)
+		t.Errorf("not signed in must be refused: %d", c)
 	}
-	if c := putAs(t, srv.URL, "wrong-token-wrong-token-wrong", "application/json", `{"policy":"latest"}`); c != http.StatusUnauthorized {
-		t.Errorf("wrong admin token must be refused: %d", c)
+	if c := putAs(t, srv.URL, "wrong-session-wrong-session", "application/json", `{"policy":"latest"}`); c != http.StatusUnauthorized {
+		t.Errorf("unknown session must be refused: %d", c)
+	}
+	if c := putAs(t, srv.URL, testViewerToken, "application/json", `{"policy":"latest"}`); c != http.StatusForbidden {
+		t.Errorf("viewers can't write: %d", c)
 	}
 	if c := put("application/x-www-form-urlencoded", "policy=latest"); c != http.StatusUnsupportedMediaType {
 		t.Errorf("form post must be refused (CSRF): %d", c)
@@ -237,7 +272,7 @@ func putAs(t *testing.T, base, token, ct, body string) int {
 		req.Header.Set("Content-Type", ct)
 	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		withSession(req, token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -247,14 +282,21 @@ func putAs(t *testing.T, base, token, ct, body string) int {
 	return resp.StatusCode
 }
 
-func TestWritesDisabledWithoutAdminToken(t *testing.T) {
+func TestRequireAdmin(t *testing.T) {
 	h := (&Server{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).requireAdmin(func(w http.ResponseWriter, r *http.Request) {})
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/policies/x", nil)
-	req.Header.Set("Authorization", "Bearer ")
-	h(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("no configured token must disable writes: %d", rec.Code)
+	for _, c := range []struct {
+		sess *store.Session
+		want int
+	}{{nil, 401}, {&store.Session{User: store.User{Role: store.RoleViewer}}, 403}, {&store.Session{User: store.User{Role: store.RoleAdmin}}, 200}} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/policies/x", nil)
+		if c.sess != nil {
+			req = req.WithContext(context.WithValue(req.Context(), ctxSessionKey{}, c.sess))
+		}
+		h(rec, req)
+		if rec.Code != c.want {
+			t.Errorf("%+v: got %d, want %d", c.sess, rec.Code, c.want)
+		}
 	}
 }
 
@@ -262,6 +304,7 @@ func TestFallbackRouting(t *testing.T) {
 	srv, _, _ := setup(t)
 	do := func(method, path string) (int, string) {
 		req, _ := http.NewRequest(method, srv.URL+path, nil)
+		withSession(req, testAdminToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -304,7 +347,9 @@ func call(t *testing.T, method, url, body string, admin bool) (int, map[string]a
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if admin {
-		req.Header.Set("Authorization", "Bearer "+testAdminToken)
+		withSession(req, testAdminToken)
+	} else {
+		withSession(req, testViewerToken)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -324,8 +369,8 @@ func TestClusterManagement(t *testing.T) {
 	srv, db, oldToken := setup(t)
 	u := srv.URL + "/api/v1"
 
-	if code, _ := call(t, "POST", u+"/clusters", `{"name":"ds-prod","stage":"live","tenant":"DS"}`, false); code != 401 {
-		t.Errorf("create without admin token: %d", code)
+	if code, _ := call(t, "POST", u+"/clusters", `{"name":"ds-prod","stage":"live","tenant":"DS"}`, false); code != 403 {
+		t.Errorf("create as viewer: %d", code)
 	}
 	if code, _ := call(t, "POST", u+"/clusters", `{"name":"DS Prod","stage":"live","tenant":"DS"}`, true); code != 400 {
 		t.Errorf("invalid name: %d", code)
@@ -367,8 +412,8 @@ func TestClusterManagement(t *testing.T) {
 	}
 
 	// Export is admin-only and carries history but no token hashes.
-	if code, _ := call(t, "GET", u+"/clusters/ds-prod/export", "", false); code != 401 {
-		t.Errorf("export without admin: %d", code)
+	if code, _ := call(t, "GET", u+"/clusters/ds-prod/export", "", false); code != 403 {
+		t.Errorf("export as viewer: %d", code)
 	}
 	code, out = call(t, "GET", u+"/clusters/ds-prod/export", "", true)
 	if code != 200 || out["format"] != "owl/cluster-export" || len(out["images"].([]any)) != 1 || len(out["changes"].([]any)) != 1 {
@@ -414,7 +459,7 @@ func TestSettingsAndManifest(t *testing.T) {
 	}
 	req, _ := http.NewRequest("PUT", u+"/settings", strings.NewReader(`agentImage=x`))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	withSession(req, testAdminToken)
 	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 415 {
 		t.Errorf("form posts must be refused: %v %v", resp.StatusCode, err)
 	}
@@ -479,7 +524,8 @@ func TestAuditAndLogHygiene(t *testing.T) {
 	defer db.Close()
 	cat, _ := catalog.Builtin()
 	var logs bytes.Buffer
-	srv := httptest.NewServer((&Server{Store: db, Catalog: cat, AdminToken: testAdminToken,
+	addTestUsers(t, db)
+	srv := httptest.NewServer((&Server{Store: db, Catalog: cat,
 		Log: slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}).Handler())
 	defer srv.Close()
 
@@ -492,11 +538,11 @@ func TestAuditAndLogHygiene(t *testing.T) {
 	if code, out := call(t, "PUT", srv.URL+"/api/v1/policies/grafana", `{"policy":"n-2"}`, true); code != 200 {
 		t.Fatal(code, out)
 	}
-	if code, _ := call(t, "GET", srv.URL+"/api/v1/audit", "", false); code != 401 {
-		t.Errorf("audit log needs the admin token: %d", code)
+	if code, _ := call(t, "GET", srv.URL+"/api/v1/audit", "", false); code != 403 {
+		t.Errorf("audit log is for admins: %d", code)
 	}
 	req, _ := http.NewRequest("GET", srv.URL+"/api/v1/audit", nil)
-	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	withSession(req, testAdminToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -505,7 +551,8 @@ func TestAuditAndLogHygiene(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&entries)
 	resp.Body.Close()
 	if len(entries) != 2 || entries[0].Action != "policy set" || entries[0].Details != "scope=grafana policy=n-2" ||
-		entries[1].Action != "cluster added" || !strings.Contains(entries[1].Details, "cluster=c1") || entries[1].Remote == "" {
+		entries[1].Action != "cluster added" || !strings.Contains(entries[1].Details, "cluster=c1") || entries[1].Remote == "" ||
+		entries[0].Actor != "admin@example.com" {
 		t.Errorf("audit: %+v", entries)
 	}
 	if resp.Header.Get("X-Request-ID") == "" {
@@ -530,7 +577,8 @@ func TestOpsSettingsAndBackupFlow(t *testing.T) {
 	cat, _ := catalog.Builtin()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	level := new(slog.LevelVar)
-	app := &Server{Store: db, Catalog: cat, AdminToken: testAdminToken, Log: log, LogLevel: level,
+	addTestUsers(t, db)
+	app := &Server{Store: db, Catalog: cat, Log: log, LogLevel: level,
 		Backups: &backup.Manager{Store: db, Dir: filepath.Join(t.TempDir(), "b"), Log: log}}
 	srv := httptest.NewServer(app.Handler())
 	defer srv.Close()
@@ -569,7 +617,7 @@ func TestOpsSettingsAndBackupFlow(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", u+"/restore", strings.NewReader("x"))
 	req.Header.Set("Content-Type", "multipart/form-data")
-	req.Header.Set("Authorization", "Bearer "+testAdminToken)
+	withSession(req, testAdminToken)
 	if resp, _ := http.DefaultClient.Do(req); resp.StatusCode != 415 {
 		t.Errorf("form uploads must be refused: %d", resp.StatusCode)
 	}
@@ -595,7 +643,8 @@ func TestSummaryEndpoints(t *testing.T) {
 	defer db.Close()
 	cat, _ := catalog.Builtin()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	app := &Server{Store: db, Catalog: cat, AdminToken: testAdminToken, Log: log}
+	addTestUsers(t, db)
+	app := &Server{Store: db, Catalog: cat, Log: log}
 	app.Summaries = &summary.Manager{Store: db, Catalog: cat, Infos: app.UpstreamInfo, Report: app.BuildReport,
 		Model: summary.DefaultModel, Log: log} // no Claude client: no API key
 	srv := httptest.NewServer(app.Handler())
@@ -608,8 +657,8 @@ func TestSummaryEndpoints(t *testing.T) {
 	for _, p := range []struct{ method, path, body string }{
 		{"GET", "/status", ""}, {"PUT", "/settings", `{}`}, {"POST", "/generate", `{}`}, {"POST", "/resume", ""},
 	} {
-		if code, _ := call(t, p.method, u+p.path, p.body, false); code != 401 {
-			t.Errorf("%s %s without the admin token: %d", p.method, p.path, code)
+		if code, _ := call(t, p.method, u+p.path, p.body, false); code != 403 {
+			t.Errorf("%s %s as a viewer: %d", p.method, p.path, code)
 		}
 	}
 	bad := `{"mode":"auto","dailyCapMicros":30000000,"monthlyCapMicros":20000000,"maxInputTokens":30000,"maxOutputTokens":4000}`

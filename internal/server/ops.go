@@ -316,6 +316,10 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 				s.Log.Info("audit log pruned", "deleted", n, "olderThanDays", o.AuditRetentionDays)
 			}
 		}
+		// Expired sessions and links are already refused when used; this only clears them out.
+		if err := s.Store.PruneSessions(ctx, time.Now().Add(-sessionIdle)); err != nil && ctx.Err() == nil {
+			s.Log.Error("session prune failed", "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			return

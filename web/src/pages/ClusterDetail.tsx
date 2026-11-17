@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useAdminToken, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
+import { useIsAdmin, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
 import { useAppData } from "../App";
 import { paginate, usePageSize, useQueryState } from "../model";
 import { FLAG, unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } from "../clusterview";
@@ -143,7 +143,7 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
   const overrides = useApi(api.overrides);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const canWrite = useAdminToken() !== "";
+  const canWrite = useIsAdmin();
   const open = unrecognizedIn(cluster, inv);
   // Repositories in this cluster that an override decided (mapped ones are scored, so they're in the report).
   const decidedRepos = new Set([...inv.inHouse, ...inv.ignored, ...report.components.flatMap((c) => c.instances)]
@@ -160,7 +160,7 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
 
   return (
     <Card title={`Unrecognized images (${open.length})`} actions={<span className="subtle">A choice applies to the image in every cluster. Undo it here or in Settings → Catalog overrides.</span>}>
-      {!canWrite && <div className="callout info">Set the admin token in <Link to="/settings/token">Settings</Link> to map, mark or ignore images.</div>}
+      {!canWrite && <div className="callout info">Only admins can map, mark or ignore images.</div>}
       {open.length === 0 && <Empty>Every image in this cluster is recognized.</Empty>}
       {open.map((u) => {
         const here = u.instances.filter((i) => i.cluster === cluster);

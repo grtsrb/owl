@@ -23,15 +23,20 @@ These are the **only** clusters to touch from this repository during development
 ```bash
 make dev-up          # create the clusters (doesn't switch your kube context) and seed them
 make seed            # re-apply seed workloads (dev/seed/seed.sh: per-cluster version tables)
-make stack-up        # build the image, run server + S3 test server in Docker, agents in every cluster
-make stack-down      # remove server, S3 container and agents (keeps the owl-data volume)
+make stack-up        # build the image, run server + S3 test server + Mailpit in Docker, agents in every cluster
+make stack-down      # remove server, S3, Mailpit and agents (keeps the owl-data volume)
 make dev-down        # delete the clusters
 ```
 
 `make stack-up`:
-- generates `OWL_ADMIN_TOKEN` into `.env` the first time (gitignored, mode 600),
-- runs `owl-server` on `127.0.0.1:8080` with volume `owl-data`, and `owl-s3` (adobe/s3mock — accepts
-  any credentials, so the "no delete" permission can only be tested on real S3),
+- runs `owl-server` on `127.0.0.1:8080` with volume `owl-data`, `owl-s3` (adobe/s3mock — accepts
+  any credentials, so the "no delete" permission can only be tested on real S3) and `owl-mailpit`
+  (catches every email; inbox at <http://127.0.0.1:8025>),
+- on the first run (no users yet) invites `admin@owl.local` (or `$OWL_DEV_ADMIN`) as admin and prints
+  the link — open it and set a password. Lost it? `docker exec owl-server /owl user reset-link --email
+  admin@owl.local`,
+- passes `OWL_GOOGLE_CLIENT_ID/SECRET/DOMAIN` from `.env` if set (a Google client with redirect URI
+  `http://127.0.0.1:8080/auth/google/callback` works locally — Google allows http for loopback),
 - joins the server to each `k3d-<name>` Docker network; agents use that IP over plain HTTP
   (`OWL_ALLOW_INSECURE_HTTP=true`),
 - rotates the agents' tokens on every run.

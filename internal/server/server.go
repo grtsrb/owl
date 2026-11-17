@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -47,13 +46,13 @@ type Server struct {
 
 	mu       sync.RWMutex
 	upstream map[string]*upstream.Info // component id -> latest info
-	// AllowedHosts are the Host header values (without port) the read API answers to. It blocks DNS
-	// rebinding against the unauthenticated read API until admin auth exists. Empty = localhost only.
-	// The agent ingest endpoint is exempt (agents may use an IP; it has its own token auth).
+	// AllowedHosts are the Host header values (without port) the UI and API answer to (defence in
+	// depth against DNS rebinding; the public URL's host is added automatically). Empty = localhost
+	// only. The agent ingest endpoint is exempt (agents may use an IP; it has its own token auth).
 	AllowedHosts []string
-	// AdminToken authorizes write endpoints (policies). Empty = writes disabled. Replaced by real
-	// login (Google sign-in, roles) in a later milestone.
-	AdminToken string
+	// Auth is the sign-in configuration (public URL, Google, email, trusted proxies).
+	Auth   AuthConfig
+	limits limiter
 	// UI is the built web app (web.Dist()); nil = API only.
 	UI fs.FS
 	// Backups is nil when backups are disabled. LogLevel and LogFile (optional) follow the settings
@@ -73,8 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("POST "+snapshot.IngestPath, s.ingest)
-	// Read API. NOTE: unauthenticated until sign-in lands (milestone 9) — bind to localhost or keep
-	// behind a private network until then.
+	// Read API: any signed-in user (authn). Writes: admins (requireAdmin), JSON bodies only.
 	mux.HandleFunc("GET /api/v1/clusters", s.listClusters)
 	mux.HandleFunc("GET /api/v1/clusters/{name}/images", s.clusterImages)
 	mux.HandleFunc("GET /api/v1/changes", s.listChanges)
@@ -83,8 +81,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/components/{id}", s.componentDetail)
 	mux.HandleFunc("GET /api/v1/report", s.report)
 	mux.HandleFunc("GET /api/v1/policies", s.listPolicies)
-	// Policy writes: JSON only. Together with no CORS headers this means a cross-site page can't
-	// change policies (a JSON PUT from another origin needs a preflight we never answer).
 	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
 	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
 	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
@@ -110,8 +106,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/settings", s.requireAdmin(s.putSettings))
 	s.opsRoutes(mux)
 	s.summaryRoutes(mux)
+	s.signinRoutes(mux)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
-	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
+	return logRequests(s.Log, s.clientIP, securityHeaders(s.checkHost(s.authn(mux))))
 }
 
 // securityHeaders: the UI loads only same-origin scripts/styles (Vite emits no inline code), can't be
@@ -175,7 +172,11 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkHost(next http.Handler) http.Handler {
 	allowed := map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
-	for _, h := range s.AllowedHosts {
+	extra := s.AllowedHosts
+	if s.Auth.PublicURL != nil {
+		extra = append(append([]string{}, extra...), s.Auth.PublicURL.Host)
+	}
+	for _, h := range extra {
 		h = strings.TrimSpace(strings.ToLower(h))
 		if hostOnly, _, err := net.SplitHostPort(h); err == nil {
 			h = hostOnly // "inv.internal:8080" -> "inv.internal" (the request side is compared without port)
@@ -388,7 +389,7 @@ func requestID(r *http.Request) string {
 // logRequests logs one line per request with a request id (also sent as X-Request-ID, so a user can
 // quote it). Only method, path, status, duration and remote are logged — never headers (Authorization)
 // or query strings. Health checks and static assets log at debug.
-func logRequests(log *slog.Logger, next http.Handler) http.Handler {
+func logRequests(log *slog.Logger, clientIP func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		var b [6]byte
@@ -403,7 +404,7 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 			level = slog.LevelDebug
 		}
 		log.Log(r.Context(), level, "http", "method", r.Method, "path", r.URL.Path, "status", rec.code,
-			"took", time.Since(start).Round(time.Millisecond), "remote", r.RemoteAddr, "req", id)
+			"took", time.Since(start).Round(time.Millisecond), "remote", clientIP(r), "req", id)
 	})
 }
 
@@ -586,22 +587,4 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "policy removed", "scope", scope)
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": "inherited"})
-}
-
-// requireAdmin guards write endpoints with the admin bearer token (constant-time compare). With no
-// token configured, writes are disabled rather than open.
-func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.AdminToken == "" {
-			httpError(w, http.StatusForbidden, "write endpoints are disabled: set OWL_ADMIN_TOKEN on the server")
-			return
-		}
-		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.AdminToken)) != 1 {
-			s.Log.Warn("admin auth failed", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
-			httpError(w, http.StatusUnauthorized, "admin token required")
-			return
-		}
-		next(w, r)
-	}
 }

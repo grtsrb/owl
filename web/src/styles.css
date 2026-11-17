@@ -1,7 +1,7 @@
 :root {
   --bg: #f4f5f7; --panel: #ffffff; --panel-2: #f6f7f9; --panel-3: #eef0f3; --text: #1a1c1f; --text-2: #3f444b;
   --muted: #5b6068; --faint: #8a9099; --border: #e3e5e9; --border-2: #eef0f2;
-  --accent: #2f5bd3; --accent-hover: #2549b8; --accent-soft: #e8eefe; --accent-ink: #1b3790;
+  --accent: #574cf9; --accent-hover: #4437e6; --accent-soft: #eeedfe; --accent-ink: #3127b0; --on-accent: #fff;
   --side-bg: #14171c; --side-text: #c4c8ce; --side-hover: #222731; --side-active: #2a3140;
   --shadow: 0 4px 14px rgba(20, 23, 28, .06); --overlay: rgba(20, 23, 28, .4);
   /* Levels: --c dot/bar, --c-soft background, --c-ink text on the soft background (≥4.5:1). */
@@ -20,7 +20,7 @@
   :root {
     --bg: #0e1116; --panel: #161a21; --panel-2: #1b2028; --panel-3: #222832; --text: #e6e9ee; --text-2: #c3c8d0;
     --muted: #98a2b0; --faint: #6f7884; --border: #2a303a; --border-2: #232933;
-    --accent: #7c9cf5; --accent-hover: #9cb4f8; --accent-soft: #1e2a47; --accent-ink: #b9cafa;
+    --accent: #8f87fb; --accent-hover: #aba5fc; --accent-soft: #25224a; --accent-ink: #c9c5fd; --on-accent: #15122f;
     --side-bg: #0a0c10; --side-text: #aeb4bd; --side-hover: #171b22; --side-active: #222a38;
     --shadow: 0 4px 14px rgba(0, 0, 0, .3); --overlay: rgba(0, 0, 0, .55);
     --critical: #f0675f; --critical-soft: #3a1d1c; --critical-ink: #ffb4ae;
@@ -50,7 +50,7 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; font-weight: 600; font-size: 15px; color: #fff; }
 .brand:hover { text-decoration: none; color: #fff; }
-.brand-mark { width: 28px; height: 28px; border-radius: 7px; background: #3b6ff5; display: flex; align-items: center; justify-content: center; color: #fff; }
+.brand-mark { width: 28px; height: 28px; border-radius: 7px; background: #574cf9; display: flex; align-items: center; justify-content: center; color: #fff; }
 .nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: var(--side-text); min-height: 40px; }
 .nav:hover { background: var(--side-hover); color: #fff; text-decoration: none; }
 .nav.active { background: var(--side-active); color: #fff; }
@@ -88,7 +88,7 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
   padding: 7px 14px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--faint); text-decoration: none; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.danger { color: var(--critical-ink); border-color: color-mix(in srgb, var(--critical) 35%, var(--border)); }
 .btn.danger.solid { background: var(--critical); border-color: var(--critical); color: #fff; }
@@ -285,3 +285,19 @@ a.cc2:hover { box-shadow: var(--shadow); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 label.btn { position: relative; }
 label.btn.disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- sign-in ---------- */
+.side-user { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-link { border: 0; background: none; padding: 0; font: inherit; color: var(--side-text); text-decoration: underline; cursor: pointer; }
+.side-link:hover { color: #fff; }
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.auth-card { width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.auth-card h1 { margin: 0; font-size: 20px; }
+.auth-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+.auth-brand .brand-mark { width: 34px; height: 34px; border-radius: 9px; }
+.auth-card .btn { justify-content: center; }
+.google-btn { width: 100%; }
+.auth-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.auth-foot { margin: 0; text-align: center; }

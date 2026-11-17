@@ -146,23 +146,25 @@ export class ApiError extends Error {
 
 /** User-facing text for a failed write. */
 export function writeErrorText(e: unknown): string {
-  if (e instanceof ApiError && e.status === 401) return "Admin token missing or wrong — set it in Settings.";
+  if (e instanceof ApiError && e.status === 401) return "Your session ended — sign in again.";
   if (e instanceof ApiError && e.status === 403) return e.message;
   return e instanceof Error ? e.message : String(e);
 }
 
-async function request<T>(method: string, path: string, body?: unknown, admin = method !== "GET"): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (admin) {
-    const token = adminToken.get();
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
+  // Same-origin fetch sends the session cookie (HttpOnly: scripts can't read it).
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  return parse<T>(res, path);
+}
+
+async function parse<T>(res: Response, path: string): Promise<T> {
   const text = await res.text();
   let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/api/v1/auth/")) session.set(null); // signed out elsewhere or expired
     const msg = (data as { error?: string } | null)?.error ?? (text || res.statusText);
     throw new ApiError(res.status, msg);
   }
@@ -197,7 +199,7 @@ export const api = {
     request<Cluster>("PATCH", `/api/v1/clusters/${encodeURIComponent(name)}`, c),
   rotateToken: (name: string) => request<{ cluster: Cluster; token: string }>("POST", `/api/v1/clusters/${encodeURIComponent(name)}/rotate-token`),
   deleteCluster: (name: string) => request("DELETE", `/api/v1/clusters/${encodeURIComponent(name)}`),
-  exportCluster: (name: string) => request<unknown>("GET", `/api/v1/clusters/${encodeURIComponent(name)}/export`, undefined, true),
+  exportCluster: (name: string) => request<unknown>("GET", `/api/v1/clusters/${encodeURIComponent(name)}/export`),
 
   overrides: () => request<CatalogOverride[]>("GET", "/api/v1/catalog/overrides"),
   setOverride: (o: { repository: string; kind: CatalogOverride["kind"]; component?: string }) =>
@@ -209,24 +211,43 @@ export const api = {
   saveSettings: (s: ServerSettings) => request<ServerSettings>("PUT", "/api/v1/settings", s),
   agentManifestURL: "/api/v1/agent/manifest",
 
-  ops: () => request<Ops>("GET", "/api/v1/ops", undefined, true), // admin-only read
+  ops: () => request<Ops>("GET", "/api/v1/ops"), // admin-only read
   saveOps: (o: OpsSettings) => request<Ops>("PUT", "/api/v1/ops", o),
-  backups: () => request<{ backups: BackupInfo[]; remoteError?: string }>("GET", "/api/v1/backups", undefined, true),
+  backups: () => request<{ backups: BackupInfo[]; remoteError?: string }>("GET", "/api/v1/backups"),
   backupNow: () => request<BackupInfo>("POST", "/api/v1/backups"),
   restoreBackup: (name: string) => request<{ safetyBackup: string }>("POST", `/api/v1/backups/${encodeURIComponent(name)}/restore`),
   restoreUpload: (file: File) => rawPost<{ safetyBackup: string }>("/api/v1/restore", file,
     file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream"),
   importCluster: (exportJSON: string) => rawPost<{ cluster: Cluster; token: string }>("/api/v1/clusters/import", exportJSON, "application/json"),
   summaries: () => request<SummaryOverview>("GET", "/api/v1/summaries"),
-  summaryStatus: () => request<SummaryStatus>("GET", "/api/v1/summaries/status", undefined, true), // admin-only read
+  summaryStatus: () => request<SummaryStatus>("GET", "/api/v1/summaries/status"), // admin-only read
   saveSummarySettings: (s: SummarySettings) => request<SummaryStatus>("PUT", "/api/v1/summaries/settings", s),
   generateSummary: (j: { component: string; from: string; to: string }, force = false) =>
     request<SummaryOverview>("POST", "/api/v1/summaries/generate", { component: j.component, from: j.from, to: j.to, force }),
   resumeSummaries: () => request<SummaryStatus>("POST", "/api/v1/summaries/resume"),
-  audit: (limit = 1000) => request<AuditEntry[]>("GET", `/api/v1/audit?limit=${limit}`, undefined, true),
-  /** Fetches an admin-only file (the token goes in a header, never in a URL) and saves it. */
+  audit: (limit = 1000) => request<AuditEntry[]>("GET", `/api/v1/audit?limit=${limit}`),
+
+  // Sign-in and users (milestone 9).
+  authConfig: () => request<AuthConfig>("GET", "/api/v1/auth/config"),
+  me: () => request<Me>("GET", "/api/v1/auth/me"),
+  login: (email: string, password: string) => request<Me>("POST", "/api/v1/auth/login", { email, password }),
+  logout: () => request("POST", "/api/v1/auth/logout", {}),
+  tokenInfo: (token: string) => request<TokenInfo>("POST", "/api/v1/auth/token", { token }),
+  accept: (token: string, password: string) => request<Me>("POST", "/api/v1/auth/accept", { token, password }),
+  forgot: (email: string) => request<{ message: string }>("POST", "/api/v1/auth/forgot", { email }),
+  changePassword: (current: string, next: string) => request("POST", "/api/v1/auth/password", { current, new: next }),
+  users: () => request<User[]>("GET", "/api/v1/users"),
+  inviteUser: (email: string, role: Role) => request<LinkResult>("POST", "/api/v1/users", { email, role }),
+  updateUser: (id: number, role: Role, disabled: boolean) => request<User>("PATCH", `/api/v1/users/${id}`, { role, disabled }),
+  deleteUser: (id: number) => request("DELETE", `/api/v1/users/${id}`),
+  reinviteUser: (id: number) => request<LinkResult>("POST", `/api/v1/users/${id}/invite`),
+  resetUser: (id: number) => request<LinkResult>("POST", `/api/v1/users/${id}/reset`),
+  authSettings: () => request<AuthSettings>("GET", "/api/v1/auth/settings"),
+  saveAuthSettings: (passwordLogin: boolean) => request<AuthSettings>("PUT", "/api/v1/auth/settings", { passwordLogin }),
+  testMail: () => request<{ to: string }>("POST", "/api/v1/mail/test"),
+  /** Fetches an admin-only file and saves it. */
   downloadBackup: async (name: string) => {
-    const res = await fetch(`/api/v1/backups/${encodeURIComponent(name)}`, { headers: { Authorization: `Bearer ${adminToken.get()}` } });
+    const res = await fetch(`/api/v1/backups/${encodeURIComponent(name)}`);
     if (!res.ok) throw new ApiError(res.status, (await res.text()) || res.statusText);
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
@@ -236,44 +257,51 @@ export const api = {
 };
 
 async function rawPost<T>(path: string, body: BodyInit, contentType: string): Promise<T> {
-  const res = await fetch(path, { method: "POST", body, headers: { "Content-Type": contentType, Accept: "application/json", Authorization: `Bearer ${adminToken.get()}` } });
-  const text = await res.text();
-  let data: unknown = null;
-  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) throw new ApiError(res.status, (data as { error?: string } | null)?.error ?? (text || res.statusText));
-  return data as T;
+  const res = await fetch(path, { method: "POST", body, headers: { "Content-Type": contentType, Accept: "application/json" } });
+  return parse<T>(res, path);
 }
 
-// The admin token lives only in this tab's sessionStorage (cleared when the tab closes) — never in
-// localStorage or a cookie. Interim until real sign-in.
-const KEY = "owl-admin-token";
-const tokenListeners = new Set<() => void>();
-export const adminToken = {
-  get: (): string => { try { return sessionStorage.getItem(KEY) ?? ""; } catch { return ""; } },
-  set: (t: string) => {
-    try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ }
-    tokenListeners.forEach((f) => f()); // every component using useAdminToken re-renders
+export type Role = "admin" | "viewer";
+export interface Me { email: string; role: Role; hasPassword: boolean; hasGoogle: boolean }
+export interface AuthConfig { password: boolean; google: boolean; forgot: boolean }
+export interface TokenInfo { email: string; kind: "invite" | "reset"; password: boolean; google: boolean }
+export interface User {
+  id: number; email: string; role: Role; createdAt: string; activatedAt?: string; lastLoginAt?: string;
+  disabledAt?: string; hasPassword: boolean; hasGoogle: boolean;
+}
+export interface LinkResult { user: User; link: string; emailed: boolean; emailError?: string }
+export interface AuthSettings {
+  passwordLogin: boolean;
+  google: { configured: boolean; domain?: string; redirectURL?: string; linkedAdmins: number };
+  mail: { configured: boolean; host?: string; port?: number; from?: string; tls?: string };
+  publicURL?: string;
+}
+
+/** A link from the server: absolute when Owl knows its public URL, else a path on this origin. */
+export function absoluteLink(link: string): string {
+  return link.startsWith("/") ? window.location.origin + link : link;
+}
+
+// The signed-in user: undefined while loading, null when signed out. Any 401 from the API signs the
+// UI out (the session expired, or the user was disabled).
+let current: Me | null | undefined;
+const sessionListeners = new Set<() => void>();
+export const session = {
+  get: () => current,
+  set: (m: Me | null) => { current = m; sessionListeners.forEach((f) => f()); },
+  subscribe: (f: () => void) => { sessionListeners.add(f); return () => { sessionListeners.delete(f); }; },
+  load: async () => {
+    try { session.set(await api.me()); } catch (e) { if (e instanceof ApiError && e.status === 401) session.set(null); else throw e; }
   },
-  subscribe: (f: () => void) => { tokenListeners.add(f); return () => { tokenListeners.delete(f); }; },
 };
 
-/** The admin token, re-rendering the caller when it's set or forgotten anywhere in the app. */
-export function useAdminToken(): string {
-  return useSyncExternalStore(adminToken.subscribe, adminToken.get);
+export function useMe(): Me | null | undefined {
+  return useSyncExternalStore(session.subscribe, session.get);
 }
 
-/** Cleans up what people paste: the whole `OWL_ADMIN_TOKEN=…` line from .env, quotes, "Bearer ". */
-export function normalizeToken(raw: string): string {
-  return raw.trim().replace(/^(export\s+)?OWL_ADMIN_TOKEN\s*=\s*/, "").replace(/^Bearer\s+/i, "").replace(/^(["'])(.*)\1$/, "$2").trim();
-}
-
-/** Checks a token against the server (an admin-only read) without storing it. */
-export async function verifyAdminToken(token: string): Promise<void> {
-  const res = await fetch("/api/v1/ops", { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } });
-  if (res.ok) return;
-  let msg = res.statusText;
-  try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not JSON */ }
-  throw new ApiError(res.status, res.status === 401 ? "The server rejected this token — check it matches OWL_ADMIN_TOKEN on the server." : msg);
+/** Whether the signed-in user may change things (admin role). */
+export function useIsAdmin(): boolean {
+  return useMe()?.role === "admin";
 }
 
 /** Save text as a file (blob URL: no server round trip, so a token never travels in a URL). */

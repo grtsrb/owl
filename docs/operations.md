@@ -102,6 +102,13 @@ It **keeps**:
 - **Claude summaries, their request log and their settings** (mode, caps, a pause): summaries cost
   money to write and the log is what the caps count — restoring an old backup must not reset today's
   spending, unpause paid requests or bring back a higher cap.
+- **users, sessions, invite/reset links and the password sign-in setting**: a restore never changes
+  who can sign in. (Backups contain users without password hashes, and no sessions or links.)
+
+**Lost the whole server?** Put a backup in place as the database instead of restoring through the UI:
+`gunzip -c owl-….db.gz > /srv/owl/owl.db` (owned by UID 65532) on the new host, then start Owl.
+Everyone keeps their account and role; Google users sign in as before, password users need a reset
+link — `owl user reset-link --email <admin>` for yourself, then Settings → Users → Reset password.
 
 After a restore:
 
@@ -192,8 +199,10 @@ Useful messages:
 | Message | Meaning |
 |---|---|
 | `snapshot ingested` | An agent reported (cluster, workloads, changes). |
-| `admin: <action>` | An admin action (also in the audit log). |
-| `admin auth failed` | A wrong or missing admin token was used. |
+| `audit: <action>` | An admin action (also in the audit log), with the user (`by`). |
+| `signed in` / `sign-in failed` | Sign-ins (user, method, client IP); failures without saying which part was wrong. |
+| `google sign-in refused` | A Google sign-in that wasn't accepted, with the reason. |
+| `email failed` / `password reset email failed` | SMTP problems (the admin still got the link). |
 | `backup taken` / `backup uploaded` / `backup failed` | Backups. |
 | `upstream refreshed` / `upstream refresh incomplete` | Upstream data refresh results and per-component errors. |
 | `push failed, retrying` (agent) | The agent couldn't reach the server; it retries. |
@@ -203,8 +212,11 @@ Useful messages:
 Every admin action is written to the audit log (in the database, viewable in Settings → Logs &
 audit) and to the application log: cluster added/edited/deleted/exported/imported, token rotated,
 stages, tenants, catalog overrides, policies, agent settings, operations settings, backup taken or
-downloaded, database restored. Each entry has the time, the action, details (`key=value`) and the
-client IP. Once sign-in exists it will also record *who*.
+downloaded, database restored, summary settings; users invited, re-invited, role changed, disabled,
+enabled, deleted; reset links created, invites accepted, passwords reset or changed, Google accounts
+linked, password sign-in turned on/off, test emails. Each entry has the time, the action, **who** (the
+signed-in user's email), details (`key=value`) and the client IP (the real one behind a proxy listed
+in `OWL_TRUSTED_PROXIES`).
 
 Entries older than the retention (default 365 days) are deleted daily. The audit log is part of
 backups but survives a restore unchanged.
@@ -215,7 +227,7 @@ backups but survives a restore unchanged.
   checks and uptime monitors.
 - Watch for: a cluster's **last report** older than ~2 intervals (agent down or token revoked),
   backup warnings, `backup failed` and `audit log write failed` in the logs.
-- Notifications (Mattermost digest and critical alerts) are planned for milestone 9.
+- Notifications (Mattermost digest and critical alerts) are planned for milestone 10.
 
 ## Agent tokens
 
@@ -232,7 +244,7 @@ backups but survives a restore unchanged.
 | Upstream refresh (GitHub, endoflife.date, OSV) | at startup and every 6 hours |
 | Scheduled backup | daily at the configured time (checked every minute) |
 | Retry pending uploads | every 10 minutes while some are pending |
-| Audit log pruning | at startup and every 24 hours |
+| Audit log pruning, expired sessions and links | at startup and every 24 hours |
 | Log rotation and cleanup | at day change or 50 MB |
 | Cleanup of temp files left by a crash during backup/restore | at startup |
 | Summaries: recompute upgrades, collect notes; in automatic mode write missing ones | after every upstream refresh, on settings changes, and hourly |

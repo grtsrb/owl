@@ -19,6 +19,8 @@ var (
 	ErrUnknownStage  = errors.New("unknown stage")
 	ErrUnknownTenant = errors.New("unknown tenant")
 	ErrInvalid       = errors.New("invalid input")
+	// ErrLastAdmin: the change would leave no active admin (nobody could manage Owl any more).
+	ErrLastAdmin = errors.New("Owl needs at least one active admin")
 )
 
 // Names end up in kubectl contexts, file names, HTTP headers and YAML, so every entry point (API and
@@ -136,7 +138,54 @@ type CacheEntry struct {
 	Body      []byte
 }
 
-// AuditEntry is one admin action ("who changed what"). Actor is empty until real sign-in exists.
+// Role is what a signed-in user may do: viewers read everything, admins also change things.
+type Role string
+
+const (
+	RoleAdmin  Role = "admin"
+	RoleViewer Role = "viewer"
+)
+
+func (r Role) Valid() bool { return r == RoleAdmin || r == RoleViewer }
+
+// User is someone invited to Owl. ActivatedAt is nil until they accept the invite (set a password or
+// sign in with Google). Disabled users can't sign in; their sessions are gone.
+type User struct {
+	ID          int64      `json:"id"`
+	Email       string     `json:"email"` // lowercase
+	Role        Role       `json:"role"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ActivatedAt *time.Time `json:"activatedAt,omitempty"`
+	LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
+	DisabledAt  *time.Time `json:"disabledAt,omitempty"`
+	HasPassword bool       `json:"hasPassword"`
+	HasGoogle   bool       `json:"hasGoogle"`
+	// PasswordHash (argon2id, PHC string) and GoogleSub never leave the server.
+	PasswordHash string `json:"-"`
+	GoogleSub    string `json:"-"`
+}
+
+// Active: accepted the invite and not disabled.
+func (u *User) Active() bool { return u.ActivatedAt != nil && u.DisabledAt == nil }
+
+// Session is a signed-in browser. Only the SHA-256 of the cookie value is stored.
+type Session struct {
+	TokenHash  string
+	User       User
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time // absolute limit; the idle limit is checked against LastSeenAt
+}
+
+// AuthTokenKind is what a one-time link does.
+type AuthTokenKind string
+
+const (
+	TokenInvite AuthTokenKind = "invite" // accept an invite: set a password (or sign in with Google)
+	TokenReset  AuthTokenKind = "reset"  // set a new password
+)
+
+// AuditEntry is one admin action ("who changed what"). Actor is the signed-in user's email.
 type AuditEntry struct {
 	ID      int64     `json:"id"`
 	At      time.Time `json:"at"`
@@ -272,6 +321,41 @@ type Store interface {
 	ListSummaryRequests(ctx context.Context, limit int) ([]SummaryRequest, error)
 	// SummarySpend is the total cost (micro-USD) of requests at or after since.
 	SummarySpend(ctx context.Context, since time.Time) (int64, error)
+
+	// Users (milestone 9). Users, sessions and one-time tokens are kept across restores: a restore
+	// never changes who can sign in. Emails are compared lowercase. UpdateUser and DeleteUser return
+	// ErrLastAdmin when no active admin would be left; disabling or deleting a user ends their sessions.
+	CreateUser(ctx context.Context, email string, role Role) (*User, error)
+	GetUser(ctx context.Context, id int64) (*User, error)
+	UserByEmail(ctx context.Context, email string) (*User, error)
+	UserByGoogleSub(ctx context.Context, sub string) (*User, error)
+	ListUsers(ctx context.Context) ([]User, error)
+	UpdateUser(ctx context.Context, id int64, role Role, disabled bool) (*User, error)
+	DeleteUser(ctx context.Context, id int64) error
+	// SetPassword stores a new hash, activates an invited user and ends their other sessions
+	// (keepSession, if not empty, survives — the user's own session after changing their password).
+	SetPassword(ctx context.Context, id int64, hash, keepSession string) error
+	// LinkGoogle stores the account's Google subject and activates an invited user.
+	LinkGoogle(ctx context.Context, id int64, sub string) error
+	RecordLogin(ctx context.Context, id int64) error
+
+	// Sessions: CreateSession stores a session (hash of the cookie value); SessionByHash returns it
+	// with its user, or ErrNotFound; TouchSession updates last-seen.
+	CreateSession(ctx context.Context, hash string, userID int64, expires time.Time) error
+	SessionByHash(ctx context.Context, hash string) (*Session, error)
+	TouchSession(ctx context.Context, hash string) error
+	DeleteSession(ctx context.Context, hash string) error
+	// PruneSessions deletes sessions that expired (absolute) or were idle since before idleBefore,
+	// and expired one-time tokens.
+	PruneSessions(ctx context.Context, idleBefore time.Time) error
+
+	// One-time tokens (invite, reset). CreateAuthToken replaces the user's earlier invite; reset tokens
+	// accumulate until they expire or the password is set.
+	// PeekAuthToken returns the user for a valid token without using it; ConsumeAuthToken does the same
+	// and deletes the token, atomically (ErrNotFound when missing, expired, or the user is disabled).
+	CreateAuthToken(ctx context.Context, hash string, userID int64, kind AuthTokenKind, expires time.Time) error
+	PeekAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
+	ConsumeAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

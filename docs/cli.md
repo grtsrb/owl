@@ -6,18 +6,21 @@ One binary, `owl`, with these commands:
 owl agent      collect workload inventory from a cluster and push it to the server
 owl server     run the central server (API + UI)
 owl cluster    manage registered clusters and agent tokens (add, list, rotate-token, delete)
+owl user       manage who can sign in (invite, list, reset-link, delete) — first admin, emergencies
 owl upstream   show upstream release lines, EOL, archived status and advisories
+owl healthcheck  exit 0 if the local server answers /healthz (the image's Docker HEALTHCHECK)
 owl version    print the version
 ```
 
-In Docker, run them in the server container: `docker exec owl-server /owl <command>`.
+In Docker, run them in the server container: `docker compose exec owl /owl <command>` (Compose) or
+`docker exec owl-server /owl <command>`.
 
 ## owl server
 
 Runs the server. Flags and environment: [Configuration → Server](configuration.md#server--owl-server).
 
 ```bash
-OWL_ADMIN_TOKEN=... GITHUB_TOKEN=... owl server --db /data/owl.db --listen 0.0.0.0:8080
+GITHUB_TOKEN=... OWL_PUBLIC_URL=https://owl.example.com owl server --db /data/owl.db --listen 0.0.0.0:8080
 ```
 
 ## owl agent
@@ -47,6 +50,26 @@ owl cluster delete --name it-aws-prod                         # removes the clus
 - The token is printed alone on **stdout** (messages go to stderr), so `token=$(owl cluster add …)` works.
 - `--stage` must be a configured stage; `--tenant` is created if needed.
 - CLI actions are **not** in the audit log (they bypass the server) — prefer the UI.
+
+## owl user
+
+Also works **directly on the database file**, so it works when nobody can sign in. Run it on the
+server host (`--db`, default `$OWL_DB`). Links start with `OWL_PUBLIC_URL` when it's set (inside the
+server container it is); otherwise you get a path to put Owl's address in front of.
+
+```bash
+owl user invite --admin you@example.com    # the first admin: prints a one-time link (72 h)
+owl user invite viewer@example.com         # a viewer (the UI is the usual way: Settings → Users)
+owl user list                              # EMAIL ROLE STATUS SIGN-IN LAST SIGN-IN
+owl user reset-link --email you@example.com   # emergency: link that sets a password and signs in (1 h)
+owl user delete --email old@example.com    # refuses to delete the last active admin
+```
+
+- `reset-link` works even with password sign-in turned off — it's the way back in when Google sign-in
+  breaks. For someone who never accepted their invite it prints a fresh invite instead.
+- The link is printed alone on **stdout**. It's a secret until used: don't paste it into shared chats
+  you don't trust.
+- Like `owl cluster`, these actions bypass the server and aren't in the audit log (using a link is).
 
 ## owl upstream
 

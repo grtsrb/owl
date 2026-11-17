@@ -2,6 +2,28 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 9 — Sign-in, packaging, logo
+
+- **Sign-in replaces the admin token** (`OWL_ADMIN_TOKEN` is gone). Owl is invite-only: admins invite
+  people by email as *viewer* or *admin* (Settings → Users); the invite link is emailed and/or copied.
+  Everything except agent ingest, `/healthz` and the agent manifest now needs a signed-in session.
+- Passwords (argon2id, ≥ 12 characters, rate-limited sign-in) and optional **Google sign-in**
+  (`OWL_GOOGLE_CLIENT_ID/SECRET`, optional Workspace domain). Password sign-in can be switched off
+  once an admin has signed in with Google.
+- **Email** for invites, password resets ("Forgot password?") and test messages via SMTP
+  (`OWL_SMTP_*`, TLS required).
+- `owl user invite|list|reset-link|delete` for the first admin and emergencies; `owl healthcheck`.
+- The audit log records **who** did what, and the real client IP behind a proxy (`OWL_TRUSTED_PROXIES`).
+- Restores never change who can sign in; backups contain no password hashes, sessions or links.
+- **Packaging**: Docker Compose with Caddy (automatic HTTPS) for one host such as EC2, Kubernetes
+  manifests for running the server in a cluster, multi-arch images (`make image-push`).
+- **Logo** and a new accent colour (#574CF9). The dev stack adds Mailpit and prints the first admin's
+  invite link.
+
+**Upgrading from milestone 8**: after upgrading, create the first admin with
+`owl user invite --admin <email>` (no one can sign in until then), and remove `OWL_ADMIN_TOKEN` from
+your environment. Set `OWL_PUBLIC_URL` and serve Owl over HTTPS — sign-in cookies need it.
+
 ## Milestone 8 — Claude upgrade summaries
 
 - Claude summarizes the upstream release notes of each upgrade a cluster needs (running version →

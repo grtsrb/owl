@@ -36,6 +36,10 @@ func main() {
 		err = runServer(os.Args[2:])
 	case "cluster":
 		err = runCluster(os.Args[2:])
+	case "user":
+		err = runUser(os.Args[2:])
+	case "healthcheck":
+		err = runHealthcheck(os.Args[2:])
 	case "upstream":
 		err = runUpstream(os.Args[2:])
 	case "version":
@@ -57,6 +61,8 @@ commands:
   agent     collect workload inventory from a cluster and push it to the server
   server    run the central inventory server
   cluster   manage registered clusters and agent tokens (add, list, rotate-token, delete)
+  user      manage who can sign in (invite, list, reset-link, delete) — the first admin and emergencies
+  healthcheck  exit 0 if the local server answers /healthz (for Docker HEALTHCHECK)
   upstream  show upstream release lines, EOL, archived status and advisories for components
   version   print version`)
 }

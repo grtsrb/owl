@@ -6,7 +6,7 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: ui ui-dev build test lint image dev-up dev-down seed agent-print agent-deploy stack-up stack-down
+.PHONY: ui ui-dev build test lint image image-push dev-up dev-down seed agent-print agent-deploy stack-up stack-down
 
 ## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
 ui:
@@ -27,6 +27,13 @@ lint:
 
 image:
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+
+## Multi-arch image (amd64 + arm64, e.g. Graviton) pushed to a registry you're logged in to:
+##   make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0
+image-push:
+	@test -n "$(REGISTRY)" || (echo "set REGISTRY, e.g. make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0"; exit 1)
+	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) \
+	  -t $(REGISTRY)/owl:$(VERSION) --push .
 
 ## Local dev clusters (k3d). Contexts: k3d-<name>. Does not switch your current kube context.
 dev-up:
@@ -55,5 +62,5 @@ stack-up: image
 	dev/stack-up.sh
 
 stack-down:
-	docker rm -f owl-server owl-s3
+	docker rm -f owl-server owl-s3 owl-mailpit
 	@for c in $(CLUSTERS); do kubectl --context k3d-$$c delete -f deploy/agent/agent.yaml --ignore-not-found >/dev/null; done

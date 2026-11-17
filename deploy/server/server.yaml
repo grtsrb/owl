@@ -1,0 +1,85 @@
+# Owl server inside a Kubernetes cluster — the alternative to deploy/compose (docs/install.md,
+# "Inside a cluster"). One replica (SQLite: a single writer) with its own volume.
+#
+#   kubectl apply -f server.yaml
+#   kubectl -n owl create secret generic owl-server --from-env-file=owl.env   # see docs/install.md
+#   kubectl apply -f ingress.example.yaml   # after editing host and TLS
+#   kubectl -n owl exec owl-server-0 -- /owl user invite --admin you@example.com
+#
+# Note: a server in a cluster also watches that cluster's outages from the inside — if the cluster
+# is down, so is Owl. Prefer a separate host (deploy/compose) for the production instance.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: owl
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: owl-server
+  namespace: owl
+  labels: {app.kubernetes.io/name: owl-server}
+spec:
+  selector: {app.kubernetes.io/name: owl-server}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: owl-server
+  namespace: owl
+  labels: {app.kubernetes.io/name: owl-server}
+spec:
+  serviceName: owl-server
+  replicas: 1 # never more: SQLite has one writer
+  selector:
+    matchLabels: {app.kubernetes.io/name: owl-server}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: owl-server}
+    spec:
+      automountServiceAccountToken: false # the server never talks to the Kubernetes API
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532 # the volume becomes writable by the nonroot user
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: server
+          image: registry.gitlab.example.com/devops/owl:0.9.0 # replace with your image
+          args: [server]
+          ports:
+            - {name: http, containerPort: 8080}
+          envFrom:
+            - secretRef: {name: owl-server} # OWL_PUBLIC_URL, OWL_TRUSTED_PROXIES, tokens, SMTP, S3, ...
+          env:
+            - {name: OWL_LISTEN, value: "0.0.0.0:8080"}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi} # password hashing uses up to 2 × 64 MiB at once
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 5Gi}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, usd, useAdminToken, writeErrorText, type SummaryMode, type SummarySettings, type SummaryStatus } from "../api";
+import { api, usd, useIsAdmin, writeErrorText, type SummaryMode, type SummarySettings, type SummaryStatus } from "../api";
 import { Icon } from "../icons";
 import { ago, Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
 
@@ -11,8 +11,8 @@ const MODES: [SummaryMode, string, string][] = [
 ];
 
 export default function SummariesTab() {
-  if (!useAdminToken()) {
-    return <Card title="Summaries"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see spending and change summary settings.</span></div></Card>;
+  if (!useIsAdmin()) {
+    return <Card title="Summaries"><div className="callout info"><Icon.info /><span>Only admins can see spending and change summary settings.</span></div></Card>;
   }
   return <Inner />;
 }

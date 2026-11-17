@@ -86,8 +86,12 @@ func runServer(args []string) error {
 	}
 	defer db.Close()
 
+	authCfg, err := authConfigFromEnv()
+	if err != nil {
+		return err
+	}
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		AdminToken: os.Getenv("OWL_ADMIN_TOKEN"), UI: web.Dist(), LogLevel: level}
+		Auth: authCfg, UI: web.Dist(), LogLevel: level}
 	if logFile != nil {
 		app.LogFile = logFile
 	}
@@ -112,11 +116,7 @@ func runServer(args []string) error {
 		log.Warn("OWL_BACKUP_S3_BUCKET not set: backups are local only (same disk as the database)", "dir", bdir)
 	}
 	app.ApplyOpsSettings(context.Background())
-	if app.AdminToken == "" {
-		log.Warn("OWL_ADMIN_TOKEN not set: write endpoints (cluster management, settings, backups, policies) are disabled")
-	} else if len(app.AdminToken) < 24 {
-		return errors.New("OWL_ADMIN_TOKEN must be at least 24 characters")
-	}
+	logAuthSetup(log, db, authCfg)
 	if *noUpstream {
 		log.Warn("upstream checks disabled")
 	} else {
@@ -157,7 +157,7 @@ func runServer(args []string) error {
 }
 
 // runCluster manages registrations directly on the database file. It's an operator command run on
-// the server host (or `docker exec` into the server container); a UI/API with admin auth comes later.
+// the server host (or `docker exec` into the server container); Settings → Clusters does the same.
 func runCluster(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: owl cluster <add|list|rotate-token|delete> [flags]")

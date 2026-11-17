@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, usd, useAdminToken, writeErrorText, type JumpView, type SummaryItem, type SummaryOverview, type SummaryView } from "../api";
+import { api, usd, useIsAdmin, writeErrorText, type JumpView, type SummaryItem, type SummaryOverview, type SummaryView } from "../api";
 import { ago, Card, Empty, Msg, Tag } from "../ui";
 
 // Everything a summary says came from Claude reading upstream release notes. It's rendered as plain
@@ -41,7 +41,7 @@ export function SummaryCards({ overview, componentId, onChanged }: { overview: S
 }
 
 function JumpCard({ j, onChanged }: { j: JumpView; onChanged: () => void }) {
-  const admin = useAdminToken() !== "";
+  const admin = useIsAdmin();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   async function generate(force: boolean) {
@@ -54,7 +54,7 @@ function JumpCard({ j, onChanged }: { j: JumpView; onChanged: () => void }) {
   const tokens = j.tokens ? `${j.exact ? "" : "~"}${j.tokens.toLocaleString()} input tokens${j.exact ? "" : " (estimate)"}` : "";
   const button = (label: string, force = false) => admin
     ? <button className="btn small" disabled={busy} onClick={() => generate(force)}>{busy ? "Writing… (up to a minute)" : `${label}${cost ? ` — ${cost}` : ""}`}</button>
-    : <span className="subtle" style={{ margin: 0 }}>Set the admin token to generate.</span>;
+    : <span className="subtle" style={{ margin: 0 }}>Only admins can generate summaries.</span>;
 
   let body;
   switch (j.state) {

@@ -8,8 +8,9 @@ Owl is configured in three places:
    catalog overrides, agent image/server URL, backup schedule, log level, retention.
 3. **The built-in catalog** — compiled into the binary, see [Catalog](catalog.md).
 
-Secrets (admin token, GitHub token, S3 keys, agent token) are **only** ever read from the
-environment — never from flags (visible in `ps`), the UI or the database.
+Secrets (GitHub token, Google client secret, SMTP password, S3 keys, Claude API key, agent token) are
+**only** ever read from the environment — never from flags (visible in `ps`), the UI or the database.
+With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they all live in `.env`.
 
 ## Server — `owl server`
 
@@ -17,16 +18,42 @@ environment — never from flags (visible in `ps`), the UI or the database.
 |---|---|---|---|
 | `--listen` | `OWL_LISTEN` | `127.0.0.1:8080` | Listen address. Use `0.0.0.0:8080` in a container. |
 | `--db` | `OWL_DB` | `owl.db` (image: `/data/owl.db`) | SQLite database file. |
-| `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1`. Ports are ignored. |
+| `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated extra host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1` and the `OWL_PUBLIC_URL` host. Ports are ignored. |
 | `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. |
 | `--log-dir` | `OWL_LOG_DIR` | `<db dir>/logs` | Rotated log files. `-` = stderr only. |
 | `--backup-dir` | `OWL_BACKUP_DIR` | `<db dir>/backups` | Local backup folder. |
 | `--no-upstream` | — | off | Don't contact GitHub, endoflife.date or OSV (offline / tests). |
-| — | `OWL_ADMIN_TOKEN` | — | Admin token for write and admin endpoints, **≥ 24 characters**. Unset = writes disabled. |
+| — | `OWL_PUBLIC_URL` | — | The address users open, e.g. `https://owl.example.com` (no path). `https://` required, except `http://localhost`. Used for the links in emails and the Google redirect URL, and its host is allowed automatically. Needed for email and Google sign-in. |
+| — | `OWL_TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs of the reverse proxy in front of Owl. Requests from them have their client IP taken from `X-Forwarded-For` (for the logs, the audit log and sign-in rate limits). The Compose setup sets Caddy's address. |
 | — | `GITHUB_TOKEN` | — | GitHub token **with no scopes**. Without it: 60 requests/hour, incomplete data. |
 | — | `OWL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. A level saved in the UI overrides it. |
 | — | `ANTHROPIC_API_KEY` | — | Claude API key for [upgrade summaries](operations.md#claude-upgrade-summaries). Without it summaries can only run in *estimate* mode. Never logged. |
 | — | `OWL_CLAUDE_MODEL` | `claude-opus-5-5` | Model for summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
+
+### Sign-in
+
+Owl is invite-only: see [Users and sign-in](security.md#users-and-sign-in). Passwords work out of the
+box; Google sign-in and email are optional.
+
+| Environment | Example | Meaning |
+|---|---|---|
+| `OWL_GOOGLE_CLIENT_ID` | `1234…apps.googleusercontent.com` | Google OAuth client ([setup](install.md#8-optional-google-sign-in)). Set both ID and secret, or neither. |
+| `OWL_GOOGLE_CLIENT_SECRET` | | Its secret. |
+| `OWL_GOOGLE_DOMAIN` | `example.com` | Optional: accept only accounts of this Google Workspace domain. |
+
+### Email (SMTP)
+
+Without `OWL_SMTP_HOST`, nothing is emailed: admins copy invite and reset links themselves.
+
+| Environment | Example | Meaning |
+|---|---|---|
+| `OWL_SMTP_HOST` | `smtp.example.com` | Mail server. |
+| `OWL_SMTP_PORT` | `587` | Default `587` for `starttls`, `465` for `tls`. |
+| `OWL_SMTP_TLS` | `starttls` | `starttls` (must succeed — no fallback to plain), `tls` (implicit, port 465), or `none` — only allowed for a mail server on localhost or the dev stack's Mailpit. |
+| `OWL_SMTP_USERNAME`, `OWL_SMTP_PASSWORD` | | Set both, or neither (a relay that trusts your IP). Only ever sent over TLS. |
+| `OWL_SMTP_FROM` | `Owl <owl@example.com>` | Sender. Required. |
+
+Email needs `OWL_PUBLIC_URL` (the links point there); the server refuses to start without it.
 
 ### Backups to S3
 
@@ -68,6 +95,8 @@ and `429`; if all fail, the next interval tries again. It never retries `4xx` (b
 | Stages and their order | Settings → Stages | `staging`, `prelive`, `live` |
 | Tenants | Settings → Tenants | — |
 | Agent image, server URL (used in generated manifests) | Settings → Clusters → Agent settings | placeholders |
+| Users and their roles | Settings → Users | — (first admin: `owl user invite --admin`) |
+| Password sign-in on/off | Settings → Users | on |
 | Global and per-component version policy | Settings → Version policy | `lts-or-n-1` |
 | Catalog overrides (map / in-house / ignore) | Cluster page, Settings → Catalog overrides | — |
 | Daily backup time (server local time) | Settings → Backups & restore | `03:00` |
@@ -105,6 +134,11 @@ consistent while the server runs. See [Operations](operations.md).
 | Restore upload | 2 GiB (compressed and uncompressed) |
 | Cluster export import | 64 MiB |
 | Other JSON request bodies | 16 KiB |
+| Passwords | 12–256 characters |
+| Failed sign-ins | 10 per account from one IP, 30 per IP, in 15 minutes → `429` |
+| "Forgot password?" | 3 emails per account and 10 requests per IP per hour |
+| Sessions | end after 7 days without use, and after 30 days in any case |
+| Invite / reset links | 72 hours / 1 hour, work once |
 | One Claude summary | the input/output token limits above, priced before sending (hard ceiling 200k input) |
 | Cluster / stage names | `a-z`, `0-9`, `-`; 1–63 characters; starts and ends with a letter or digit |
 | Tenant names | letters, digits, space, `_ . -`; 1–40 characters |

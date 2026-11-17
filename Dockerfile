@@ -23,4 +23,7 @@ COPY --from=build /out/owl /owl
 COPY --from=build --chown=65532:65532 /out/data /data
 ENV OWL_DB=/data/owl.db
 USER 65532:65532
+# Distroless has no curl: the binary checks /healthz itself (server mode; the agent serves no HTTP,
+# and in Kubernetes the pod's own probes apply instead).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["/owl", "healthcheck"]
 ENTRYPOINT ["/owl"]

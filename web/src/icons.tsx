@@ -9,7 +9,12 @@ function Svg({ children, size = 16 }: { children: ReactNode; size?: number }) {
 }
 
 export const Icon = {
-  logo: () => <Svg><path d="M12 2 3 7v10l9 5 9-5V7z" /><path d="m3 7 9 5 9-5" /><path d="M12 12v10" /></Svg>,
+  /** Owl's logo (filled, one colour: currentColor). Eyes and beak are holes (even-odd fill). */
+  logo: ({ size = 18 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <path fill="currentColor" fillRule="evenodd" d="M6.2 8.6 8.6 3.4l4.4 4.3q3-.9 6 0l4.4-4.3 2.4 5.2q2.4 4 1.8 10.2C26.9 25.4 22 29 16 29S5.1 25.4 4.4 18.8Q3.8 12.6 6.2 8.6zM6.6 16a4.6 4.6 0 1 0 9.2 0 4.6 4.6 0 1 0-9.2 0zm2.6 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0zm7 0a4.6 4.6 0 1 0 9.2 0 4.6 4.6 0 1 0-9.2 0zm2.6 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0zM14.4 21.2 16 24.4l1.6-3.2z" />
+    </svg>
+  ),
   overview: () => <Svg size={18}><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></Svg>,
   clusters: () => <Svg size={18}><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></Svg>,
   changes: () => <Svg size={18}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Svg>,

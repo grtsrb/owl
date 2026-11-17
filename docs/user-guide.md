@@ -2,6 +2,7 @@
 
 A tour of the web UI. For what the levels, notes and drift mean, see [Concepts](concepts.md).
 
+- [Signing in](#signing-in)
 - [Layout](#layout)
 - [Overview](#overview)
 - [Component page](#component-page)
@@ -10,14 +11,25 @@ A tour of the web UI. For what the levels, notes and drift mean, see [Concepts](
 - [Changes](#changes)
 - [Settings](#settings)
 
+## Signing in
+
+Owl is invite-only. You get an invite link from an admin (by email, or they send it to you): open it,
+choose a password (at least 12 characters) — or click **Sign in with Google** if it's offered — and
+you're signed in. The link works once, for 72 hours; ask for a new one if it expired.
+
+Next time, sign in with your email and password, or with Google. **Forgot password?** on the sign-in
+page emails you a link (when the server can send email); otherwise ask an admin for a reset link.
+You stay signed in for up to 30 days (7 days without using Owl signs you out). **Sign out** is at the
+bottom of the sidebar and in Settings → Account.
+
 ## Layout
 
-The sidebar has **Overview**, **Clusters**, **Changes** and **Settings**; at the bottom it shows
-whether the admin token is set for this browser tab. The UI follows your OS light/dark setting.
+The sidebar has **Overview**, **Clusters**, **Changes** and **Settings**; at the bottom it shows who
+you're signed in as, your role, and **Sign out**. The UI follows your OS light/dark setting.
 
-Everything is readable without signing in. **Changes need the admin token** (see
-[Settings → Admin token](#admin-token)); without it, buttons that change something are disabled and
-admin-only sections (backups, logs, audit log) ask for the token.
+**Viewers** can see everything. **Admins** can also change things; for viewers, buttons that change
+something are disabled and admin-only sections (users, backups, logs, audit log, summary spending)
+say so.
 
 **Cluster picker** (Overview and Changes only): choose which clusters to look at. Presets select a
 whole tenant or stage. The selection is kept in the URL (`?clusters=…`), so you can bookmark or share
@@ -78,7 +90,7 @@ its page.
 - **Workloads** — every workload and container with image, version and level. Under the level: the
   action and the reasons. Flags (with tooltips and a legend): unpinned, scaled to 0, rollout in
   progress, mapped, in-house, in-house (marked), unrecognized, ignored. Filter by level, search, page.
-- **Unrecognized images** — images Owl doesn't know, per repository. With the admin token you can:
+- **Unrecognized images** — images Owl doesn't know, per repository. Admins can:
   - **Map** to a component (e.g. your mirror `harbor.example.com/x/redis` → Redis),
   - mark **in-house** (listed, never scored),
   - **ignore** (hidden).
@@ -92,7 +104,7 @@ changes (old → new), Kubernetes version changes, and each cluster's first repo
 
 ## Settings
 
-All sections need the admin token to change anything.
+Only admins can change anything here; viewers see the settings read-only.
 
 ### Clusters
 
@@ -162,12 +174,23 @@ How the protection works: [Operations → Claude upgrade summaries](operations.m
 
 - **Application logs** — log level (debug / info / warn / error) and how many days of log files to keep.
 - **Audit log retention** — days (default 365).
-- **Audit log** — every admin action: what, when, details and from which IP address.
+- **Audit log** — every admin action: what, when, who, details and from which IP address.
 
-### Admin token
+### Users (admins)
 
-Paste the server's `OWL_ADMIN_TOKEN` and click **Use**. Owl checks it with the server first and says
-so if it's wrong. You can paste the bare token or the whole `OWL_ADMIN_TOKEN=…` line from `.env`.
+- **Invite user** — email and role (*viewer* or *admin*). Owl emails the invite link when email is set
+  up; the link is also shown once, to copy and send yourself (e.g. on Mattermost). Invite people with
+  the address of their Google account if you use Google sign-in.
+- The table shows each user's role, status (*invited*, *active*, *disabled*), how they sign in and when
+  they last did. Per user: change the **role**, **Send invite again** (pending invites; the old link
+  stops working), **Reset password** (a one-hour link), **Disable** (signed out at once, can't sign
+  in) / **Enable**, **Delete**. You can't change or delete yourself, and Owl always keeps at least one
+  active admin.
+- **Sign-in & email** — turn **password sign-in** off once Google sign-in works and an admin has used
+  it (everyone then signs in with Google); Google status and the redirect URI to register; email
+  status and **Send me a test email**.
 
-The token is kept **only in this browser tab** (session storage): it's gone when you close the tab,
-and a new tab or window asks again. It is sent only with admin requests. **Forget** removes it.
+### Account
+
+Your email, role and sign-in methods, **Sign out**, and **Change password** (signs out your other
+sessions).

@@ -1,0 +1,8 @@
+# HTTPS in front of Owl. Caddy gets the certificate for OWL_DOMAIN from Let's Encrypt (ports 80 and
+# 443 must be reachable from the internet for that) and redirects http:// to https://.
+{$OWL_DOMAIN} {
+	encode zstd gzip
+	# Owl sets its own security headers; add HSTS here (it only makes sense on HTTPS).
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy owl:8080
+}

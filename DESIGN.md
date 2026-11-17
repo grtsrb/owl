@@ -7,7 +7,7 @@ Tracks third-party components running in our Kubernetes clusters, shows what is 
 vulnerable / retired, and uses Claude to explain what an upgrade involves.
 
 Status: agreed design for v1 (2026-11-15; UI redesign, cluster management, backups, logging and audit
-agreed 2026-11-16). Changes to decisions below should update this file.
+agreed 2026-11-16; Claude summaries, sign-in and packaging 2026-11-17). Changes to decisions below should update this file.
 
 ## Users & scope
 - Personal tool first, team-ready design. DevOps operates it; **IT** and **DS** are tenants (filter only).
@@ -32,7 +32,7 @@ agreed 2026-11-16). Changes to decisions below should update this file.
   generated per tenant. A cluster's stage and tenant are editable; its name is not (history/exports use it).
 - Environments don't run the same things. **Drift** compares only clusters of the **same tenant**, in stage
   order, and only components present in both; "runs only in X" is an info note, never an anomaly.
-- **Cluster management in the UI** (admin token): add (name, stage, tenant), edit, rotate token, delete,
+- **Cluster management in the UI** (admins): add (name, stage, tenant), edit, rotate token, delete,
   live status (waiting for first report → OK → stale). `owl cluster …` stays as a fallback.
   - Agent manifest generated from the embedded `deploy/agent/agent.yaml` (single source of RBAC), no token
     inside, downloadable any time. Agent image and server URL are server settings (placeholders + warning
@@ -201,13 +201,59 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   - **Clusters** (replaces Images): header (k8s/RKE2 version + EOL, last report, counts per level) and every
     workload (unpinned/in-house as row flags); unrecognized images with map/in-house/ignore actions.
   - **Changes**; **Settings** (policies, stages, tenants, clusters + agent install, catalog overrides, backups, audit
-    log, admin token).
+    log, users & sign-in, own account).
   - v2: trend charts (needs score history).
-- CLI (`owl scan`, `owl outdated`, …).
-- Mattermost: weekly digest (Mon 09:00: counts per level, top 5 actions with summaries, drift) +
-  instant alert when something *newly* becomes Critical. Google Chat/email later.
-- Auth v1: single admin password (local: none). v2: Google sign-in, viewer/admin roles.
+- CLI (`owl scan`, `owl outdated`, …) over the HTTP API with **personal API tokens** per user (milestone 10),
+  so the audit log always names a person.
+- Notifications (milestone 10, agreed 2026-11-17):
+  - Mattermost via an **incoming webhook** (`OWL_MATTERMOST_WEBHOOK_URL`, env only, never shown or logged).
+  - **Weekly digest** (counts per level, top 5 actions with summaries, drift): on/off, day, time and time zone
+    in Settings (default Monday 09:00 Europe/Belgrade). Optional **digest by email**, opt-in per user.
+  - **Critical alert** once when a component on a cluster *newly* becomes Critical (no repeats while it
+    stays Critical): on/off in Settings. Mattermost only.
+  - Both start off until the webhook is set; "Send test message" in Settings.
+  - **Never spends on Claude**: only summaries already cached are included.
 - v2: MCP server to query the inventory from Claude.
+
+## Sign-in (agreed 2026-11-17, milestone 9)
+- **Invite-only users**, roles **viewer** (reads everything) and **admin** (also changes everything, incl.
+  users). No self sign-up. Replaces `OWL_ADMIN_TOKEN` (removed). Everything needs a session except agent
+  ingest, `/healthz`, the agent manifest and the sign-in endpoints. No auth-bypass switch, not even locally.
+- **Invite**: admin enters email + role → one-time link (72 h), emailed if SMTP is set up and always shown
+  to copy. The link's secret is in the URL fragment (never reaches server logs/Referer). Accepting sets a
+  password (≥ 12 chars, argon2id) or signs in with Google; either way the user is signed in.
+- **First admin / emergencies**: `owl user invite --admin <email>` and `owl user reset-link` work on the DB
+  file (like `owl cluster`). A reset link works even with password sign-in off — the way back in.
+- **Google sign-in** (OIDC code flow + PKCE, state cookie, nonce) when `OWL_GOOGLE_CLIENT_ID/SECRET` are set:
+  Google-verified email of an active invited user; the Google `sub` is stored on first sign-in and must match
+  afterwards; optional Workspace domain (`hd`). ID token taken from the token endpoint over TLS (OIDC
+  §3.1.3.7, no signature check), all claims checked.
+- **Password sign-in** can be turned off in Settings only when Google is configured and an active admin has
+  signed in with Google; while off, that last Google-linked admin can't be demoted/disabled/deleted, and
+  "off" is ignored whenever Google isn't configured (no lock-out).
+- Admins can disable (ends sessions at once), delete, change roles; never themselves; never the last active
+  admin.
+- **Sessions**: random cookie, SHA-256 in the DB, HttpOnly + Secure + SameSite=Lax + `__Host-` (plain cookie
+  only on loopback hosts), 7 days idle / 30 days absolute. Password change/reset ends other sessions and voids
+  links. Writes: JSON-only + Go's `CrossOriginProtection` (Sec-Fetch-Site / Origin).
+- **Email** (SMTP, env only): invites, admin-triggered resets, self-service "Forgot password?" (same answer for
+  any email, async send, rate-limited, off when passwords are off), test email. TLS required (implicit or
+  STARTTLS, no downgrade); `none` only for loopback/Mailpit. Links use `OWL_PUBLIC_URL`.
+- Rate limits (in memory): failed sign-ins 10/(account, IP) + 30/IP per 15 min (per-account alone = lock-out DoS); forgot 3/account + 10/IP per hour.
+  Client IP from `X-Forwarded-For` only via `OWL_TRUSTED_PROXIES`.
+- **Restores never change who can sign in**: users, sessions, links and `auth*` settings are kept; backups
+  carry users without password hashes, and no sessions or links. Reset links accumulate (a public "Forgot
+  password?" can't cancel an admin's link); invites replace each other. Audit entries carry the user's email.
+
+## Packaging (agreed 2026-11-17, milestone 9)
+- Production: **Docker Compose on one EC2 instance** (t4g.small, data on its own EBS volume at `/srv/owl`)
+  with **Caddy** for automatic Let's Encrypt HTTPS (`deploy/compose`). Owl not published; Caddy has a fixed
+  IP that is the only trusted proxy. Container read-only, caps dropped, `HEALTHCHECK` via `owl healthcheck`.
+- Alternative: `deploy/server` — one-replica StatefulSet + PVC + example Ingress (documented trade-off: Owl
+  inside a cluster it watches).
+- Image: `make image-push REGISTRY=… VERSION=…` (buildx, amd64 + arm64); later the GitLab registry.
+- Dev stack adds **Mailpit**; the first `make stack-up` prints the first admin's invite link.
+- Logo: filled owl face (one colour, even-odd holes), accent colour **#574CF9** (dark mode #8F87FB).
 
 ## Operations
 - **Backups**: daily at 03:00 + "Back up now"; consistent SQLite copy. Default target an S3-compatible bucket
@@ -233,8 +279,8 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   rotates). `OWL_LOG_LEVEL`; one line per request (method, path, status, duration; health/static at debug);
   request ID; tokens and `Authorization` never logged (tested).
 - **Audit log** (DB, viewable in UI, 365 days, set in the UI, included in backups): cluster add/edit/rotate/
-  delete, policies, catalog overrides, settings, backup/restore/import — what, when, from which IP (who, once
-  Google sign-in lands).
+  delete, policies, catalog overrides, settings, backup/restore/import, users and sign-in settings — what,
+  when, who (the signed-in user), from which IP.
 
 ## Upstream access
 - GitHub API with a token that has no scopes (public read); release lists cached ~6 h.
@@ -257,4 +303,5 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
    tenant-scoped drift, Clusters page, catalog overrides, cluster/agent management, new Overview.
 7. **Backups, restore, logging, audit log**.
 8. **Claude summaries** (designed 2026-11-17, see "Claude").
-9. **Notifications, CLI, auth, packaging**: Mattermost digest/alerts, admin login, Dockerfile, manifests.
+9. **Sign-in, packaging, logo** (designed 2026-11-17, see "Sign-in" and "Packaging").
+10. **Notifications and CLI**: Mattermost digest/alerts (+ digest email), CLI with personal API tokens.

@@ -1,0 +1,27 @@
+# Example Ingress for the in-cluster server (ingress-nginx + cert-manager). Edit host, issuer and
+# class to match your cluster. Owl must be reached over HTTPS: sign-in cookies are Secure.
+# Set OWL_PUBLIC_URL=https://<host> and OWL_TRUSTED_PROXIES to the ingress controller's pod network
+# (RKE2 default 10.42.0.0/16) in the owl-server Secret, so the audit log sees real client IPs.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: owl-server
+  namespace: owl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt # your ClusterIssuer
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m" # backup uploads (restore) and cluster imports
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [owl.example.com]
+      secretName: owl-server-tls
+  rules:
+    - host: owl.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: owl-server
+                port: {name: http}

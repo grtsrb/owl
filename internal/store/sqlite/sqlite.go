@@ -113,6 +113,36 @@ var migrations = []string{
 		error         TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX idx_summary_requests_at ON summary_requests(at);`,
+	// Sign-in (milestone 9). None of these tables is restored from a backup (restoreTables): a restore
+	// never changes who can sign in. Backups leave out sessions and one-time tokens (live secrets).
+	// google_sub is NULL until the user first signs in with Google (UNIQUE allows many NULLs).
+	`CREATE TABLE users (
+		id            INTEGER PRIMARY KEY,
+		email         TEXT NOT NULL UNIQUE,
+		role          TEXT NOT NULL CHECK (role IN ('admin', 'viewer')),
+		password_hash TEXT NOT NULL DEFAULT '',
+		google_sub    TEXT UNIQUE,
+		created_at    TEXT NOT NULL,
+		activated_at  TEXT,
+		last_login_at TEXT,
+		disabled_at   TEXT
+	);
+	CREATE TABLE sessions (
+		token_hash   TEXT PRIMARY KEY,
+		user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		created_at   TEXT NOT NULL,
+		last_seen_at TEXT NOT NULL,
+		expires_at   TEXT NOT NULL
+	);
+	CREATE INDEX idx_sessions_user ON sessions(user_id);
+	CREATE TABLE auth_tokens (
+		token_hash TEXT PRIMARY KEY,
+		user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		kind       TEXT NOT NULL CHECK (kind IN ('invite', 'reset')),
+		created_at TEXT NOT NULL,
+		expires_at TEXT NOT NULL
+	);
+	CREATE INDEX idx_auth_tokens_user ON auth_tokens(user_id);`,
 }
 
 type DB struct{ db *sql.DB }
