@@ -4,6 +4,7 @@ Running Owl day to day: backups, restore, logs, the audit log, monitoring and ma
 
 - [Backups](#backups)
 - [Restore](#restore)
+- [Claude upgrade summaries](#claude-upgrade-summaries)
 - [Bringing back one deleted cluster](#bringing-back-one-deleted-cluster)
 - [Logs](#logs)
 - [Audit log](#audit-log)
@@ -98,6 +99,9 @@ It **keeps**:
 - the upstream cache,
 - **token revocations**: tokens rotated or belonging to clusters deleted since the backup stay
   revoked. An old backup can't bring a leaked token back to life.
+- **Claude summaries, their request log and their settings** (mode, caps, a pause): summaries cost
+  money to write and the log is what the caps count — restoring an old backup must not reset today's
+  spending, unpause paid requests or bring back a higher cap.
 
 After a restore:
 
@@ -107,6 +111,60 @@ After a restore:
 - if the restore went wrong, restore the `…-pre-restore` safety backup.
 
 A file that isn't an Owl backup is rejected with `400` and changes nothing.
+
+## Claude upgrade summaries
+
+For each upgrade a cluster needs (running version → target), Owl can have Claude summarize the
+upstream release notes: breaking changes, migrations, deprecations, security fixes, notable features,
+the upgrade path and an *upgrade risk* (Claude's estimate — it never changes a priority level). See
+[Concepts → Upgrade summaries](concepts.md#upgrade-summaries) for what's sent and how notes are chosen.
+
+**It costs money** (pay-per-use on your Anthropic account), so it is **off by default** and protected in
+two independent layers.
+
+### Layer 1 — on Anthropic's side (set this up first)
+
+A ceiling Owl can't exceed even if it misbehaved:
+
+1. In the [Claude Console](https://platform.claude.com), create a **workspace** just for Owl and an API
+   key in it.
+2. Set a **monthly spend limit** on that workspace (e.g. $10).
+3. Use **prepaid credits with auto-reload off**, so the most that can ever be spent is what's left.
+4. Give the key to the server as `ANTHROPIC_API_KEY` (environment only) and restart.
+
+### Layer 2 — inside Owl (Settings → Summaries)
+
+| Mode | What happens | Cost |
+|---|---|---|
+| **Off** *(default)* | Nothing is fetched or sent. Existing summaries still show. | none |
+| **Estimate only** | Release notes are collected; each upgrade shows a local token estimate and its maximum cost. Nothing is sent to Claude. | none |
+| **Manual** | An admin clicks **Generate** on an upgrade (the button shows the maximum cost). | per click |
+| **Automatic** | Missing summaries are written in the background, one at a time, most urgent component first. | within the caps |
+
+Before **every** request Owl:
+
+1. counts the input tokens exactly (Anthropic's token counting, which is free),
+2. refuses if it's above the input limit (default 30k) — such upgrades show **Too large** and are only
+   written when an admin clicks **Generate anyway** (hard ceiling 200k),
+3. prices the **worst case**: all input plus the full output limit (default 4k), plus the same again
+   on the refusal-fallback model (Opus 5.5 → Opus 5),
+4. sends it only if that worst case fits what's left of the **daily** ($5) and **monthly** ($20) caps
+   (UTC). Afterwards the actual cost from the API's usage report is recorded.
+
+With the defaults one summary costs at most about **$0.45**. A paid request is never retried
+automatically. One whose outcome is unknown (timeout, dropped connection) is booked at its worst case,
+so the caps never undercount.
+
+**Failures**: a failed upgrade (API error, refusal, invalid or truncated output) is retried at most once
+per UTC day. After **3 failed requests in a row** summaries pause — Settings → Summaries shows the last
+error and a **Resume** button.
+
+**Never rewritten automatically**: an existing summary stays as it is, also when the model changes;
+it shows which model wrote it and when. Admins can **Regenerate** one (cost shown, caps apply).
+
+Settings → Summaries shows spending today, this month and in total, and the last 20 requests (component,
+versions, tokens, cost, result). Mode and limit changes, generated and failed summaries and resumes are
+in the audit log.
 
 ## Bringing back one deleted cluster
 
@@ -177,3 +235,4 @@ backups but survives a restore unchanged.
 | Audit log pruning | at startup and every 24 hours |
 | Log rotation and cleanup | at day change or 50 MB |
 | Cleanup of temp files left by a crash during backup/restore | at startup |
+| Summaries: recompute upgrades, collect notes; in automatic mode write missing ones | after every upstream refresh, on settings changes, and hourly |

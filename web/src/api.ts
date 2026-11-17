@@ -102,6 +102,42 @@ export interface Ops { settings: OpsSettings; backupsEnabled: boolean; logFile: 
 export interface BackupInfo { name: string; size: number; at: string; local: boolean; remote: boolean; uploaded: boolean }
 export interface AuditEntry { id: number; at: string; action: string; details: string; remote: string; actor?: string }
 
+// Claude upgrade summaries (internal/summary). Upgrade risk is Claude's estimate, never a priority level.
+export type SummaryMode = "off" | "estimate" | "manual" | "auto";
+export interface SummaryItem { text: string; version: string }
+export interface NoteSource { version: string; url: string }
+export interface SummaryView {
+  headline: string;
+  breakingChanges: SummaryItem[]; migrations: SummaryItem[]; deprecations: SummaryItem[];
+  securityFixes: SummaryItem[]; notableFeatures: SummaryItem[];
+  upgradePath: { direct: "direct_supported" | "via_intermediate" | "not_stated"; via: string[]; reason: string };
+  risk: { level: "low" | "medium" | "high"; reason: string };
+  sources: NoteSource[]; model: string; promptVersion: number; createdAt: string;
+}
+export type JumpState = "ready" | "off" | "collecting" | "no_notes" | "error" | "estimate" | "no_key" | "paused"
+  | "too_large" | "failed" | "budget" | "available" | "queued";
+export interface JumpView {
+  component: string; from: string; to: string; name: string; state: JumpState;
+  tokens?: number; exact?: boolean; maxCostMicros?: number; sources?: NoteSource[]; error?: string; summary?: SummaryView;
+}
+export interface SummaryOverview { mode: SummaryMode; enabled: boolean; paused: boolean; jumps: JumpView[] }
+export interface SummarySettings { mode: SummaryMode; dailyCapMicros: number; monthlyCapMicros: number; maxInputTokens: number; maxOutputTokens: number }
+export interface SummaryRequestLog {
+  id: number; at: string; component: string; from: string; to: string; model: string;
+  inputTokens: number; outputTokens: number; costMicros: number; result: "ok" | "failed" | "resumed"; error?: string;
+}
+export interface SummaryStatus {
+  settings: SummarySettings; enabled: boolean; model: string; fallback?: string; price?: { Input: number; Output: number };
+  paused?: string; spentTodayMicros: number; spentMonthMicros: number; spentTotalMicros: number; summaries: number;
+  requests: SummaryRequestLog[]; maxPerSummaryMicros: number;
+}
+
+/** Micro-dollars as money: $0.0123 below a cent, else cents. */
+export function usd(micros: number | undefined): string {
+  const m = micros ?? 0;
+  return m > 0 && m < 10_000 ? `$${(m / 1e6).toFixed(4)}` : `$${(m / 1e6).toFixed(2)}`;
+}
+
 export interface Policies { global: string; overrides: Record<string, string>; presets: string[] }
 
 export class ApiError extends Error {
@@ -181,6 +217,12 @@ export const api = {
   restoreUpload: (file: File) => rawPost<{ safetyBackup: string }>("/api/v1/restore", file,
     file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream"),
   importCluster: (exportJSON: string) => rawPost<{ cluster: Cluster; token: string }>("/api/v1/clusters/import", exportJSON, "application/json"),
+  summaries: () => request<SummaryOverview>("GET", "/api/v1/summaries"),
+  summaryStatus: () => request<SummaryStatus>("GET", "/api/v1/summaries/status", undefined, true), // admin-only read
+  saveSummarySettings: (s: SummarySettings) => request<SummaryStatus>("PUT", "/api/v1/summaries/settings", s),
+  generateSummary: (j: { component: string; from: string; to: string }, force = false) =>
+    request<SummaryOverview>("POST", "/api/v1/summaries/generate", { component: j.component, from: j.from, to: j.to, force }),
+  resumeSummaries: () => request<SummaryStatus>("POST", "/api/v1/summaries/resume"),
   audit: (limit = 1000) => request<AuditEntry[]>("GET", `/api/v1/audit?limit=${limit}`, undefined, true),
   /** Fetches an admin-only file (the token goes in a header, never in a URL) and saves it. */
   downloadBackup: async (name: string) => {

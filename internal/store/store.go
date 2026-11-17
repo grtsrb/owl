@@ -158,6 +158,35 @@ type ClusterImport struct {
 	Changes           []Change
 }
 
+// Summary is a Claude-written upgrade summary for one jump (milestone 8). Content is the validated
+// JSON the summary package produced; the store treats it as opaque.
+type Summary struct {
+	Component     string    `json:"component"`
+	FromVersion   string    `json:"from"`
+	ToVersion     string    `json:"to"`
+	Model         string    `json:"model"`
+	PromptVersion int       `json:"promptVersion"`
+	CreatedAt     time.Time `json:"createdAt"`
+	Content       []byte    `json:"-"`
+}
+
+// SummaryRequest is one paid (or attempted) request to Claude, for spending caps and the request log.
+// CostMicros is in millionths of a US dollar. Result is "ok", "failed" or "resumed" (an admin cleared a
+// pause; resets the consecutive-failure count, costs nothing).
+type SummaryRequest struct {
+	ID           int64     `json:"id"`
+	At           time.Time `json:"at"`
+	Component    string    `json:"component"`
+	FromVersion  string    `json:"from"`
+	ToVersion    string    `json:"to"`
+	Model        string    `json:"model"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+	CostMicros   int64     `json:"costMicros"`
+	Result       string    `json:"result"`
+	Error        string    `json:"error,omitempty"`
+}
+
 type IngestResult struct {
 	Changes []Change
 	First   bool
@@ -233,6 +262,16 @@ type Store interface {
 	// ImportCluster recreates a deleted cluster from its export, with a new agent token. Missing
 	// stages/tenants are created (a stage is appended last).
 	ImportCluster(ctx context.Context, imp ClusterImport, tokenHash, tokenPrefix string) (*Cluster, error)
+
+	// Claude upgrade summaries (kept across restores, like the audit log) and the log of requests made
+	// for them (the spending caps are computed from it).
+	ListSummaries(ctx context.Context) ([]Summary, error)
+	PutSummary(ctx context.Context, s Summary) error
+	AddSummaryRequest(ctx context.Context, r SummaryRequest) error
+	// ListSummaryRequests returns the newest first.
+	ListSummaryRequests(ctx context.Context, limit int) ([]SummaryRequest, error)
+	// SummarySpend is the total cost (micro-USD) of requests at or after since.
+	SummarySpend(ctx context.Context, since time.Time) (int64, error)
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

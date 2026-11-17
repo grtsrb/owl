@@ -22,6 +22,7 @@ import (
 	"owl/internal/snapshot"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
+	"owl/internal/summary"
 )
 
 const testAdminToken = "test-admin-token-0123456789abcdef"
@@ -583,5 +584,48 @@ func TestOpsSettingsAndBackupFlow(t *testing.T) {
 	}
 	if code, _ := call(t, "POST", u+"/clusters/import", `{"format":"other","version":1}`, true); code != 400 {
 		t.Errorf("foreign export: %d", code)
+	}
+}
+
+func TestSummaryEndpoints(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cat, _ := catalog.Builtin()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	app := &Server{Store: db, Catalog: cat, AdminToken: testAdminToken, Log: log}
+	app.Summaries = &summary.Manager{Store: db, Catalog: cat, Infos: app.UpstreamInfo, Report: app.BuildReport,
+		Model: summary.DefaultModel, Log: log} // no Claude client: no API key
+	srv := httptest.NewServer(app.Handler())
+	defer srv.Close()
+	u := srv.URL + "/api/v1/summaries"
+
+	if code, out := call(t, "GET", u, "", false); code != 200 || out["mode"] != "off" || out["enabled"] != false {
+		t.Errorf("public list, default off: %d %v", code, out)
+	}
+	for _, p := range []struct{ method, path, body string }{
+		{"GET", "/status", ""}, {"PUT", "/settings", `{}`}, {"POST", "/generate", `{}`}, {"POST", "/resume", ""},
+	} {
+		if code, _ := call(t, p.method, u+p.path, p.body, false); code != 401 {
+			t.Errorf("%s %s without the admin token: %d", p.method, p.path, code)
+		}
+	}
+	bad := `{"mode":"auto","dailyCapMicros":30000000,"monthlyCapMicros":20000000,"maxInputTokens":30000,"maxOutputTokens":4000}`
+	if code, _ := call(t, "PUT", u+"/settings", bad, true); code != 400 {
+		t.Errorf("daily cap above monthly must be rejected: %d", code)
+	}
+	good := `{"mode":"manual","dailyCapMicros":1000000,"monthlyCapMicros":5000000,"maxInputTokens":20000,"maxOutputTokens":3000}`
+	code, out := call(t, "PUT", u+"/settings", good, true)
+	if code != 200 || out["enabled"] != false || out["settings"].(map[string]any)["mode"] != "manual" {
+		t.Fatalf("settings: %d %v", code, out)
+	}
+	if code, out := call(t, "POST", u+"/generate", `{"component":"grafana","from":"1.0.0","to":"2.0.0"}`, true); code != 404 {
+		t.Errorf("unknown jump: %d %v", code, out)
+	}
+	audit, _ := db.ListAudit(context.Background(), 10)
+	if len(audit) == 0 || audit[0].Action != "summary settings changed" || !strings.Contains(audit[0].Details, "mode=manual") {
+		t.Errorf("mode changes are audited: %+v", audit)
 	}
 }

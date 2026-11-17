@@ -1,14 +1,15 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { api, type ReleaseLine } from "../api";
+import { api, type JumpView, type ReleaseLine } from "../api";
+import { SummaryHeadline } from "./Summaries";
 import { Icon } from "../icons";
 import { Note } from "../model";
 import type { Row } from "../pages/Overview";
 import { ErrorBox, LevelBadge, Loading, useApi } from "../ui";
 
 /** Quick look at a component from the Overview: target, release lines, reasons per selected cluster. */
-export default function ComponentPanel({ row, stageNames, selected, onClose }: {
-  row: Row; stageNames: string[]; selected: string[]; onClose: () => void;
+export default function ComponentPanel({ row, stageNames, selected, jumps, onClose }: {
+  row: Row; stageNames: string[]; selected: string[]; jumps: JumpView[]; onClose: () => void;
 }) {
   const detail = useApi(() => api.component(row.c.id), [row.c.id]);
   useEffect(() => {
@@ -40,6 +41,12 @@ export default function ComponentPanel({ row, stageNames, selected, onClose }: {
           <div><span>Latest upstream</span><span className="mono big">{c.upstream.latestStable ?? "—"}</span></div>
         </div>
         <div className="callout"><span><b>{c.action.text}</b> <span className="muted">— {c.action.why}</span></span></div>
+        {jumps.some((j) => j.summary) && (
+          <div className="stack" style={{ gap: 4 }}>
+            <SummaryHeadline jumps={jumps} />
+            <span className="subtle" style={{ margin: 0 }}>Claude's summary of the release notes — <Link to={`/components/${c.id}`}>full summary</Link></span>
+          </div>
+        )}
         {row.notes.length > 0 && <div className="notes">{row.notes.map((n, k) => <Note key={k} n={n} />)}</div>}
 
         <div className="stack">

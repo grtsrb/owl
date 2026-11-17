@@ -23,6 +23,7 @@ import (
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
+	"owl/internal/summary"
 	"owl/internal/upstream"
 	"owl/web"
 )
@@ -123,6 +124,9 @@ func runServer(args []string) error {
 			log.Warn("GITHUB_TOKEN not set: GitHub allows 60 requests/hour; upstream data will be incomplete")
 		}
 		app.Upstream = newUpstreamClient(db)
+		if err := setupSummaries(app, db, cat, log); err != nil {
+			return err
+		}
 	}
 	srv := &http.Server{
 		Addr:              *listen,
@@ -136,6 +140,9 @@ func runServer(args []string) error {
 	go app.RunUpstreamRefresher(ctx, 6*time.Hour)
 	go app.Backups.RunScheduler(ctx)
 	go app.RunMaintenance(ctx)
+	if app.Summaries != nil {
+		go app.Summaries.RunScheduler(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -300,5 +307,29 @@ func runUpstream(args []string) error {
 			}
 		}
 	}
+	return nil
+}
+
+// setupSummaries configures Claude upgrade summaries. The API key is read from the environment only
+// (never a flag, the UI or the database) and never logged. Without it, summaries can be set to
+// "estimate only" but nothing is ever sent. The mode itself (default off) is a UI setting.
+func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, log *slog.Logger) error {
+	model := os.Getenv("OWL_CLAUDE_MODEL")
+	if model == "" {
+		model = summary.DefaultModel
+	}
+	if !summary.KnownModel(model) {
+		return fmt.Errorf("OWL_CLAUDE_MODEL %q: Owl has no price for this model, so it can't enforce the spending caps (known: %s)",
+			model, strings.Join(summary.KnownModels(), ", "))
+	}
+	m := &summary.Manager{Store: db, Catalog: cat, Notes: app.Upstream, Infos: app.UpstreamInfo,
+		Report: app.BuildReport, Model: model, Log: log}
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		m.Claude = summary.NewClient(key)
+		log.Info("Claude summaries available (mode is set in Settings → Summaries; default off)", "model", model)
+	} else {
+		log.Info("ANTHROPIC_API_KEY not set: Claude summaries can only run in estimate mode")
+	}
+	app.Summaries = m
 	return nil
 }

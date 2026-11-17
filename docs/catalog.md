@@ -51,6 +51,10 @@ components:
 | `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. |
 | `source: cluster` | Not matched by image: the version comes from the cluster's nodes. |
 | `notes` | Shown with the component. |
+| `releaseNotes` | Where [upgrade summaries](concepts.md#upgrade-summaries) read release notes when the GitHub releases don't carry them: `kubernetes-changelog`, `redis-releasenotes`, `haproxy-changelog`, `postgres-release-notes`. Empty = GitHub release notes. A new source needs code in `internal/upstream/notes.go`. |
+
+`releaseTagPrefix` is also stripped before reading a version from a GitHub release tag (nginx tags
+releases `release-1.27.4`).
 
 ## How tags become versions
 

@@ -56,6 +56,15 @@ Open from any component name. Shows:
   (endoflife.date or GitHub releases) and when it was fetched,
 - **drift** between stages for each tenant,
 - **policy editor** — set a policy for just this component, or go back to the global one (admin).
+- **Upgrade summaries** — one card per upgrade a cluster needs (e.g. 11.2.3 → 12.1.4): Claude's
+  summary of the release notes (headline, breaking changes, migrations, deprecations, security fixes,
+  notable features, upgrade path, *upgrade risk*), each point linked to its release notes. Without a
+  summary the card says why: off, estimate and maximum cost, **Generate** (admin, manual mode), too
+  large (**Generate anyway**), waiting for budget, failed, paused. Admins can **Regenerate** one.
+  Written by Claude from upstream text — verify before acting.
+
+The Overview's side panel and **Top actions** show the summary's headline and upgrade risk when one
+exists.
 
 ## Clusters
 
@@ -136,6 +145,18 @@ Every map / in-house / ignore decision, with **Undo**.
 
 Before a restore you confirm what will be replaced. See [Operations → Restore](operations.md#restore)
 for exactly what happens.
+
+### Summaries
+
+- **Mode** — Off (default), Estimate only, Manual, Automatic. Manual/Automatic need `ANTHROPIC_API_KEY`
+  on the server.
+- **Daily / monthly cap** in USD and **max input / output tokens** per summary, with the resulting
+  maximum cost of one summary.
+- **Spending** today, this month and in total; model, price and refusal fallback.
+- **Recent requests** — the last 20: upgrade, tokens, cost, result and error.
+- **Paused** notice with **Resume** after 3 failures in a row.
+
+How the protection works: [Operations → Claude upgrade summaries](operations.md#claude-upgrade-summaries).
 
 ### Logs & audit
 

@@ -25,6 +25,8 @@ environment — never from flags (visible in `ps`), the UI or the database.
 | — | `OWL_ADMIN_TOKEN` | — | Admin token for write and admin endpoints, **≥ 24 characters**. Unset = writes disabled. |
 | — | `GITHUB_TOKEN` | — | GitHub token **with no scopes**. Without it: 60 requests/hour, incomplete data. |
 | — | `OWL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. A level saved in the UI overrides it. |
+| — | `ANTHROPIC_API_KEY` | — | Claude API key for [upgrade summaries](operations.md#claude-upgrade-summaries). Without it summaries can only run in *estimate* mode. Never logged. |
+| — | `OWL_CLAUDE_MODEL` | `claude-opus-5-5` | Model for summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
 
 ### Backups to S3
 
@@ -74,6 +76,9 @@ and `429`; if all fail, the next interval tries again. It never retries `4xx` (b
 | Log level | Settings → Logs & audit | from `OWL_LOG_LEVEL` |
 | Log file retention | 〃 | 5 days (1–365) |
 | Audit log retention | 〃 | 365 days (1–3650) |
+| Summary mode: off / estimate / manual / automatic | Settings → Summaries | **off** |
+| Daily / monthly spending cap (UTC) | 〃 | $5 / $20 ($0.01–$1000; daily ≤ monthly) |
+| Max input / output tokens per summary | 〃 | 30,000 / 4,000 (2k–200k / 1k–16k) |
 
 ## Data directory
 
@@ -100,5 +105,6 @@ consistent while the server runs. See [Operations](operations.md).
 | Restore upload | 2 GiB (compressed and uncompressed) |
 | Cluster export import | 64 MiB |
 | Other JSON request bodies | 16 KiB |
+| One Claude summary | the input/output token limits above, priced before sending (hard ceiling 200k input) |
 | Cluster / stage names | `a-z`, `0-9`, `-`; 1–63 characters; starts and ends with a letter or digit |
 | Tenant names | letters, digits, space, `_ . -`; 1–40 characters |

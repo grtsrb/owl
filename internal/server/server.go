@@ -27,9 +27,9 @@ import (
 	"owl/internal/catalog"
 	"owl/internal/inventory"
 	"owl/internal/policy"
-	"owl/internal/report"
 	"owl/internal/snapshot"
 	"owl/internal/store"
+	"owl/internal/summary"
 	"owl/internal/upstream"
 )
 
@@ -58,9 +58,11 @@ type Server struct {
 	UI fs.FS
 	// Backups is nil when backups are disabled. LogLevel and LogFile (optional) follow the settings
 	// edited in the UI (applyOpsSettings).
-	Backups  *backup.Manager
-	LogLevel *slog.LevelVar
-	LogFile  interface{ SetRetentionDays(int) }
+	Backups *backup.Manager
+	// Summaries writes Claude upgrade summaries (nil = upstream checks disabled).
+	Summaries *summary.Manager
+	LogLevel  *slog.LevelVar
+	LogFile   interface{ SetRetentionDays(int) }
 
 	uiOnce  sync.Once
 	uiIndex []byte
@@ -107,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/catalog/overrides", s.requireAdmin(s.deleteOverride))
 	mux.HandleFunc("PUT /api/v1/settings", s.requireAdmin(s.putSettings))
 	s.opsRoutes(mux)
+	s.summaryRoutes(mux)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, securityHeaders(s.checkHost(mux)))
 }
@@ -254,6 +257,9 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("snapshot ingested", "cluster", cluster.Name, "workloads", len(snap.Workloads),
 		"changes", len(res.Changes), "first", res.First, "agent", snap.AgentVersion)
+	if s.Summaries != nil && (len(res.Changes) > 0 || res.First) {
+		s.Summaries.Kick() // running versions changed: the upgrades needed may have too
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"cluster": cluster.Name, "changes": len(res.Changes)})
 }
 
@@ -423,6 +429,9 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	s.upstream = fresh
 	s.mu.Unlock()
 	s.Log.Info("upstream refreshed", "components", len(fresh), "withErrors", errs, "took", time.Since(start).Round(time.Millisecond))
+	if s.Summaries != nil {
+		s.Summaries.Kick() // new targets or releases: jumps and notes may have changed
+	}
 }
 
 // RunUpstreamRefresher refreshes now and then every interval until ctx is done.
@@ -517,9 +526,7 @@ func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
-	rep, err := report.Build(r.Context(), report.Inputs{
-		Catalog: s.Catalog, Store: s.Store, Upstream: s.Upstream, Infos: s.upstreamInfo, Now: time.Now().UTC(),
-	})
+	rep, err := s.BuildReport(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return

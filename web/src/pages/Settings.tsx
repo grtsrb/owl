@@ -6,12 +6,13 @@ import { useAppData } from "../App";
 import { Icon } from "../icons";
 import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
 import { overrideText } from "./ClusterDetail";
+import SummariesTab from "./SettingsSummaries";
 
 type M = { ok: boolean; text: string } | null;
 
 const TABS: [string, string][] = [
   ["clusters", "Clusters"], ["stages", "Stages"], ["tenants", "Tenants"], ["policy", "Version policy"],
-  ["overrides", "Catalog overrides"], ["backups", "Backups & restore"], ["logs", "Logs & audit"], ["token", "Admin token"],
+  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["backups", "Backups & restore"], ["logs", "Logs & audit"], ["token", "Admin token"],
 ];
 
 export default function Settings() {
@@ -36,6 +37,7 @@ export default function Settings() {
       {tab === "tenants" && <TenantsTab />}
       {tab === "policy" && <PolicyTab />}
       {tab === "overrides" && <OverridesTab />}
+      {tab === "summaries" && <SummariesTab />}
       {tab === "backups" && <BackupsTab />}
       {tab === "logs" && <LogsTab />}
       {tab === "token" && <TokenTab />}

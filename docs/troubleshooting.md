@@ -74,6 +74,22 @@ advisory and decide; it doesn't change the level.
 Drift is only computed between clusters of the **same tenant** for components running in both, and is
 hidden for clusters not selected in the cluster picker.
 
+## Upgrade summaries
+
+| You see | Meaning / fix |
+|---|---|
+| "Summaries are off" | The default. Settings → Summaries → choose a mode. |
+| Manual/Automatic can't be selected | `ANTHROPIC_API_KEY` isn't set on the server (check the startup log). |
+| Server won't start: "OWL_CLAUDE_MODEL … has no price" | Use one of the models listed in [Configuration](configuration.md); Owl only runs models it can price. |
+| "Collecting release notes…" for long | Notes are fetched after each upstream refresh; check the log for `summaries: refresh failed`. |
+| "No release notes available" | The project publishes no notes Owl can read for those versions. |
+| "Release notes couldn't be fetched" | GitHub / haproxy.org / postgresql.org unreachable or rate-limited; retried on the next refresh. |
+| "Larger than the input limit" | Not written automatically. **Generate anyway** (shows the maximum cost), or raise the limit. |
+| "Waiting for budget" | Its worst case doesn't fit what's left of today's or this month's cap. Wait, or raise the cap. |
+| "Failed today" | See the error; automatic mode retries tomorrow, or click **Try again**. |
+| "Paused" | 3 failed requests in a row. Fix the cause (key, model, Anthropic status), then **Resume**. |
+| "The output limit was reached" | Raise *Max output tokens* (thinking also counts as output). |
+
 ## Backups
 
 See the warnings table in [Operations → Backups](operations.md#warnings-in-settings--backups--restore).

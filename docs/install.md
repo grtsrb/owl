@@ -9,6 +9,7 @@ cluster). The same image `owl:<version>` runs both.
 - [3. First-time setup](#3-first-time-setup)
 - [4. Connect a cluster](#4-connect-a-cluster)
 - [5. Configure backups](#5-configure-backups)
+- [6. Optional: Claude upgrade summaries](#6-optional-claude-upgrade-summaries)
 - [Upgrading](#upgrading)
 - [Uninstalling an agent](#uninstalling-an-agent)
 
@@ -141,6 +142,19 @@ kubectl -n owl create secret generic owl-agent \
 Without a bucket, backups stay on the server's own disk and the UI warns that this isn't safe. Set
 the `OWL_BACKUP_S3_*` variables and restart — see [Operations → Backups](operations.md#backups),
 including a bucket policy that doesn't allow deleting.
+
+## 6. Optional: Claude upgrade summaries
+
+Summaries cost money per use and are **off** until you switch them on. Set up the hard ceiling on
+Anthropic's side first:
+
+1. In the Claude Console create a **dedicated workspace** for Owl, with its own API key.
+2. Give that workspace a **monthly spend limit**, use **prepaid credits** and turn **auto-reload off**.
+3. Pass the key as `ANTHROPIC_API_KEY` (environment only) and restart the server.
+4. In **Settings → Summaries**, start with **Estimate only** to see what each summary would cost, then
+   **Manual**, and **Automatic** only once you're comfortable. Check the daily/monthly caps there.
+
+Details: [Operations → Claude upgrade summaries](operations.md#claude-upgrade-summaries).
 
 ## Upgrading
 

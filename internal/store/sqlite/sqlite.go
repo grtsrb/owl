@@ -87,6 +87,32 @@ var migrations = []string{
 	);
 	INSERT OR IGNORE INTO revoked_tokens(token_hash, revoked_at)
 		SELECT token_hash, revoked_at FROM agent_tokens WHERE revoked_at IS NOT NULL;`,
+	// Claude summaries (milestone 8). Restores keep both tables: summaries cost money to regenerate and
+	// the request log is what the spending caps count — a restore must not reset it.
+	`CREATE TABLE summaries (
+		component      TEXT NOT NULL,
+		from_version   TEXT NOT NULL,
+		to_version     TEXT NOT NULL,
+		model          TEXT NOT NULL,
+		prompt_version INTEGER NOT NULL,
+		created_at     TEXT NOT NULL,
+		content        TEXT NOT NULL,
+		PRIMARY KEY (component, from_version, to_version)
+	);
+	CREATE TABLE summary_requests (
+		id            INTEGER PRIMARY KEY,
+		at            TEXT NOT NULL,
+		component     TEXT NOT NULL,
+		from_version  TEXT NOT NULL,
+		to_version    TEXT NOT NULL,
+		model         TEXT NOT NULL,
+		input_tokens  INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cost_micros   INTEGER NOT NULL DEFAULT 0,
+		result        TEXT NOT NULL,
+		error         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX idx_summary_requests_at ON summary_requests(at);`,
 }
 
 type DB struct{ db *sql.DB }

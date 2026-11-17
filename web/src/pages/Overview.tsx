@@ -4,6 +4,7 @@ import { api, LEVELS, type Cluster, type ComponentReport, type Level, type Score
 import { useAppData, useReporting } from "../App";
 import ComponentPanel from "../components/ComponentPanel";
 import LevelHelp from "../components/LevelHelp";
+import { SummaryHeadline } from "../components/Summaries";
 import { LEGEND, needsByCluster, Note, notesFor, paginate, useClusterSelection, usePageSize, useQueryState, worstInstance, type NoteItem } from "../model";
 import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, Pager, useApi, worstLevel } from "../ui";
 
@@ -46,6 +47,9 @@ export default function Overview() {
   const setFilter = (l: Level | "all") => qs.set({ level: l === "all" ? null : l });
   const [pageSize, setPageSize] = usePageSize();
   const [panel, setPanel] = useState<string | null>(null);
+  // Summaries are extra: if they fail to load, the Overview works as before.
+  const summaries = useApi(api.summaries);
+  const jumpsOf = (id: string) => summaries.data?.jumps.filter((j) => j.component === id) ?? [];
 
   const lastStage = stageNames[stageNames.length - 1] ?? "live";
   const rows = useMemo(() => (report.data ? rowsFor(report.data.components, sel.selected, lastStage) : []),
@@ -104,6 +108,7 @@ export default function Overview() {
                   <span className="stack grow" style={{ gap: 2 }}>
                     <span className="row" style={{ gap: 8 }}><span className="act-name">{r.c.name}</span><LevelBadge level={r.level} /></span>
                     <span>{r.c.action.text} <span className="muted">— {r.c.action.why}</span></span>
+                    <SummaryHeadline jumps={jumpsOf(r.c.id)} />
                     <span className="subtle">Runs in {r.clusters.length} {r.clusters.length === 1 ? "cluster" : "clusters"}{r.inLive ? ` · incl. ${lastStage}` : ""}</span>
                   </span>
                 </button>
@@ -136,7 +141,7 @@ export default function Overview() {
         <LevelHelp />
       </Card>
 
-      {open && <ComponentPanel row={open} stageNames={stageNames} selected={sel.selected} onClose={() => setPanel(null)} />}
+      {open && <ComponentPanel row={open} stageNames={stageNames} selected={sel.selected} jumps={jumpsOf(open.c.id)} onClose={() => setPanel(null)} />}
     </>
   );
 }

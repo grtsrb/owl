@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, useAdminToken, writeErrorText, type ComponentReport, type Match } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
+import { SummaryCards } from "../components/Summaries";
 
 export default function ComponentPage() {
   const { id = "" } = useParams();
   const report = useApi(api.report, []);
   const detail = useApi(() => api.component(id), [id]);
   const policies = useApi(api.policies, []);
+  const summaries = useApi(api.summaries, []);
 
   if (report.error) return <ErrorBox error={report.error} retry={report.reload} />;
   if (detail.error) return <ErrorBox error={detail.error} retry={detail.reload} />;
@@ -75,6 +77,7 @@ export default function ComponentPage() {
         </Card>
       </div>
 
+      {summaries.data && <SummaryCards overview={summaries.data} componentId={id} onChanged={summaries.reload} />}
       {c && <Instances c={c} />}
       <Advisories d={d.advisoriesByVersion} />
 

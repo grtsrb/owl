@@ -156,3 +156,30 @@ func TestRestoreRejectsForeignSQLite(t *testing.T) {
 		}
 	}
 }
+
+// Summaries cost money and the request log is what the spending caps count: a restore keeps both.
+func TestRestoreKeepsSummariesAndSpend(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	_, _ = db.CreateCluster(ctx, "prod", store.StageLive, "IT")
+	bak := filepath.Join(t.TempDir(), "b.db")
+	if err := db.Backup(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.SetSetting(ctx, "summaryPaused", "3 failed requests in a row")
+	_ = db.SetSetting(ctx, "summaryDailyCapMicros", "1000000")
+	_ = db.PutSummary(ctx, store.Summary{Component: "grafana", FromVersion: "1", ToVersion: "2", Model: "m", PromptVersion: 1, Content: []byte(`{}`)})
+	_ = db.AddSummaryRequest(ctx, store.SummaryRequest{Component: "grafana", Model: "m", CostMicros: 4_000_000, Result: "ok"})
+	if err := db.Restore(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := db.ListSummaries(ctx); len(all) != 1 {
+		t.Error("summaries must survive a restore")
+	}
+	if spent, _ := db.SummarySpend(ctx, time.Time{}); spent != 4_000_000 {
+		t.Errorf("a restore must not reset the spend counter: %d", spent)
+	}
+	if s, _ := db.GetSettings(ctx); s["summaryPaused"] == "" || s["summaryDailyCapMicros"] != "1000000" {
+		t.Errorf("a restore must not unpause summaries or change their caps: %v", s)
+	}
+}

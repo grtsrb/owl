@@ -14,6 +14,8 @@
 # Vendor build suffixes (-hardened3, -build20240305, -debian-12-r20, -alpine, ...) are stripped
 # generically; the exact image is always kept for display.
 #   source: cluster — not matched by image; version comes from the cluster itself (node kubeletVersion).
+#   releaseNotes: where upgrade summaries read release notes when GitHub releases don't carry them:
+#               kubernetes-changelog | redis-releasenotes | haproxy-changelog | postgres-release-notes.
 components:
   - id: kubernetes
     name: Kubernetes
@@ -21,6 +23,7 @@ components:
     github: kubernetes/kubernetes
     eol: kubernetes
     osv: {ecosystem: Go, name: k8s.io/kubernetes}
+    releaseNotes: kubernetes-changelog   # GitHub releases only link to the CHANGELOG
 
   - id: rke2
     name: RKE2
@@ -52,12 +55,14 @@ components:
     images: [nginx, nginxinc/nginx-unprivileged, bitnami/nginx]
     github: nginx/nginx
     eol: nginx
+    releaseTagPrefix: "release-"         # GitHub releases are tagged release-1.27.4
 
   - id: haproxy
     name: HAProxy
     images: [haproxy, haproxytech/haproxy-alpine, haproxytech/haproxy-debian, bitnami/haproxy]
     github: haproxy/haproxy
     eol: haproxy
+    releaseNotes: haproxy-changelog      # no GitHub releases; the GitHub mirror is the dev branch only
 
   - id: haproxy-kubernetes-ingress
     name: HAProxy Kubernetes Ingress (HAProxy Technologies)
@@ -107,6 +112,7 @@ components:
     images: [redis, bitnami/redis, redis/redis-stack-server, bitnamilegacy/redis]
     github: redis/redis
     eol: redis
+    releaseNotes: redis-releasenotes     # GitHub releases only link to 00-RELEASENOTES
 
   - id: valkey
     name: Valkey
@@ -120,6 +126,7 @@ components:
     github: postgres/postgres
     eol: postgresql
     versionParts: 2
+    releaseNotes: postgres-release-notes # no GitHub releases
 
   - id: redpanda
     name: Redpanda

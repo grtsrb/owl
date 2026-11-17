@@ -13,8 +13,9 @@ or operators can notice updates the matching page in the same branch (which page
 `docs/development.md`); each merged milestone adds a `docs/changelog.md` entry.
 
 ## Status
-Milestones 1–7 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
-redesign + cluster management, backups/restore/logging/audit) done; next 8 (Claude summaries). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–8 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
+redesign + cluster management, backups/restore/logging/audit, Claude summaries) done; next 9
+(notifications, CLI, auth, packaging). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -95,6 +96,20 @@ make dev-down
   Request lines carry a request id (`X-Request-ID`); never log headers or tokens (tested).
 - Audit log: `Server.audit` writes every admin action to the `audit_log` table (and the log); pruned daily
   to its retention. Restore keeps the audit log.
+- `internal/summary` — Claude upgrade summaries (milestone 8). `Manager.generate` is the **single gate**
+  for spending: mode → key → pause → exact token count (free endpoint) → input limit → worst-case price
+  (input + max output, + fallback model) vs remaining daily/monthly cap → send → book actual cost;
+  everything read under one lock so requests serialize. Unknown model price = refuses (server won't
+  start). Default mode **off**. `Claude` is an interface (`claude.go` wraps the Go SDK, beta Messages
+  with structured output + server-side refusal fallback); tests use a fake and must assert "no request
+  sent" for off/estimate/budget/too-large/paused. Requests are built only from `Jump` (component +
+  versions) and notes — never cluster data (tested). Output is untrusted: `parseContent` validates and
+  sanitizes; links come only from Owl's `upstream.Note.URL`. `summaries`/`summary_requests` are kept
+  across restores (spend counters must not reset).
+- `internal/upstream/notes.go` — release notes per jump: GitHub bodies or `releaseNotes` sources
+  (Kubernetes CHANGELOG sections, Redis/HAProxy per-branch files with pre-releases folded into x.y.0 and
+  each version taken only from its own line's file, postgresql.org HTML). Which versions belong to a
+  jump is decided in `summary.notesFor` via `policy.Position` (upstream can't import policy).
 - `internal/report` — `ScoreInstance` is the **only** place priority levels are decided (pure,
   table-tested in `score_test.go`); `ActionFor` derives the "Recommended action" sentence from a score
   (never the reverse). `Build` combines inventory + upstream + policies + drift: per **tenant**, along

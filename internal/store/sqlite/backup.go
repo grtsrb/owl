@@ -109,14 +109,22 @@ func (d *DB) Restore(ctx context.Context, path string) error {
 		return err
 	}
 	defer tx.Rollback()
-	// Children first when deleting, parents first when inserting.
+	// Children first when deleting, parents first when inserting. Settings named summary* (mode, caps,
+	// a failure pause) are kept as they are: restoring an old backup must not silently unpause paid
+	// requests or bring back a higher cap — like the spend log, they're cost safety, not data.
+	where := func(t string) string {
+		if t == "settings" {
+			return " WHERE key NOT LIKE 'summary%'"
+		}
+		return ""
+	}
 	for i := len(restoreTables) - 1; i >= 0; i-- {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM main."+restoreTables[i]); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM main."+restoreTables[i]+where(restoreTables[i])); err != nil {
 			return err
 		}
 	}
 	for _, t := range restoreTables {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO main."+t+" SELECT * FROM bak."+t); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO main."+t+" SELECT * FROM bak."+t+where(t)); err != nil {
 			return fmt.Errorf("restore %s: %w", t, err)
 		}
 	}

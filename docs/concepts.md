@@ -16,6 +16,7 @@ judgement Owl makes is **rule-based and shows its reasons**; nothing is a black 
 - [Recommended action](#recommended-action)
 - [Drift between stages](#drift-between-stages)
 - [Change history](#change-history)
+- [Upgrade summaries](#upgrade-summaries)
 
 ## Clusters, stages and tenants
 
@@ -199,3 +200,32 @@ On every report Owl compares the new intended images with the previous ones and 
 `added`, `removed`, `image_changed` and `kubernetes_version_changed`. The first report from a cluster
 is a single `first_snapshot` event rather than hundreds of "added" ones. Replica counts and running
 pods are not recorded as changes (too noisy) — only the templates.
+
+## Upgrade summaries
+
+Optionally (off by default — it costs money, see [Operations](operations.md#claude-upgrade-summaries)),
+Claude reads the upstream release notes of an upgrade and summarizes what it involves.
+
+- **One summary per upgrade** ("jump"): component + exact running version → exact target version,
+  e.g. Grafana 11.2.3 → 12.1.4. Clusters running the same version share it. Nothing for instances that
+  are already at their target, ahead of it, or unpinned (the starting version isn't known).
+- **Which release notes**: stable releases only. Within one release line, every release after the
+  running version up to the target. Across lines, the first release of each line in between plus every
+  release of the target line — patches of the old line are backports and skipped. For projects whose
+  `.0` entry only lists changes since the last pre-release (Redis, HAProxy), the line's milestones,
+  RCs and dev releases are part of its `.0`.
+- **Where notes come from**: GitHub release notes, or for projects that publish elsewhere, the
+  Kubernetes CHANGELOG (only *Urgent Upgrade Notes*, *Deprecation*, *API Change*, *Feature*), Redis'
+  `00-RELEASENOTES`, HAProxy's changelog on haproxy.org (MAJOR/MEDIUM entries) and postgresql.org's
+  release notes. Owl collects them; Claude gets no web access.
+- **What Claude sees**: the component's name and repository, the two versions and those notes —
+  **never** cluster names, namespaces, workloads, tenants, stages, hosts or configs (tested).
+- **What a summary says**: a headline; breaking changes, migrations / manual steps, deprecations,
+  security fixes, notable features (at most 8 each, each tied to the release it comes from); the
+  upgrade path (direct, via intermediate versions, or not stated); and an **upgrade risk** (low /
+  medium / high, with a reason).
+- **Upgrade risk is not priority.** It's Claude's estimate of how risky or laborious the upgrade itself
+  is. The priority level stays rule-based and is never changed, sorted or filtered by it.
+- **Verify before acting.** Summaries are written from text published on the internet. Owl treats the
+  notes as untrusted (Claude is told to ignore instructions in them), validates the output, shows it as
+  plain text, and links each point to the release notes it came from.

@@ -141,6 +141,18 @@ curl -s -H "Authorization: Bearer $OWL_ADMIN_TOKEN" -H 'Content-Type: applicatio
   --data-binary @owl-20261117-030000.db.gz 127.0.0.1:8080/api/v1/restore
 ```
 
+## Claude upgrade summaries
+
+| Endpoint | |
+|---|---|
+| `GET /summaries` | Public. `{mode, enabled, paused, jumps: [{component, name, from, to, state, tokens, exact, maxCostMicros, sources: [{version, url}], error, summary?}]}`. `summary` has `headline`, `breakingChanges`, `migrations`, `deprecations`, `securityFixes`, `notableFeatures` (each `[{text, version}]`), `upgradePath {direct, via, reason}`, `risk {level, reason}`, `sources`, `model`, `promptVersion`, `createdAt`. States: `ready`, `off`, `collecting`, `no_notes`, `error`, `estimate`, `no_key`, `paused`, `too_large`, `failed`, `budget`, `available`, `queued`. |
+| `GET /summaries/status` 🔒 | `{settings, enabled, model, fallback, price, paused, spentTodayMicros, spentMonthMicros, spentTotalMicros, maxPerSummaryMicros, summaries, requests: [last 20]}` |
+| `PUT /summaries/settings` 🔒 | `{mode: off \| estimate \| manual \| auto, dailyCapMicros, monthlyCapMicros, maxInputTokens, maxOutputTokens}` — all required → status |
+| `POST /summaries/generate` 🔒 | `{component, from, to, force}` — writes one summary now (synchronous, up to a minute). `force` = "Generate anyway" above the input limit. `409` when nothing was sent (mode, paused, too large, budget, no notes); `503` without an API key; `502` when the request was made and failed. → same as `GET /summaries` |
+| `POST /summaries/resume` 🔒 | Clears a pause after repeated failures → status |
+
+Money is in micro-dollars (`1000000` = $1). Days and months for the caps are UTC.
+
 ## Audit log 🔒
 
 | Endpoint | |

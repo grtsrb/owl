@@ -11,6 +11,8 @@ what to upgrade first and why.
   with plain-language reasons ("CVE-2025-1974 (critical), fixed in 1.11.5").
 - It shows **drift between stages** ("newer in staging, not yet in prod"), keeps a **change history**,
   and backs itself up to S3.
+- Optionally, **Claude summarizes the release notes** of each upgrade you need — breaking changes,
+  migrations, security fixes — from public data only, within spending caps you set.
 
 *Named after Owl from Winnie-the-Pooh: the one who knows things — and is occasionally wrong, which is
 why Owl always shows its reasons.*
@@ -49,7 +51,7 @@ Design decisions and the roadmap live in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Pre-1.0, used internally. Milestones 1–7 are done (agent, server, catalog, upstream data, scoring,
-UI, cluster management, backups/logging/audit). Next: Claude-written upgrade summaries (8), then
-notifications, CLI reports, sign-in and packaging (9). **Until sign-in lands, don't expose the
+Pre-1.0, used internally. Milestones 1–8 are done (agent, server, catalog, upstream data, scoring,
+UI, cluster management, backups/logging/audit, Claude upgrade summaries — off by default, with spending
+caps). Next: notifications, CLI reports, sign-in and packaging (9). **Until sign-in lands, don't expose the
 server to the internet** — see [Security](docs/security.md).

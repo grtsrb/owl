@@ -2,7 +2,20 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
-## Unreleased
+## Milestone 8 — Claude upgrade summaries
+
+- Claude summarizes the upstream release notes of each upgrade a cluster needs (running version →
+  target): headline, breaking changes, migrations, deprecations, security fixes, notable features,
+  upgrade path and upgrade risk (Claude's estimate, never a priority level). Only public data is sent.
+- Release notes from GitHub releases, the Kubernetes CHANGELOG, Redis `00-RELEASENOTES`, HAProxy's
+  changelog (haproxy.org) and postgresql.org.
+- Cost protection: off by default; estimate-only mode; every request priced exactly before sending
+  and refused if its worst case exceeds the daily ($5) or monthly ($20) cap; per-request token limits;
+  pause after 3 failures; spending and request log in Settings → Summaries.
+- Component page card per upgrade; headline and upgrade risk in the side panel and Top actions.
+- nginx: GitHub release tags (`release-…`) are now understood.
+
+## Docs and fixes (2026-11-17)
 
 - **Fix**: the admin token now works everywhere in the UI. Backups & restore and Logs & audit always
   failed before, because one admin-only request was sent without the token. A pasted token is checked

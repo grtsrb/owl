@@ -31,7 +31,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
 |---|---|---|
 | Agent token (per cluster) | the cluster's `owl-agent` Secret | Random, shown once, stored as a SHA-256 hash. Revocations are permanent, even across restores. |
 | Admin token | server environment (`OWL_ADMIN_TOKEN`) | ≥ 24 characters, compared in constant time. Unset = writes disabled. In the browser: session storage of one tab only, sent only with admin requests, never in a URL. |
-| GitHub token | server environment | Needs **no scopes** (public data only). |
+| GitHub token | server environment | Needs **no scopes** (public data only). Sent only to `api.github.com`. |
+| Anthropic API key | server environment (`ANTHROPIC_API_KEY`) | Never in a flag, the UI, the database or logs. Put it in a dedicated Console workspace with a monthly spend limit, so a leak or a bug has a hard ceiling. |
 | S3 keys | server environment | Should not allow deleting (see [Operations](operations.md#with-s3-recommended)). |
 
 The admin token is an interim measure until sign-in: everyone who has it has full control. Keep it in
@@ -58,7 +59,8 @@ leaked.
 |---|---|
 | GitHub API, endoflife.date, OSV.dev | Public project names (e.g. `grafana/grafana`) — never cluster data. |
 | Your S3 bucket | Backups (contain the whole database: inventory, token hashes, audit log with IPs). Treat the bucket as sensitive. |
-| Claude API (milestone 8, optional) | Only public data: component name, version jump, upstream release notes. Never cluster names, namespaces, hosts, workloads, configs or tokens. |
+| Claude API (only when summaries are set to manual or automatic) | Only public data: component name and upstream repository, the two versions, upstream release notes. Never cluster names, namespaces, hosts, workloads, tenants, stages, configs or tokens (a test checks every request). |
+| GitHub (raw files), haproxy.org, postgresql.org | Release-note fetches for summaries: public URLs built from the component and its release lines only. |
 
 ## Reporting a problem
 

@@ -256,6 +256,9 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 		return
 	}
 	s.ApplyOpsSettings(ctx)
+	if s.Summaries != nil {
+		s.Summaries.Kick() // settings (mode, caps) and clusters came back from the backup
+	}
 	s.audit(r, "database restored", "from", from, "safetyBackup", safety)
 	writeJSON(w, http.StatusOK, map[string]string{"restored": from, "safetyBackup": safety})
 }

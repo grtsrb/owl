@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,9 @@ type Component struct {
 	ReleaseTagPrefix string      `json:"releaseTagPrefix,omitempty"`
 	OSV              *OSVPackage `json:"osv,omitempty"`
 	Notes            string      `json:"notes,omitempty"`
+	// ReleaseNotes names where upgrade summaries read release notes when the GitHub releases don't
+	// carry them (see ReleaseNoteSources). Empty = GitHub release bodies.
+	ReleaseNotes string `json:"releaseNotes,omitempty"`
 
 	refs []Ref // parsed Images, built once in Builtin()
 }
@@ -54,6 +58,9 @@ type Catalog struct {
 }
 
 // Builtin returns the embedded catalog.
+// ReleaseNoteSources are the valid values of Component.ReleaseNotes (implemented in internal/upstream).
+var ReleaseNoteSources = []string{"kubernetes-changelog", "redis-releasenotes", "haproxy-changelog", "postgres-release-notes"}
+
 func Builtin() (*Catalog, error) {
 	var c Catalog
 	if err := yaml.UnmarshalStrict(builtin, &c); err != nil {
@@ -66,6 +73,9 @@ func Builtin() (*Catalog, error) {
 			return nil, fmt.Errorf("builtin catalog: invalid or duplicate component %q", comp.ID)
 		}
 		seen[comp.ID] = true
+		if comp.ReleaseNotes != "" && !slices.Contains(ReleaseNoteSources, comp.ReleaseNotes) {
+			return nil, fmt.Errorf("builtin catalog: %s: unknown releaseNotes %q", comp.ID, comp.ReleaseNotes)
+		}
 		if comp.VersionParts == 0 {
 			comp.VersionParts = 3
 		}
