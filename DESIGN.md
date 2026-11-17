@@ -7,7 +7,7 @@ Tracks third-party components running in our Kubernetes clusters, shows what is 
 vulnerable / retired, and uses Claude to explain what an upgrade involves.
 
 Status: agreed design for v1 (2026-11-15; UI redesign, cluster management, backups, logging and audit
-agreed 2026-11-16; Claude summaries, sign-in and packaging 2026-11-17). Changes to decisions below should update this file.
+agreed 2026-11-16; Claude summaries, sign-in, packaging and notifications 2026-11-17). Changes to decisions below should update this file.
 
 ## Users & scope
 - Personal tool first, team-ready design. DevOps operates it; **IT** and **DS** are tenants (filter only).
@@ -203,17 +203,57 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   - **Changes**; **Settings** (policies, stages, tenants, clusters + agent install, catalog overrides, backups, audit
     log, users & sign-in, own account).
   - v2: trend charts (needs score history).
-- CLI (`owl scan`, `owl outdated`, …) over the HTTP API with **personal API tokens** per user (milestone 10),
+- CLI (`owl scan`, `owl outdated`, …) over the HTTP API with **personal API tokens** per user (milestone 12),
   so the audit log always names a person.
-- Notifications (milestone 10, agreed 2026-11-17):
-  - Mattermost via an **incoming webhook** (`OWL_MATTERMOST_WEBHOOK_URL`, env only, never shown or logged).
-  - **Weekly digest** (counts per level, top 5 actions with summaries, drift): on/off, day, time and time zone
-    in Settings (default Monday 09:00 Europe/Belgrade). Optional **digest by email**, opt-in per user.
-  - **Critical alert** once when a component on a cluster *newly* becomes Critical (no repeats while it
-    stays Critical): on/off in Settings. Mattermost only.
-  - Both start off until the webhook is set; "Send test message" in Settings.
-  - **Never spends on Claude**: only summaries already cached are included.
 - v2: MCP server to query the inventory from Claude.
+
+## Notifications (agreed 2026-11-17, milestone 10)
+- **Mattermost incoming webhook** from `OWL_MATTERMOST_WEBHOOK_URL` (env only; never shown in the UI, logged
+  or stored). `https://` required; `http://` only to a loopback host or the dev `owl-mattermost` container — otherwise the server
+  refuses to start. Posted as username **Owl**, no icon (needs a PNG at a public URL; later). The channel is
+  whatever the webhook is bound to.
+- Messages are Markdown **lists, not tables** (tables wrap badly in the mobile app), cut before Mattermost's
+  post limit with "…and N more" + link. Links use `OWL_PUBLIC_URL`; left out when it isn't set.
+- What leaves Owl: cluster, tenant, stage and component names, versions, levels, reasons, actions — to
+  *your* Mattermost (the "public data only" rule is about Claude). Documented for operators.
+- **Never spends on Claude**: only summaries already in the database are used, only in the digest's top 5.
+- Four kinds, each with its own switch, **all off by default** (and inert until the webhook is set):
+  1. **Weekly digest** (default Monday 09:00 Europe/Belgrade; day/time/time zone in Settings), one message:
+     components per level, **top 5 actions** (same order as the Overview: level → runs in the last stage →
+     clusters affected) with cached summary headlines, drift (pending promotions, anomalies), **Upgraded**
+     (version changes of the last 7 days from the change history: old → new, *current* level — past levels
+     aren't stored; rollbacks listed separately with ⚠; plus everything that **left Critical** that week),
+     and clusters whose agent hasn't reported for over 24 h. A section per tenant only when there's more than
+     one tenant. Lists capped at 10 lines + "…and N more". A missed digest (server down, Mac asleep) is sent
+     once when the server is back if < 24 h late, else skipped; the last send is stored, so never twice.
+     **Digest by email**: opt-in per user (Account page), plain text + simple HTML, no images or remote
+     content; needs SMTP (greyed out otherwise).
+  2. **Critical alert** when a (component, cluster) pair **newly** becomes Critical. Checked after every
+     agent push and every upstream refresh (a new advisory or a passed EOL date changes levels without any
+     cluster change), and only once upstream data has loaded (else everything upstream-based would look
+     resolved and then alert again). The Critical set is stored, so restarts never re-alert. All new pairs
+     of one check = **one message** (component, cluster, version, why, recommended action, link). No
+     "resolved" message (the digest's Upgraded section shows it); Critical again later = alert again.
+  3. **Unrecognized image alert** the first time *any* cluster runs an image repository Owl doesn't know
+     (not catalogued, no override, not an internal registry). One message per push, link to the cluster's
+     Unrecognized images card.
+  4. **New cluster connected** on a cluster's first push (`first_snapshot`; rotating a token isn't new,
+     delete + re-add is): one combined message instead of 2 + 3 for that push — stage, tenant, Kubernetes
+     version + EOL, components per level, every Critical (why + action), top 3 other actions, unrecognized
+     images marked "new to Owl" or "known from other clusters" (+ how they were handled), links.
+- **Quiet start**: switching 2 or 3 on records the current Critical set / known repositories without
+  posting. The state is tracked even while a switch is off, so it's always current.
+- **Delivery**: retry with backoff on network errors / 5xx / 429; then logged and shown as a warning in
+  Settings → Notifications. An alert is dropped after its retries (the digest covers it); a digest is retried
+  hourly inside the 24 h window.
+- State (Critical set, when pairs left Critical, known repositories, last digest) is **kept across restores**
+  like the audit log (an old backup must not cause a repeat digest or an alert storm). The switches and the
+  schedule are ordinary settings and are restored.
+- **Settings → Notifications** (admin): webhook configured yes/no (never the URL), the four switches, digest
+  day/time/time zone, **Send test message**, **Send digest now**, last sent / last error. Every change and
+  manual send is audit-logged.
+- Dev: a real Mattermost container (`make mattermost-up` / `mattermost-down`, outside `stack-up`; a script
+  creates team, channel and webhook). Tests use a fake webhook server.
 
 ## Sign-in (agreed 2026-11-17, milestone 9)
 - **Invite-only users**, roles **viewer** (reads everything) and **admin** (also changes everything, incl.
@@ -304,4 +344,9 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 7. **Backups, restore, logging, audit log**.
 8. **Claude summaries** (designed 2026-11-17, see "Claude").
 9. **Sign-in, packaging, logo** (designed 2026-11-17, see "Sign-in" and "Packaging").
-10. **Notifications and CLI**: Mattermost digest/alerts (+ digest email), CLI with personal API tokens.
+10. **Notifications** (designed 2026-11-17, see "Notifications"): Mattermost digest + alerts, digest email.
+11. **Catalog from the UI**: "New component" on the Unrecognized images card (GitHub repo, endoflife.date slug,
+   tag format), stored in the DB like overrides; repo suggested from the OCI `org.opencontainers.image.source`
+   label (public registries first) or the image name, always confirmed by a person; preview of upstream data
+   and of how the running tags parse before saving. To be grilled in detail before building.
+12. **CLI** with personal API tokens.

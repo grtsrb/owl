@@ -26,7 +26,13 @@ make seed            # re-apply seed workloads (dev/seed/seed.sh: per-cluster ve
 make stack-up        # build the image, run server + S3 test server + Mailpit in Docker, agents in every cluster
 make stack-down      # remove server, S3, Mailpit and agents (keeps the owl-data volume)
 make dev-down        # delete the clusters
+make mattermost-up   # optional: throwaway Mattermost (≈1 GB, amd64 image) with a webhook; then make stack-up
+make mattermost-down # remove it, its data and dev/.mattermost.env
 ```
+
+`make mattermost-up` runs `mattermost/mattermost-preview` as `owl-mattermost` on <http://127.0.0.1:8065>
+(sign in as `owladmin` / `Owl-dev-only-1234`, channel "Owl alerts"), creates an incoming webhook and
+writes its URL to `dev/.mattermost.env` (gitignored), which `make stack-up` passes to the server.
 
 `make stack-up`:
 - runs `owl-server` on `127.0.0.1:8080` with volume `owl-data`, `owl-s3` (adobe/s3mock — accepts
@@ -81,6 +87,7 @@ internal/report/         scoring (the only place levels are decided), actions, d
 internal/server/         HTTP API, admin, ops (backups/logs/audit endpoints)
 internal/backup/         backup manager, S3 remote
 internal/logfile/        rotating log file
+internal/notify/         Mattermost digest and alerts, digest email (state in notify_* tables)
 web/                     React + TypeScript UI (Vite), embedded via web/embed.go
 deploy/agent/agent.yaml  agent manifest (embedded; served at /api/v1/agent/manifest)
 dev/                     local stack and seed scripts

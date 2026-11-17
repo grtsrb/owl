@@ -245,7 +245,16 @@ func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader, from string) {
 	ctx := context.WithoutCancel(r.Context()) // don't abort half-way if the browser goes away
-	safety, err := s.Backups.Restore(ctx, body)
+	var safety string
+	run := func() (err error) { safety, err = s.Backups.Restore(ctx, body); return err }
+	var err error
+	if s.Notify != nil {
+		// No check may see the restored data before notifications have recorded it quietly (an old
+		// backup must not cause an alert storm): checks wait while the restore runs.
+		err = s.Notify.WhileQuiet(ctx, run)
+	} else {
+		err = run()
+	}
 	if err != nil {
 		s.Log.Error("restore failed", "from", from, "err", err)
 		code := http.StatusInternalServerError // disk, safety backup, transaction: the server's problem

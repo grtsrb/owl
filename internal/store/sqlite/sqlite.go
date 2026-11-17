@@ -143,6 +143,35 @@ var migrations = []string{
 		expires_at TEXT NOT NULL
 	);
 	CREATE INDEX idx_auth_tokens_user ON auth_tokens(user_id);`,
+	// Notifications (milestone 10). None of these tables is restored from a backup: an old backup must
+	// not make Owl repeat a digest or re-announce what it already posted. digest_email is the user's own
+	// opt-in (users aren't restored either).
+	`CREATE TABLE notify_critical (
+		component TEXT NOT NULL,
+		cluster   TEXT NOT NULL,
+		since     TEXT NOT NULL,
+		PRIMARY KEY (component, cluster)
+	);
+	CREATE TABLE notify_resolved (
+		id        INTEGER PRIMARY KEY,
+		component TEXT NOT NULL,
+		cluster   TEXT NOT NULL,
+		at        TEXT NOT NULL
+	);
+	CREATE INDEX idx_notify_resolved_at ON notify_resolved(at);
+	CREATE TABLE notify_clusters (
+		cluster_key  TEXT PRIMARY KEY,
+		announced_at TEXT NOT NULL
+	);
+	CREATE TABLE notify_repos (
+		repository TEXT PRIMARY KEY,
+		first_at   TEXT NOT NULL
+	);
+	CREATE TABLE notify_meta (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
+	ALTER TABLE users ADD COLUMN digest_email INTEGER NOT NULL DEFAULT 0;`,
 }
 
 type DB struct{ db *sql.DB }
@@ -577,8 +606,7 @@ func (d *DB) ListChanges(ctx context.Context, clusterName string, limit int) ([]
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	q := `SELECT ch.id, ch.cluster_id, c.name, ch.at, ch.type, ch.namespace, ch.kind, ch.workload, ch.container,
-		ch.old_value, ch.new_value FROM changes ch JOIN clusters c ON c.id=ch.cluster_id`
+	q := changeSelect
 	args := []any{}
 	if clusterName != "" {
 		q += " WHERE c.name=?"
@@ -586,6 +614,18 @@ func (d *DB) ListChanges(ctx context.Context, clusterName string, limit int) ([]
 	}
 	q += " ORDER BY ch.at DESC, ch.id DESC LIMIT ?"
 	args = append(args, limit)
+	return d.queryChanges(ctx, q, args...)
+}
+
+// ChangesSince has no row limit: a week of history, even a busy one, is what the digest reads.
+func (d *DB) ChangesSince(ctx context.Context, since time.Time) ([]store.Change, error) {
+	return d.queryChanges(ctx, changeSelect+" WHERE ch.at >= ? ORDER BY ch.at DESC, ch.id DESC", since.UTC().Format(ts))
+}
+
+const changeSelect = `SELECT ch.id, ch.cluster_id, c.name, ch.at, ch.type, ch.namespace, ch.kind, ch.workload, ch.container,
+		ch.old_value, ch.new_value FROM changes ch JOIN clusters c ON c.id=ch.cluster_id`
+
+func (d *DB) queryChanges(ctx context.Context, q string, args ...any) ([]store.Change, error) {
 	rows, err := d.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err

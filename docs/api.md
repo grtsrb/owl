@@ -63,7 +63,8 @@ All under `/api/v1/auth/` except the two Google redirects.
 | `GET /auth/config` | Public. `{password, google, forgot}`: which sign-in methods the login page offers. |
 | `POST /auth/login` | Public. `{email, password}` → `200 me` and the session cookie. `401 "Wrong email or password."` for any failure; `403` when password sign-in is off; `429` after 10 failures per account from one IP / 30 per IP in 15 minutes. |
 | `POST /auth/logout` | Ends the session. |
-| `GET /auth/me` | `{email, role, hasPassword, hasGoogle}` |
+| `GET /auth/me` | `{email, role, hasPassword, hasGoogle, digestEmail, emailAvailable}` |
+| `PUT /auth/digest-email` | `{on}` — your own digest-by-email opt-in → `me`. `409` when turning it on without SMTP. |
 | `POST /auth/password` | `{current, new}` — change your password (signs out your other sessions). |
 | `POST /auth/token` | Public. `{token}` → `{email, kind: invite \| reset, password, google}` for an invite/reset page, without using the link. |
 | `POST /auth/accept` | Public. `{token, password}` → sets the password, uses up the link, `200 me` and the session cookie. |
@@ -190,6 +191,15 @@ curl -s -b owl.cookies -H 'Content-Type: application/gzip' \
 | `POST /summaries/resume` 🔒 | Clears a pause after repeated failures → status |
 
 Money is in micro-dollars (`1000000` = $1). Days and months for the caps are UTC.
+
+## Notifications 🔒
+
+| Endpoint | |
+|---|---|
+| `GET /notifications` | `{settings: {digest, critical, unrecognized, newCluster, digestDay, digestTime, digestTimeZone}, status: {webhookConfigured, mailConfigured, linksConfigured, lastSentAt?, lastSentKind?, lastErrorAt?, lastError?, lastDigest?, nextDigest?, emailRecipients, tracking}}`. Never the webhook URL. |
+| `PUT /notifications` | The `settings` object, all fields → same as `GET`. `digestDay` `monday`…`sunday`, `digestTime` `HH:MM`, `digestTimeZone` an IANA zone (`Europe/Belgrade`, `UTC`). |
+| `POST /notifications/test` | Posts a test message. `502` with the reason when Mattermost refuses or can't be reached. |
+| `POST /notifications/digest` | Posts this week's digest now (Mattermost only; doesn't count as the scheduled one). |
 
 ## Audit log 🔒
 

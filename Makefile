@@ -6,7 +6,7 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: ui ui-dev build test lint image image-push dev-up dev-down seed agent-print agent-deploy stack-up stack-down
+.PHONY: ui ui-dev build test lint image image-push dev-up dev-down seed agent-print agent-deploy stack-up stack-down mattermost-up mattermost-down
 
 ## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
 ui:
@@ -64,3 +64,11 @@ stack-up: image
 stack-down:
 	docker rm -f owl-server owl-s3 owl-mailpit
 	@for c in $(CLUSTERS); do kubectl --context k3d-$$c delete -f deploy/agent/agent.yaml --ignore-not-found >/dev/null; done
+
+## Throwaway Mattermost for testing notifications (≈1 GB, amd64 image). Writes dev/.mattermost.env; then `make stack-up`.
+mattermost-up:
+	dev/mattermost-up.sh
+
+mattermost-down:
+	docker rm -f -v owl-mattermost
+	rm -f dev/.mattermost.env

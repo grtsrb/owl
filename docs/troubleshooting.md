@@ -120,6 +120,19 @@ hidden for clusters not selected in the cluster picker.
 | "Paused" | 3 failed requests in a row. Fix the cause (key, model, Anthropic status), then **Resume**. |
 | "The output limit was reached" | Raise *Max output tokens* (thinking also counts as output). |
 
+## Notifications
+
+| You see | Meaning / fix |
+|---|---|
+| Server won't start: "OWL_MATTERMOST_WEBHOOK_URL: …" | The URL must be `https://…/hooks/<key>` (plain `http://` only to localhost). |
+| "OWL_MATTERMOST_WEBHOOK_URL is not set" in Settings → Notifications | Set it in the server's environment and restart. |
+| "Mattermost answered 400/403/404" | Wrong or deleted webhook, or incoming webhooks are disabled in Mattermost (System Console → Integrations). Not retried. |
+| "Mattermost not reachable" | Network/DNS/TLS between Owl and Mattermost; retried 3 times, then dropped (alerts) or retried hourly (digest). |
+| Posts show the webhook creator's name, not "Owl" | Mattermost → System Console → Integrations → *Enable integrations to override usernames*. |
+| No alert although something is Critical | Alerts fire when something *becomes* Critical. What was Critical when you switched alerts on is in the next digest, not an alert. |
+| No digest this week | It's sent at most 24 hours late; check the next-digest time and the last error in Settings → Notifications. |
+| Messages have no links | `OWL_PUBLIC_URL` isn't set. |
+
 ## Backups
 
 See the warnings table in [Operations → Backups](operations.md#warnings-in-settings--backups--restore).

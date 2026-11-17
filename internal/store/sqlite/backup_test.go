@@ -183,3 +183,37 @@ func TestRestoreKeepsSummariesAndSpend(t *testing.T) {
 		t.Errorf("a restore must not unpause summaries or change their caps: %v", s)
 	}
 }
+
+// Notification state isn't restored: an old backup must not make Owl repeat a digest or re-announce.
+// Settings (the switches) are.
+func TestRestoreKeepsNotifyState(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	_ = db.SetSetting(ctx, "notifyCritical", "")
+	bak := filepath.Join(t.TempDir(), "b.db")
+	if err := db.Backup(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.SetSetting(ctx, "notifyCritical", "on")
+	if err := db.ApplyNotifyDelta(ctx, store.NotifyDelta{AddCritical: []store.CriticalMark{{Component: "redis", Cluster: "a"}},
+		Clusters: []string{"a@x"}, Repos: []string{"r"}, Meta: map[string]string{"digestSlot": "2026-11-16T08:00:00Z"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApplyNotifyDelta(ctx, store.NotifyDelta{Resolved: []store.CriticalMark{{Component: "redis", Cluster: "a"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Restore(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	st, err := db.NotifyState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _ := db.ListResolved(ctx, time.Time{})
+	if !st.Clusters["a@x"] || !st.Repos["r"] || st.Meta["digestSlot"] == "" || len(res) != 1 {
+		t.Errorf("notify state lost in restore: %+v %+v", st, res)
+	}
+	if m, _ := db.GetSettings(ctx); m["notifyCritical"] != "" {
+		t.Error("settings should come from the backup")
+	}
+}

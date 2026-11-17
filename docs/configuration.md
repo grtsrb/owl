@@ -55,6 +55,15 @@ Without `OWL_SMTP_HOST`, nothing is emailed: admins copy invite and reset links 
 
 Email needs `OWL_PUBLIC_URL` (the links point there); the server refuses to start without it.
 
+### Mattermost notifications
+
+| Environment | Example | Meaning |
+|---|---|---|
+| `OWL_MATTERMOST_WEBHOOK_URL` | `https://mattermost.example.com/hooks/abc123…` | Incoming webhook for the digest and alerts ([setup](install.md#9-optional-mattermost-notifications)). A secret: environment only, never shown, logged or stored. Must be `https://` (plain `http://` only to localhost or the dev stack's `owl-mattermost`); the server refuses to start otherwise. Without it nothing is posted, but Owl keeps track, so switching notifications on later starts from the present. |
+
+Links in messages point to `OWL_PUBLIC_URL`; without it, messages have no links. The digest email uses
+the SMTP settings above.
+
 ### Backups to S3
 
 Backups go to a bucket when `OWL_BACKUP_S3_BUCKET` is set; otherwise they stay local (with a warning).
@@ -108,6 +117,9 @@ and `429`; if all fail, the next interval tries again. It never retries `4xx` (b
 | Summary mode: off / estimate / manual / automatic | Settings → Summaries | **off** |
 | Daily / monthly spending cap (UTC) | 〃 | $5 / $20 ($0.01–$1000; daily ≤ monthly) |
 | Max input / output tokens per summary | 〃 | 30,000 / 4,000 (2k–200k / 1k–16k) |
+| Weekly digest, Critical alert, unrecognized image alert, new cluster message | Settings → Notifications | all **off** |
+| Digest day, time, time zone | 〃 | Monday 09:00 Europe/Belgrade |
+| Digest by email (per user, for yourself) | Settings → Account | off |
 
 ## Data directory
 

@@ -10,16 +10,16 @@ import (
 	"owl/internal/store"
 )
 
-const userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at"
+const userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at, digest_email"
 
 // userColsU is userCols for a query that joins users as "u".
-const userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at"
+const userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at, u.digest_email"
 
 func scanUser(row interface{ Scan(...any) error }) (*store.User, error) {
 	var u store.User
 	var created string
 	var activated, lastLogin, disabled sql.NullString
-	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled, &u.DigestEmail); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}

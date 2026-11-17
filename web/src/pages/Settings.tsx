@@ -6,6 +6,7 @@ import { useAppData } from "../App";
 import { Icon } from "../icons";
 import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
 import { overrideText } from "./ClusterDetail";
+import NotificationsTab from "./SettingsNotifications";
 import SummariesTab from "./SettingsSummaries";
 import { AccountTab, UsersTab } from "./SettingsUsers";
 
@@ -13,7 +14,7 @@ type M = { ok: boolean; text: string } | null;
 
 const TABS: [string, string][] = [
   ["clusters", "Clusters"], ["stages", "Stages"], ["tenants", "Tenants"], ["policy", "Version policy"],
-  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["backups", "Backups & restore"], ["logs", "Logs & audit"],
+  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["notifications", "Notifications"], ["backups", "Backups & restore"], ["logs", "Logs & audit"],
   ["users", "Users"], ["account", "Account"],
 ];
 
@@ -37,6 +38,7 @@ export default function Settings() {
       {tab === "policy" && <PolicyTab />}
       {tab === "overrides" && <OverridesTab />}
       {tab === "summaries" && <SummariesTab />}
+      {tab === "notifications" && <NotificationsTab />}
       {tab === "backups" && <BackupsTab />}
       {tab === "logs" && <LogsTab />}
       {tab === "users" && <UsersTab />}
