@@ -93,6 +93,7 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .btn.danger { color: var(--critical-ink); border-color: color-mix(in srgb, var(--critical) 35%, var(--border)); }
 .btn.danger.solid { background: var(--critical); border-color: var(--critical); color: #fff; }
 .btn.small { padding: 3px 10px; min-height: 30px; font-size: 12.5px; }
+.select.small { min-height: 30px; padding: 3px 8px; font-size: 12.5px; }
 .link-btn { border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; padding: 6px 8px; border-radius: 6px; min-height: 32px; }
 .link-btn:hover { background: var(--accent-soft); }
 .input, .select { font: inherit; font-size: 13.5px; padding: 7px 10px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px;
@@ -227,6 +228,10 @@ a.cc2:hover { box-shadow: var(--shadow); }
 .ln.latest { background: var(--panel-2); }
 .ln-v { font-family: var(--mono); font-weight: 500; font-size: 13px; }
 .inst { border: 1px solid var(--border-2); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+/* Unrecognized image: name and where it runs, then one line of equal, compact actions (same in every row). */
+.inst.unrec { gap: 10px; }
+.unrec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.unrec-actions .select { width: 210px; flex: none; }
 .kv-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .kv-grid > div > span:first-child { display: block; font-size: 12px; color: var(--muted); }
 
