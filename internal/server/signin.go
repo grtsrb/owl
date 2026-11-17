@@ -109,8 +109,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// Failures are counted per IP (one source trying many accounts) and per account from that IP — not
 	// per account alone, which would let anyone lock a user out by failing on purpose. Guessing from
 	// many IPs is still bounded by argon2id's cost and the per-IP limit. A success clears the count.
+	// Attempts are counted before the (slow) password check, so parallel requests can't all slip past
+	// the limit; a successful sign-in takes its count back.
 	userKey := "login-user:" + email + "|" + ip
-	if !s.limits.allow("login-ip:"+ip, 30, 15*time.Minute, false) || !s.limits.allow(userKey, 10, 15*time.Minute, false) {
+	ipOK := s.limits.allow("login-ip:"+ip, 30, 15*time.Minute, true)
+	if !ipOK || !s.limits.allow(userKey, 10, 15*time.Minute, true) {
+		if ipOK {
+			s.limits.undo("login-ip:" + ip) // refused for the account: don't also spend the IP's budget
+		}
 		httpError(w, http.StatusTooManyRequests, "Too many failed sign-ins. Wait 15 minutes and try again.")
 		return
 	}
@@ -132,13 +138,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		ok = false
 	}
 	if !ok || u == nil || !u.Active() {
-		s.limits.allow("login-ip:"+ip, 30, 15*time.Minute, true)
-		s.limits.allow(userKey, 10, 15*time.Minute, true)
 		s.Log.Warn("sign-in failed", "user", email, "remote", ip, "req", requestID(r))
 		httpError(w, http.StatusUnauthorized, wrongLogin)
 		return
 	}
 	s.limits.reset(userKey)
+	s.limits.undo("login-ip:" + ip)
 	if err := s.startSession(w, r, u, "password"); err != nil {
 		s.fail(w, err)
 		return
@@ -178,7 +183,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := "password-user:" + sess.User.Email
-	if !s.limits.allow(key, 10, 15*time.Minute, false) {
+	if !s.limits.allow(key, 10, 15*time.Minute, true) { // counted up front, taken back on success
 		httpError(w, http.StatusTooManyRequests, "Too many attempts. Wait 15 minutes and try again.")
 		return
 	}
@@ -192,7 +197,6 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		s.limits.allow(key, 10, 15*time.Minute, true)
 		httpError(w, http.StatusForbidden, "The current password is wrong.")
 		return
 	}
@@ -201,6 +205,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.limits.reset(key)
 	if err := s.Store.SetPassword(r.Context(), sess.User.ID, hash, sess.TokenHash); err != nil {
 		s.fail(w, err)
 		return

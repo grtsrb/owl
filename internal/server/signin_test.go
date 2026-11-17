@@ -496,3 +496,44 @@ func TestSessionCookieFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestLimiter(t *testing.T) {
+	var l limiter
+	if !l.allow("k", 1, time.Minute, false) || len(l.m) != 0 {
+		t.Error("a check-only call must not create an entry")
+	}
+	if !l.allow("k", 1, time.Minute, true) || l.allow("k", 1, time.Minute, true) {
+		t.Error("max 1")
+	}
+	l.undo("k")
+	if !l.allow("k", 1, time.Minute, true) {
+		t.Error("undo gives the hit back")
+	}
+	// Parallel attempts can't all pass: check and count are one step.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	passed := 0
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.allow("p", 10, time.Minute, true) {
+				mu.Lock()
+				passed++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if passed != 10 {
+		t.Errorf("parallel: %d passed, want 10", passed)
+	}
+	// Full map: new keys still work (an arbitrary entry is evicted), so a flood can't lock everyone out.
+	l.m = map[string]*window{}
+	for i := 0; i < maxLimiterKeys; i++ {
+		l.m[strconv.Itoa(i)] = &window{until: time.Now().Add(time.Hour)}
+	}
+	if !l.allow("new", 1, time.Minute, true) || len(l.m) != maxLimiterKeys {
+		t.Errorf("full limiter: len %d", len(l.m))
+	}
+}

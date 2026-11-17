@@ -234,7 +234,8 @@ type limiter struct {
 	lastPrune time.Time
 }
 
-// maxLimiterKeys bounds memory under a flood of distinct keys; past it, new keys are refused.
+// maxLimiterKeys bounds memory under a flood of distinct keys; past it, a random entry is evicted
+// (refusing new keys instead would let a flood lock everyone out).
 const maxLimiterKeys = 100000
 
 type window struct {
@@ -243,7 +244,8 @@ type window struct {
 }
 
 // allow reports whether key has had fewer than max hits in its current window, and counts this one
-// when count is true.
+// when count is true (check and count are one step under the lock, so parallel requests can't all
+// pass the check). A check-only call never creates an entry.
 func (l *limiter) allow(key string, max int, per time.Duration, count bool) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -260,10 +262,16 @@ func (l *limiter) allow(key string, max int, per time.Duration, count bool) bool
 		}
 	}
 	w := l.m[key]
-	if w == nil && len(l.m) >= maxLimiterKeys {
-		return false // flooded: refuse rather than grow without bound
-	}
 	if w == nil || now.After(w.until) {
+		if !count {
+			return true
+		}
+		if w == nil && len(l.m) >= maxLimiterKeys {
+			for k := range l.m { // map order is random: evict one arbitrary entry
+				delete(l.m, k)
+				break
+			}
+		}
 		w = &window{until: now.Add(per)}
 		l.m[key] = w
 	}
@@ -279,5 +287,14 @@ func (l *limiter) allow(key string, max int, per time.Duration, count bool) bool
 func (l *limiter) reset(key string) {
 	l.mu.Lock()
 	delete(l.m, key)
+	l.mu.Unlock()
+}
+
+// undo takes back one hit (an attempt counted up front that turned out fine).
+func (l *limiter) undo(key string) {
+	l.mu.Lock()
+	if w := l.m[key]; w != nil && w.n > 0 {
+		w.n--
+	}
 	l.mu.Unlock()
 }
