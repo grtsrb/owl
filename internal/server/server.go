@@ -25,6 +25,7 @@ import (
 	"owl/internal/backup"
 	"owl/internal/catalog"
 	"owl/internal/inventory"
+	"owl/internal/notify"
 	"owl/internal/policy"
 	"owl/internal/snapshot"
 	"owl/internal/store"
@@ -60,8 +61,10 @@ type Server struct {
 	Backups *backup.Manager
 	// Summaries writes Claude upgrade summaries (nil = upstream checks disabled).
 	Summaries *summary.Manager
-	LogLevel  *slog.LevelVar
-	LogFile   interface{ SetRetentionDays(int) }
+	// Notify posts the digest and alerts (milestone 10); nil in tests that don't need it.
+	Notify   *notify.Notifier
+	LogLevel *slog.LevelVar
+	LogFile  interface{ SetRetentionDays(int) }
 
 	uiOnce  sync.Once
 	uiIndex []byte
@@ -106,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/settings", s.requireAdmin(s.putSettings))
 	s.opsRoutes(mux)
 	s.summaryRoutes(mux)
+	s.notifyRoutes(mux)
 	s.signinRoutes(mux)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, s.clientIP, securityHeaders(s.checkHost(s.authn(mux))))
@@ -260,6 +264,9 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		"changes", len(res.Changes), "first", res.First, "agent", snap.AgentVersion)
 	if s.Summaries != nil && (len(res.Changes) > 0 || res.First) {
 		s.Summaries.Kick() // running versions changed: the upgrades needed may have too
+	}
+	if len(res.Changes) > 0 || res.First {
+		s.kickNotify()
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"cluster": cluster.Name, "changes": len(res.Changes)})
 }
@@ -433,6 +440,7 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	if s.Summaries != nil {
 		s.Summaries.Kick() // new targets or releases: jumps and notes may have changed
 	}
+	s.kickNotify() // new advisories or a passed EOL date change levels without any cluster change
 }
 
 // RunUpstreamRefresher refreshes now and then every interval until ctx is done.
@@ -576,6 +584,7 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "policy set", "scope", scope, "policy", sp.Raw)
+	s.kickNotify()
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": sp.Raw})
 }
 
@@ -586,5 +595,6 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "policy removed", "scope", scope)
+	s.kickNotify()
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": "inherited"})
 }

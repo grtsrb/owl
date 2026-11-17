@@ -160,6 +160,8 @@ type User struct {
 	DisabledAt  *time.Time `json:"disabledAt,omitempty"`
 	HasPassword bool       `json:"hasPassword"`
 	HasGoogle   bool       `json:"hasGoogle"`
+	// DigestEmail: the user opted in to the weekly digest by email (milestone 10).
+	DigestEmail bool `json:"digestEmail"`
 	// PasswordHash (argon2id, PHC string) and GoogleSub never leave the server.
 	PasswordHash string `json:"-"`
 	GoogleSub    string `json:"-"`
@@ -236,6 +238,48 @@ type SummaryRequest struct {
 	Error        string    `json:"error,omitempty"`
 }
 
+// CriticalMark is a (component, cluster) pair that is currently Critical, as notifications last saw it.
+type CriticalMark struct {
+	Component string    `json:"component"`
+	Cluster   string    `json:"cluster"`
+	Since     time.Time `json:"since"`
+}
+
+// ResolvedMark is a pair that left Critical (for the digest's "no longer Critical").
+type ResolvedMark struct {
+	Component string    `json:"component"`
+	Cluster   string    `json:"cluster"`
+	At        time.Time `json:"at"`
+}
+
+// NotifyState is what notifications remember between checks (milestone 10). Clusters are keyed by
+// name + creation time, so deleting a cluster and adding it again under the same name is a new cluster.
+// It's kept across restores, like the audit log.
+type NotifyState struct {
+	Critical []CriticalMark
+	Clusters map[string]bool // ClusterKey(name, createdAt) of clusters already announced
+	Repos    map[string]bool // image repositories already known as unrecognized
+	Meta     map[string]string
+}
+
+func ClusterKey(name string, created time.Time) string {
+	return name + "@" + created.UTC().Format(time.RFC3339Nano)
+}
+
+// NotifyDelta is one check's changes to NotifyState, applied atomically. Resolved pairs are removed
+// from the Critical set and recorded as resolved (unless Quiet); Dropped pairs are removed silently
+// (their cluster is gone).
+type NotifyDelta struct {
+	AddCritical  []CriticalMark
+	Resolved     []CriticalMark
+	Dropped      []CriticalMark
+	Clusters     []string // keys to add
+	DropClusters []string
+	Repos        []string
+	Meta         map[string]string
+	At           time.Time
+}
+
 type IngestResult struct {
 	Changes []Change
 	First   bool
@@ -289,6 +333,8 @@ type Store interface {
 	Ingest(ctx context.Context, clusterID int64, snap *snapshot.Snapshot) (*IngestResult, error)
 	CurrentImages(ctx context.Context, clusterID int64) ([]ImageRow, error)
 	ListChanges(ctx context.Context, clusterName string, limit int) ([]Change, error)
+	// ChangesSince returns every cluster's changes at or after since, newest first (the weekly digest).
+	ChangesSince(ctx context.Context, since time.Time) ([]Change, error)
 	// AllChanges returns a cluster's full history, oldest first (for exports).
 	AllChanges(ctx context.Context, clusterID int64) ([]Change, error)
 
@@ -356,6 +402,16 @@ type Store interface {
 	CreateAuthToken(ctx context.Context, hash string, userID int64, kind AuthTokenKind, expires time.Time) error
 	PeekAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
 	ConsumeAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
+
+	// Notifications (milestone 10). Kept across restores. ListResolved returns pairs that left Critical
+	// at or after since, oldest first; PruneResolved deletes older ones. SetDigestEmail is the user's
+	// own opt-in for the digest by email.
+	NotifyState(ctx context.Context) (*NotifyState, error)
+	ApplyNotifyDelta(ctx context.Context, d NotifyDelta) error
+	SetNotifyMeta(ctx context.Context, key, value string) error
+	ListResolved(ctx context.Context, since time.Time) ([]ResolvedMark, error)
+	PruneResolved(ctx context.Context, before time.Time) error
+	SetDigestEmail(ctx context.Context, userID int64, on bool) error
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

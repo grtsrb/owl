@@ -72,6 +72,8 @@ type Report struct {
 	Unrecognized int `json:"unrecognized"`
 	// Stages in promotion order (user-defined), for ordering columns.
 	Stages []string `json:"stages"`
+	// Inventory the report was built from (for notifications; not part of the API).
+	Inventory *inventory.Inventory `json:"-"`
 }
 
 // Inputs are what Build needs; the server supplies them.
@@ -108,7 +110,7 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 		return nil, err
 	}
 	rep := &Report{GeneratedAt: in.Now, Policies: pols, Summary: map[Level]int{}, Stages: stageNames(stages),
-		Unpinned: len(inv.Unpinned), InHouse: len(inv.InHouse)}
+		Unpinned: len(inv.Unpinned), InHouse: len(inv.InHouse), Inventory: inv}
 	for _, u := range inv.Unrecognized {
 		rep.Unrecognized += len(u.Instances)
 	}

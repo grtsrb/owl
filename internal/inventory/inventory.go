@@ -68,42 +68,10 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 	if err != nil {
 		return nil, err
 	}
-	overrides := map[string]store.CatalogOverride{}
-	for _, o := range ovList {
-		overrides[o.Repository] = o
-	}
 	comps := map[string]*ComponentView{}
 	unknown := map[string]*Unrecognized{}
 	inv := &Inventory{Components: []ComponentView{}, Unpinned: []Instance{}, InHouse: []Instance{}, Ignored: []Instance{}}
-
-	// identify applies a catalog override, but only to images the catalog doesn't recognize itself:
-	// once the catalog learns an image, its own (verified) mapping wins.
-	identify := func(image string) (catalog.Identification, string) {
-		id := cat.Identify(image)
-		if id.Status != catalog.StatusUnrecognized {
-			return id, ""
-		}
-		o, ok := overrides[id.Ref.Name()]
-		if !ok {
-			return id, ""
-		}
-		switch o.Kind {
-		case store.OverrideMap:
-			if comp := cat.ByID(o.Component); comp != nil {
-				return cat.IdentifyAs(image, comp), string(o.Kind)
-			}
-		case store.OverrideInHouse:
-			id.Status, id.Reason = catalog.StatusInHouse, "marked in-house"
-			if v, ok := catalog.ParseVersion(id.Ref.Tag, ""); ok {
-				id.Version = &v
-			}
-			return id, string(o.Kind)
-		case store.OverrideIgnore:
-			id.Status, id.Reason = catalog.StatusIgnored, "ignored"
-			return id, string(o.Kind)
-		}
-		return id, ""
-	}
+	identify := Identifier(cat, ovList)
 
 	add := func(id catalog.Identification, override string, in Instance) {
 		in.Status, in.Reason, in.Override = string(id.Status), id.Reason, override
@@ -202,4 +170,40 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// Identifier identifies images like the inventory does: the catalog first, then a catalog override —
+// but only for images the catalog doesn't recognize itself (once the catalog learns an image, its own
+// verified mapping wins). The second result is the override kind applied, if any.
+func Identifier(cat *catalog.Catalog, ovList []store.CatalogOverride) func(image string) (catalog.Identification, string) {
+	overrides := map[string]store.CatalogOverride{}
+	for _, o := range ovList {
+		overrides[o.Repository] = o
+	}
+	return func(image string) (catalog.Identification, string) {
+		id := cat.Identify(image)
+		if id.Status != catalog.StatusUnrecognized {
+			return id, ""
+		}
+		o, ok := overrides[id.Ref.Name()]
+		if !ok {
+			return id, ""
+		}
+		switch o.Kind {
+		case store.OverrideMap:
+			if comp := cat.ByID(o.Component); comp != nil {
+				return cat.IdentifyAs(image, comp), string(o.Kind)
+			}
+		case store.OverrideInHouse:
+			id.Status, id.Reason = catalog.StatusInHouse, "marked in-house"
+			if v, ok := catalog.ParseVersion(id.Ref.Tag, ""); ok {
+				id.Version = &v
+			}
+			return id, string(o.Kind)
+		case store.OverrideIgnore:
+			id.Status, id.Reason = catalog.StatusIgnored, "ignored"
+			return id, string(o.Kind)
+		}
+		return id, ""
+	}
 }

@@ -2,6 +2,26 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 10 — Mattermost notifications
+
+- **Mattermost** via an incoming webhook (`OWL_MATTERMOST_WEBHOOK_URL`), four notifications, each off
+  until switched on in **Settings → Notifications**:
+  - **Weekly digest** (default Monday 09:00 Europe/Belgrade): levels, top 5 actions with existing
+    summary headlines, drift, what was **upgraded** or **rolled back** that week, what's **no longer
+    Critical**, clusters not reporting; a section per tenant. Missed digests are caught up within 24 h,
+    never sent twice.
+  - **Critical alert** when something newly becomes Critical — after agent reports *and* upstream
+    refreshes (new advisories, EOL dates). Once per occurrence, batched per check.
+  - **Unrecognized image** the first time any cluster runs an image Owl doesn't know.
+  - **New cluster connected**: one summary of a cluster's first report.
+- **Digest by email**, opt-in per user (Settings → Account); text + simple HTML.
+- Switching alerts on, restarts and restores never re-post what's already known. Nothing is ever sent
+  to Claude for a notification.
+- Dev: `make mattermost-up` / `mattermost-down` for a throwaway Mattermost.
+
+**Upgrading from milestone 9**: nothing required. To use it, create an incoming webhook in Mattermost,
+set `OWL_MATTERMOST_WEBHOOK_URL`, restart and switch notifications on.
+
 ## Milestone 9 — Sign-in, packaging, logo
 
 - **Sign-in replaces the admin token** (`OWL_ADMIN_TOKEN` is gone). Owl is invite-only: admins invite

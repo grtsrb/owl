@@ -95,7 +95,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
 |---|---|
 | GitHub API, endoflife.date, OSV.dev | Public project names (e.g. `grafana/grafana`) — never cluster data. |
 | Your S3 bucket | Backups (contain the whole database: inventory, token hashes, users without passwords, audit log with emails and IPs). Treat the bucket as sensitive. |
-| Your mail server | Invite, reset and test emails: the recipient's address, who invited them, the one-time link. |
+| Your mail server | Invite, reset and test emails: the recipient's address, who invited them, the one-time link. The weekly digest for users who opted in (same content as the Mattermost digest). |
+| Your Mattermost (only with `OWL_MATTERMOST_WEBHOOK_URL`) | Digest and alerts: cluster, tenant and stage names, component names, versions, levels, reasons, recommended actions, image repositories, links into Owl. Everyone in the channel sees them. Names are escaped, so nothing in a message can format itself or @-mention people. The webhook URL is a secret and never logged. |
 | Google (only with Google sign-in) | The browser is sent to Google to sign in; the server exchanges the one-time code for the account's ID token. |
 | Claude API (only when summaries are set to manual or automatic) | Only public data: component name and upstream repository, the two versions, upstream release notes. Never cluster names, namespaces, hosts, workloads, tenants, stages, configs or tokens (a test checks every request). |
 | GitHub (raw files), haproxy.org, postgresql.org | Release-note fetches for summaries: public URLs built from the component and its release lines only. |

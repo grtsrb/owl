@@ -3,7 +3,11 @@ package mail
 import (
 	"bufio"
 	"context"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net"
+	"net/mail"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +93,43 @@ func TestNoSilentDowngrade(t *testing.T) {
 	}
 	if <-gotMail {
 		t.Error("credentials or mail sent without TLS")
+	}
+}
+
+// The digest goes out as text + HTML; long HTML lines are wrapped by quoted-printable (SMTP's 998
+// byte limit) and decode back unchanged.
+func TestComposeHTML(t *testing.T) {
+	s := &SMTP{Config: Config{Host: "localhost", Port: 25, From: "Owl <owl@example.com>", TLS: TLSNone}}
+	long := "<p>" + strings.Repeat("ä", 2000) + "</p>"
+	raw, _, err := s.compose(Message{To: "a@example.com", Subject: "Digest", Body: "text part", HTML: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt, params, err := mime.ParseMediaType(m.Header.Get("Content-Type"))
+	if err != nil || mt != "multipart/alternative" {
+		t.Fatalf("content type %q %v", mt, err)
+	}
+	for _, line := range strings.Split(string(raw), "\r\n") {
+		if len(line) > 998 {
+			t.Fatalf("line of %d bytes", len(line))
+		}
+	}
+	mr := multipart.NewReader(m.Body, params["boundary"])
+	var parts []string
+	for {
+		p, err := mr.NextPart() // decodes quoted-printable
+		if err != nil {
+			break
+		}
+		b, _ := io.ReadAll(p)
+		parts = append(parts, p.Header.Get("Content-Type")+"|"+string(b))
+	}
+	if len(parts) != 2 || parts[0] != "text/plain; charset=utf-8|text part" ||
+		parts[1] != "text/html; charset=utf-8|"+long {
+		t.Errorf("parts: %q", parts)
 	}
 }

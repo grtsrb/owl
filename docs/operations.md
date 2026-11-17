@@ -173,6 +173,27 @@ Settings → Summaries shows spending today, this month and in total, and the la
 versions, tokens, cost, result). Mode and limit changes, generated and failed summaries and resumes are
 in the audit log.
 
+## Notifications
+
+What and when: [User guide → Notifications](user-guide.md#notifications). How it behaves:
+
+- **Checks** run after every agent report that changed something, every upstream refresh, and every
+  admin change that can change levels (policies, catalog overrides, clusters) — but only once upstream
+  data has loaded after a start, so a restart never looks like "everything resolved, then Critical again".
+- **State** — what's Critical, which clusters were announced, which image repositories are known, when the
+  last digest went out — is in the database and **kept across restores** (like the audit log). After a
+  restore, Owl records the restored state without posting anything. The switches and the schedule are
+  ordinary settings and come back with the backup.
+- **Delivery**: each message is tried 3 times (network errors, `429`, `5xx`; 2 s and 8 s apart). A failed
+  alert is dropped — the digest covers it — and shown in Settings → Notifications and the log. The
+  digest is retried hourly. A digest missed while the server was down is sent once when it's back, if
+  it's less than 24 hours late; otherwise that week is skipped. It's never sent twice.
+- **Digest email** goes to every active user who opted in (Settings → Account), once per digest; a
+  failing address is logged (without the address) and not retried, so nobody gets it twice.
+- Mattermost's "Enable integrations to override usernames" setting decides whether posts show as **Owl**
+  or as the webhook's creator.
+- **Never** spends on Claude: the digest only shows summaries that already exist.
+
 ## Bringing back one deleted cluster
 
 Deleting a cluster offers **Export cluster data** (JSON with its settings, current workloads and
@@ -248,3 +269,5 @@ backups but survives a restore unchanged.
 | Log rotation and cleanup | at day change or 50 MB |
 | Cleanup of temp files left by a crash during backup/restore | at startup |
 | Summaries: recompute upgrades, collect notes; in automatic mode write missing ones | after every upstream refresh, on settings changes, and hourly |
+| Notification check (Critical, unrecognized images, new clusters) | after agent reports with changes, upstream refreshes and admin changes |
+| Weekly digest | at the configured time (checked every minute; failed sends retried hourly for 24 h) |

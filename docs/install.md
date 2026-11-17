@@ -236,6 +236,17 @@ to be a Workspace admin to set this up, only access to a Google Cloud project:
 If Google sign-in ever breaks while passwords are off, `owl user reset-link <email>` on the server
 prints a link that sets a password and signs you in — see [Troubleshooting](troubleshooting.md#locked-out).
 
+## 9. Optional: Mattermost notifications
+
+1. In Mattermost: **Integrations → Incoming Webhooks → Add Incoming Webhook**, pick the channel (e.g.
+   `#owl`), save, copy the URL. Optionally let integrations override usernames (System Console →
+   Integrations) so posts show as "Owl".
+2. Put it in `OWL_MATTERMOST_WEBHOOK_URL` (environment only) and restart.
+3. **Settings → Notifications → Send test message**, then switch on the weekly digest and the alerts
+   you want. Everyone in the channel sees cluster and component names — pick the channel accordingly.
+
+Details: [Operations → Notifications](operations.md#notifications).
+
 ## Upgrading
 
 1. Take a backup (**Settings → Backups & restore → Back up now**).

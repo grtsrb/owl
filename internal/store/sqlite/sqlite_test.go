@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"owl/internal/snapshot"
 	"owl/internal/store"
@@ -188,5 +189,26 @@ func TestAllChangesOrder(t *testing.T) {
 	ch, _ := db.AllChanges(ctx, c.ID)
 	if len(ch) != 2 || ch[0].Type != store.ChangeClusterFirstIn || ch[1].Type != store.ChangeImageChanged {
 		t.Errorf("history: %+v", ch)
+	}
+}
+
+// The digest reads a whole week, not the newest N changes.
+func TestChangesSinceHasNoLimit(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	c, _ := db.CreateCluster(ctx, "a", store.StageLive, "IT")
+	for i := 0; i < 1200; i++ {
+		imgs := []snapshot.Workload{{Kind: "Deployment", Namespace: "n", Name: "w", DesiredReplicas: 1,
+			Containers: []snapshot.Container{{Name: "c", Image: fmt.Sprintf("redis:7.2.%d", i)}}}}
+		if _, err := db.Ingest(ctx, c.ID, &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Workloads: imgs}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := db.ChangesSince(ctx, time.Now().Add(-time.Hour))
+	if err != nil || len(all) != 1200 { // first snapshot + 1199 image changes
+		t.Fatalf("got %d, %v", len(all), err)
+	}
+	if none, _ := db.ChangesSince(ctx, time.Now().Add(time.Hour)); len(none) != 0 {
+		t.Fatalf("future: %d", len(none))
 	}
 }

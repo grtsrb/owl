@@ -7,3 +7,4 @@
 /web/dist/*
 !/web/dist/.keep
 *.tsbuildinfo
+dev/.mattermost.env

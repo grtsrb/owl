@@ -139,6 +139,7 @@ func (s *Server) updateCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "cluster edited", "cluster", c.Name, "stage", c.Stage, "tenant", c.Tenant)
+	s.kickNotify()
 	writeJSON(w, http.StatusOK, toClusterJSON(c))
 }
 
@@ -166,6 +167,7 @@ func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "cluster deleted", "cluster", name)
+	s.kickNotify()
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }
 
@@ -372,6 +374,7 @@ func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "catalog override set", "repository", o.Repository, "kind", o.Kind, "component", o.Component)
+	s.kickNotify()
 	s.listOverrides(w, r)
 }
 
@@ -382,6 +385,7 @@ func (s *Server) deleteOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "catalog override removed", "repository", repo)
+	s.kickNotify()
 	s.listOverrides(w, r)
 }
 

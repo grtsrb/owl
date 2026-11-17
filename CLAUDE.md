@@ -13,9 +13,9 @@ or operators can notice updates the matching page in the same branch (which page
 `docs/development.md`); each merged milestone adds a `docs/changelog.md` entry.
 
 ## Status
-Milestones 1–9 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
-redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging)
-done; next 10 (Mattermost notifications, CLI with API tokens). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Milestones 1–10 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
+redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging,
+Mattermost notifications) done; next 11 (catalog from the UI — grill first), 12 (CLI with API tokens). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -33,6 +33,8 @@ make stack-up               # server + S3Mock + Mailpit (127.0.0.1:8025) in Dock
                             # first run prints the admin@owl.local invite link
 docker exec owl-server /owl cluster list         # registered clusters, last seen
 docker exec owl-server /owl user reset-link --email admin@owl.local   # lost the dev password
+make mattermost-up          # optional throwaway Mattermost + webhook (dev/.mattermost.env); then make stack-up
+make mattermost-down
 make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # amd64+arm64
 # API reads need a session: sign in once with curl and reuse the cookie jar
 curl -s -c /tmp/owl.jar -H 'Content-Type: application/json' -d '{"email":"admin@owl.local","password":"…"}' 127.0.0.1:8080/api/v1/auth/login
@@ -118,6 +120,17 @@ make dev-down
   versions) and notes — never cluster data (tested). Output is untrusted: `parseContent` validates and
   sanitizes; links come only from Owl's `upstream.Note.URL`. `summaries`/`summary_requests` are kept
   across restores (spend counters must not reset).
+- `internal/notify` — notifications (milestone 10). `Notifier.Check` diffs the report against stored state
+  (`notify_*` tables, **not restored** from backups): Critical pairs, announced clusters (key = name +
+  created_at), known unrecognized repos. First check ever / after a restore / before upstream loaded =
+  quiet (records, never posts). State is tracked even when switches are off. Content is built once as a
+  `Doc` and rendered to Mattermost Markdown / text / HTML; every span is escaped (Markdown, `@`-mentions,
+  HTML); links only from `OWL_PUBLIC_URL`. Digest: `Settings.LastSlot` in the configured zone
+  (`time/tzdata` embedded), sent if < 24 h late, never twice (slot stored), hourly retry; email per
+  opted-in user once. Never calls Claude (stored summary headlines only). Webhook URL: env only, errors
+  strip it (`*url.Error`). Tenant sections use `report.ComponentAction` on that tenant's instances.
+  Posts happen **outside** `Notifier.mu`; a restore runs inside `WhileQuiet` (checks wait, then a quiet
+  check). Pairs of a component whose upstream refresh had errors (`Incomplete`) are never resolved.
 - `internal/upstream/notes.go` — release notes per jump: GitHub bodies or `releaseNotes` sources
   (Kubernetes CHANGELOG sections, Redis/HAProxy per-branch files with pre-releases folded into x.y.0 and
   each version taken only from its own line's file, postgresql.org HTML). Which versions belong to a

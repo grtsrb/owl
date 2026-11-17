@@ -170,6 +170,30 @@ for exactly what happens.
 
 How the protection works: [Operations → Claude upgrade summaries](operations.md#claude-upgrade-summaries).
 
+### Notifications
+
+Admins switch on what Owl posts to Mattermost (needs `OWL_MATTERMOST_WEBHOOK_URL` on the server):
+
+- **Weekly digest** — one message per week: components per level, the top 5 actions (with the Claude
+  summary headline if one already exists), drift between stages, **Upgraded this week** (version
+  changes from the change history, with the level each component has *now*), **Rolled back** (⚠),
+  **No longer Critical**, and clusters that haven't reported for over 24 hours. With more than one
+  tenant there's a section per tenant. Day, time and time zone are set here.
+- **Critical alert** — when a component on a cluster *newly* becomes Critical (after an agent report or
+  an upstream refresh, e.g. a new advisory or an EOL date passing). Once: nothing more while it stays
+  Critical, nothing when it stops being Critical (the digest shows that), a new alert if it becomes
+  Critical again.
+- **Unrecognized image** — the first time any cluster runs an image Owl doesn't know, with a link to
+  the cluster's Unrecognized images card (map / in-house / ignore).
+- **New cluster connected** — on a cluster's first report: stage, tenant, Kubernetes version and EOL,
+  components per level, everything Critical, the next actions and its unrecognized images ("new to
+  Owl" or "also on …"). It replaces the two alerts above for that report.
+
+Several findings of one check go out as one message. Switching an alert on doesn't post what's already
+Critical or already known. **Send test message** checks the webhook; **Send digest now** posts this
+week's digest at once (Mattermost only; the scheduled one still goes out). The card shows the last
+message, the last error and when the next digest is due.
+
 ### Logs & audit
 
 - **Application logs** — log level (debug / info / warn / error) and how many days of log files to keep.
@@ -193,4 +217,5 @@ How the protection works: [Operations → Claude upgrade summaries](operations.m
 ### Account
 
 Your email, role and sign-in methods, **Sign out**, and **Change password** (signs out your other
-sessions).
+sessions). **Email me the weekly digest** — the digest by email, on the schedule an admin set in
+Settings → Notifications (needs email to be set up on the server).

@@ -245,6 +245,13 @@ export const api = {
   authSettings: () => request<AuthSettings>("GET", "/api/v1/auth/settings"),
   saveAuthSettings: (passwordLogin: boolean) => request<AuthSettings>("PUT", "/api/v1/auth/settings", { passwordLogin }),
   testMail: () => request<{ to: string }>("POST", "/api/v1/mail/test"),
+  setDigestEmail: (on: boolean) => request<Me>("PUT", "/api/v1/auth/digest-email", { on }),
+
+  // Notifications (milestone 10).
+  notifications: () => request<NotifyOverview>("GET", "/api/v1/notifications"),
+  saveNotifications: (s: NotifySettings) => request<NotifyOverview>("PUT", "/api/v1/notifications", s),
+  testNotification: () => request<{ sent: boolean }>("POST", "/api/v1/notifications/test", {}),
+  digestNow: () => request<{ sent: boolean }>("POST", "/api/v1/notifications/digest", {}),
   /** Fetches an admin-only file and saves it. */
   downloadBackup: async (name: string) => {
     const res = await fetch(`/api/v1/backups/${encodeURIComponent(name)}`);
@@ -262,12 +269,12 @@ async function rawPost<T>(path: string, body: BodyInit, contentType: string): Pr
 }
 
 export type Role = "admin" | "viewer";
-export interface Me { email: string; role: Role; hasPassword: boolean; hasGoogle: boolean }
+export interface Me { email: string; role: Role; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean; emailAvailable?: boolean }
 export interface AuthConfig { password: boolean; google: boolean; forgot: boolean }
 export interface TokenInfo { email: string; kind: "invite" | "reset"; password: boolean; google: boolean }
 export interface User {
   id: number; email: string; role: Role; createdAt: string; activatedAt?: string; lastLoginAt?: string;
-  disabledAt?: string; hasPassword: boolean; hasGoogle: boolean;
+  disabledAt?: string; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean;
 }
 export interface LinkResult { user: User; link: string; emailed: boolean; emailError?: string }
 export interface AuthSettings {
@@ -276,6 +283,18 @@ export interface AuthSettings {
   mail: { configured: boolean; host?: string; port?: number; from?: string; tls?: string };
   publicURL?: string;
 }
+
+export type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+export interface NotifySettings {
+  digest: boolean; critical: boolean; unrecognized: boolean; newCluster: boolean;
+  digestDay: Weekday; digestTime: string; digestTimeZone: string;
+}
+export interface NotifyStatus {
+  webhookConfigured: boolean; mailConfigured: boolean; linksConfigured: boolean;
+  lastSentAt?: string; lastSentKind?: string; lastErrorAt?: string; lastError?: string;
+  lastDigest?: string; nextDigest?: string; emailRecipients: number; tracking: boolean;
+}
+export interface NotifyOverview { settings: NotifySettings; status: NotifyStatus }
 
 /** A link from the server: absolute when Owl knows its public URL, else a path on this origin. */
 export function absoluteLink(link: string): string {

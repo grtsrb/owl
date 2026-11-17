@@ -69,12 +69,19 @@ type meJSON struct {
 	Role        store.Role `json:"role"`
 	HasPassword bool       `json:"hasPassword"`
 	HasGoogle   bool       `json:"hasGoogle"`
+	DigestEmail bool       `json:"digestEmail"`
+	// EmailAvailable: Owl can send email (only on /auth/me, for the Account page's digest switch).
+	EmailAvailable bool `json:"emailAvailable,omitempty"`
 }
 
-func toMe(u *store.User) meJSON { return meJSON{u.Email, u.Role, u.HasPassword, u.HasGoogle} }
+func toMe(u *store.User) meJSON {
+	return meJSON{Email: u.Email, Role: u.Role, HasPassword: u.HasPassword, HasGoogle: u.HasGoogle, DigestEmail: u.DigestEmail}
+}
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, toMe(&sessionFrom(r).User))
+	me := toMe(&sessionFrom(r).User)
+	me.EmailAvailable = s.Auth.Mail != nil
+	writeJSON(w, http.StatusOK, me)
 }
 
 // ValidEmail: a bare address (no display name), lowercase, at most 254 characters.

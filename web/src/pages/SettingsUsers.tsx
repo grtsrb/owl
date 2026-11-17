@@ -220,6 +220,7 @@ export function AccountTab() {
           <span className="muted">signs in with {[me.hasPassword && "password", me.hasGoogle && "Google"].filter(Boolean).join(" + ") || "—"}</span></div>
         <div className="row"><button className="btn" onClick={() => void signOut()}>Sign out</button></div>
       </Card>
+      <DigestEmailCard />
       {me.hasPassword && cfg.data?.password && (
         <Card title="Change password">
           <form className="stack" style={{ maxWidth: 420 }} onSubmit={async (e) => {
@@ -244,6 +245,30 @@ export function AccountTab() {
         </Card>
       )}
     </>
+  );
+}
+
+/** The user's own opt-in for the weekly digest by email (sent with the Mattermost digest's schedule).
+ *  It reads /auth/me itself: only that response says whether the server can send email. */
+function DigestEmailCard() {
+  const me = useApi(api.me);
+  const w = useWrite();
+  if (!me.data) return null;
+  const m = me.data;
+  return (
+    <Card title="Weekly digest by email">
+      <label className="row" style={{ alignItems: "flex-start", gap: 8 }}>
+        <input type="checkbox" checked={m.digestEmail} disabled={w.busy || (!m.emailAvailable && !m.digestEmail)}
+          onChange={async (e) => {
+            const updated = await w.run(() => api.setDigestEmail(e.target.checked), e.target.checked ? "You'll get the digest by email." : "Digest emails off.");
+            if (updated) { session.set(updated); me.reload(); }
+          }} />
+        <span><b>Email me the weekly digest</b> <span className="subtle">
+          Sent to {m.email} when the digest is due (an admin sets it up under Settings → Notifications).
+          {!m.emailAvailable && " Email isn't set up on this server."}</span></span>
+      </label>
+      <Msg msg={w.msg} />
+    </Card>
   );
 }
 

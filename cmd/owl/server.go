@@ -20,6 +20,7 @@ import (
 	"owl/internal/backup"
 	"owl/internal/catalog"
 	"owl/internal/logfile"
+	"owl/internal/notify"
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
@@ -128,6 +129,9 @@ func runServer(args []string) error {
 			return err
 		}
 	}
+	if err := setupNotify(app, db, cat, authCfg, log); err != nil {
+		return err
+	}
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           app.Handler(),
@@ -140,6 +144,7 @@ func runServer(args []string) error {
 	go app.RunUpstreamRefresher(ctx, 6*time.Hour)
 	go app.Backups.RunScheduler(ctx)
 	go app.RunMaintenance(ctx)
+	go app.Notify.Run(ctx)
 	if app.Summaries != nil {
 		go app.Summaries.RunScheduler(ctx)
 	}
@@ -331,5 +336,28 @@ func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, lo
 		log.Info("ANTHROPIC_API_KEY not set: Claude summaries can only run in estimate mode")
 	}
 	app.Summaries = m
+	return nil
+}
+
+// setupNotify configures notifications. The webhook URL is a secret (its path is the key): read from
+// the environment only, never logged, shown or stored. Without it, notifications still track state so
+// switching them on later starts from the present.
+func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authCfg server.AuthConfig, log *slog.Logger) error {
+	n := &notify.Notifier{Store: db, Catalog: cat, Report: app.BuildReport, Ready: app.UpstreamLoaded,
+		Incomplete: app.UpstreamIncomplete,
+		Mail:       authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log}
+	if raw := os.Getenv("OWL_MATTERMOST_WEBHOOK_URL"); raw != "" {
+		if err := notify.ValidateWebhookURL(raw); err != nil {
+			return fmt.Errorf("OWL_MATTERMOST_WEBHOOK_URL: %w", err)
+		}
+		n.Webhook = &notify.Webhook{URL: raw, Username: "Owl", HTTP: &http.Client{Timeout: 15 * time.Second}}
+		log.Info("Mattermost notifications available (switch them on in Settings → Notifications)")
+	} else {
+		log.Info("OWL_MATTERMOST_WEBHOOK_URL not set: no Mattermost notifications")
+	}
+	if authCfg.PublicURL == nil {
+		log.Info("OWL_PUBLIC_URL not set: notifications are sent without links")
+	}
+	app.Notify = n
 	return nil
 }

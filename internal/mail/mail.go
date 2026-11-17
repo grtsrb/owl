@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -115,11 +116,13 @@ func (c *Config) Status() Status {
 	return Status{Configured: true, Host: c.Host, Port: c.Port, From: c.From, TLS: c.TLS}
 }
 
-// Message is a plain-text email to one recipient.
+// Message is an email to one recipient: plain text, optionally with an HTML alternative (the digest).
+// HTML must be self-contained (no remote images or styles) — the caller builds it from escaped text.
 type Message struct {
 	To      string
 	Subject string
 	Body    string
+	HTML    string
 }
 
 // Sender sends messages; tests use a fake.
@@ -240,14 +243,39 @@ func (s *SMTP) compose(m Message) ([]byte, string, error) {
 	h("Date", time.Now().Format(time.RFC1123Z))
 	h("Message-ID", "<"+hex.EncodeToString(id[:])+"@"+helloName(s.From)+">")
 	h("MIME-Version", "1.0")
-	h("Content-Type", "text/plain; charset=utf-8")
-	h("Content-Transfer-Encoding", "8bit")
 	h("Auto-Submitted", "auto-generated")
-	b.WriteString("\r\n")
-	body := strings.ReplaceAll(strings.ReplaceAll(m.Body, "\r\n", "\n"), "\n", "\r\n")
-	b.WriteString(body)
-	if !strings.HasSuffix(body, "\r\n") {
+	if m.HTML == "" {
+		h("Content-Type", "text/plain; charset=utf-8")
+		h("Content-Transfer-Encoding", "quoted-printable")
 		b.WriteString("\r\n")
+		b.WriteString(qp(m.Body))
+		return []byte(b.String()), to.Address, nil
 	}
+	var bnd [12]byte
+	_, _ = rand.Read(bnd[:])
+	boundary := "owl-" + hex.EncodeToString(bnd[:])
+	h("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
+	b.WriteString("\r\n")
+	for _, part := range []struct{ ct, body string }{{"text/plain", m.Body}, {"text/html", m.HTML}} {
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + part.ct + "; charset=utf-8\r\n")
+		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+		b.WriteString(qp(part.body))
+	}
+	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String()), to.Address, nil
+}
+
+// qp encodes a body as quoted-printable with CRLF line ends: SMTP limits lines to 998 bytes and HTML
+// can easily be longer. (A lone "." line is handled by net/smtp's dot-stuffing in Data(), not here.)
+func qp(body string) string {
+	var out strings.Builder
+	w := quotedprintable.NewWriter(&out)
+	_, _ = w.Write([]byte(strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")))
+	_ = w.Close()
+	s := out.String()
+	if !strings.HasSuffix(s, "\r\n") {
+		s += "\r\n"
+	}
+	return s
 }
