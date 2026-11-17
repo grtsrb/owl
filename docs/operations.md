@@ -139,7 +139,7 @@ A ceiling Owl can't exceed even if it misbehaved:
 3. Use **prepaid credits with auto-reload off**, so the most that can ever be spent is what's left.
 4. Give the key to the server as `ANTHROPIC_API_KEY` (environment only) and restart.
 
-### Layer 2 — inside Owl (Settings → Summaries)
+### Layer 2 — inside Owl (Settings → Claude summaries)
 
 | Mode | What happens | Cost |
 |---|---|---|
@@ -163,13 +163,13 @@ automatically. One whose outcome is unknown (timeout, dropped connection) is boo
 so the caps never undercount.
 
 **Failures**: a failed upgrade (API error, refusal, invalid or truncated output) is retried at most once
-per UTC day. After **3 failed requests in a row** summaries pause — Settings → Summaries shows the last
+per UTC day. After **3 failed requests in a row** summaries pause — Settings → Claude summaries shows the last
 error and a **Resume** button.
 
 **Never rewritten automatically**: an existing summary stays as it is, also when the model changes;
 it shows which model wrote it and when. Admins can **Regenerate** one (cost shown, caps apply).
 
-Settings → Summaries shows spending today, this month and in total, and the last 20 requests (component,
+Settings → Claude summaries shows spending today, this month and in total, and the last 20 requests (component,
 versions, tokens, cost, result). Mode and limit changes, generated and failed summaries and resumes are
 in the audit log.
 
@@ -188,7 +188,7 @@ What and when: [User guide → Notifications](user-guide.md#notifications). How 
   alert is dropped — the digest covers it — and shown in Settings → Notifications and the log. The
   digest is retried hourly. A digest missed while the server was down is sent once when it's back, if
   it's less than 24 hours late; otherwise that week is skipped. It's never sent twice.
-- **Digest email** goes to every active user who opted in (Settings → Account), once per digest; a
+- **Digest email** goes to every active user who opted in (your name in the sidebar → Account), once per digest; a
   failing address is logged (without the address) and not retried, so nobody gets it twice.
 - Mattermost's "Enable integrations to override usernames" setting decides whether posts show as **Owl**
   or as the webhook's creator.

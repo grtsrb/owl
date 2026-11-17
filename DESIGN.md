@@ -75,7 +75,8 @@ cluster (each)                               server (Docker locally, later one E
 - `:latest` / digest-only / non-version tags → **⚠ unpinned** (Medium).
 - Unknown images → "unrecognized" list. Per image repository, across all clusters, the UI can map it to an
   existing component, mark it in-house, or ignore it — stored in the DB as catalog overrides over
-  `catalog.yaml`, listed with undo in Settings. New components (repo/EOL slug) stay in `catalog.yaml` (v2: UI).
+  `catalog.yaml`, listed with undo in Settings. New components can be added from the UI (milestone 11, see
+  "Catalog from the UI"); `catalog.yaml` stays the home of verified built-in ones.
 
 ## Versions & policy
 - Three targets per component: latest patch (current line), latest minor, latest major. Stable only.
@@ -206,6 +207,39 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 - CLI (`owl scan`, `owl outdated`, …) over the HTTP API with **personal API tokens** per user (milestone 12),
   so the audit log always names a person.
 - v2: MCP server to query the inventory from Claude.
+
+## Catalog from the UI (agreed 2026-11-17, milestone 11)
+- **New component** form, opened from a cluster's Unrecognized images card, Settings → Catalog, or the link in
+  the Mattermost unrecognized-image alert. Basic: name, id (derived, editable until saved, then fixed), image
+  repositories (pre-filled), GitHub repo, optional endoflife.date product. Advanced: version parts, tag prefix,
+  release tag prefix, and a **version-from-tag pattern** (regexp, ≤ 200 characters, at least one group;
+  the groups joined with "." are the version: `^(\d+\.\d+)_p(\d+)` reads `9.7_p1-r4-ls163` as 9.7.1;
+  Go's RE2 can't hang). OSV packages and special release-note sources stay built-in only (they need code).
+- **Suggestions** when the form opens (on demand only, never in the background): the image's
+  `org.opencontainers.image.source` label, read anonymously from public registries only (Docker Hub, ghcr.io,
+  quay.io, registry.k8s.io, public.ecr.aws), and endoflife.date products with a matching name. No GitHub
+  search (too fuzzy). Private registries get no suggestion. A person always confirms.
+- **Preview** before saving: release lines, latest stable, EOL dates, advisory source; how every tag of these
+  images running in the clusters is read; a **warning when GitHub and endoflife.date disagree** about the
+  latest version (likely different projects). Saving despite warnings is allowed; they're repeated on confirm.
+- Stored in the DB (`custom_components`), **restored from backups** (configuration, like overrides), admin
+  only, audit-logged. The server keeps the merged catalog (built-in + custom) behind an atomic pointer and
+  swaps it on every change; readers take one snapshot per request/check.
+- **Built-in wins**: a custom component with the id of a built-in, or claiming one of its images, is ignored
+  and marked "Replaced by built-in" (delete offered). Saving is refused while an image is already claimed by
+  another component (built-in or custom).
+- Every field except the id is editable. **Delete** makes its images unrecognized again and also removes its
+  version policy and the "map → it" overrides (listed in the confirmation). Custom components appear in the
+  Map dropdown.
+- After a save, that component's upstream data is fetched at once and notifications are kicked — something
+  Critical straight away sends the normal Critical alert.
+- **Claude summaries** for custom components send the GitHub `owner/repo` as the component name, never the
+  name typed in the UI (it could be internal); private repos can't be read with Owl's no-scope token anyway.
+- **Copy as catalog.yaml entry** for every custom component, so a good one can become built-in.
+- **Settings reorganised**: a left menu in three groups (dropdown on phones) — *Inventory*: Clusters, Stages &
+  tenants (one page), Catalog (components + overrides), Version policy; *Integrations*: Notifications, Claude
+  summaries; *System*: Users, Backups & restore, Logs & audit. **Account** moves to the user's name at the
+  bottom of the sidebar (Account, Sign out). Viewers don't see admin-only pages. Old links redirect.
 
 ## Notifications (agreed 2026-11-17, milestone 10)
 - **Mattermost incoming webhook** from `OWL_MATTERMOST_WEBHOOK_URL` (env only; never shown in the UI, logged
@@ -345,8 +379,5 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 8. **Claude summaries** (designed 2026-11-17, see "Claude").
 9. **Sign-in, packaging, logo** (designed 2026-11-17, see "Sign-in" and "Packaging").
 10. **Notifications** (designed 2026-11-17, see "Notifications"): Mattermost digest + alerts, digest email.
-11. **Catalog from the UI**: "New component" on the Unrecognized images card (GitHub repo, endoflife.date slug,
-   tag format), stored in the DB like overrides; repo suggested from the OCI `org.opencontainers.image.source`
-   label (public registries first) or the image name, always confirmed by a person; preview of upstream data
-   and of how the running tags parse before saving. To be grilled in detail before building.
+11. **Catalog from the UI and Settings reorganised** (designed 2026-11-17, see "Catalog from the UI").
 12. **CLI** with personal API tokens.

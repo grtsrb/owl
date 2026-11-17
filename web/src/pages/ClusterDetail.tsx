@@ -159,7 +159,7 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
   const components = (catalog.data?.components ?? []).filter((c) => c.source !== "cluster");
 
   return (
-    <Card title={`Unrecognized images (${open.length})`} actions={<span className="subtle">A choice applies to the image in every cluster. Undo it here or in Settings → Catalog overrides.</span>}>
+    <Card title={`Unrecognized images (${open.length})`} actions={<span className="subtle">A choice applies to the image in every cluster. Undo it here or in Settings → Catalog.</span>}>
       {!canWrite && <div className="callout info">Only admins can map, mark or ignore images.</div>}
       {open.length === 0 && <Empty>Every image in this cluster is recognized.</Empty>}
       {open.map((u) => {
@@ -175,6 +175,8 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
               </div>
             </div>
             <div className="row">
+              {canWrite && <Link className="btn small primary" to={`/settings/catalog?new=${encodeURIComponent(u.repository)}`}
+                title="Add it to Owl's catalog: GitHub repo, release data, version rules">New component</Link>}
               <label className="row small" style={{ gap: 6 }}>Map to
                 <select className="select" disabled={busy || !canWrite} value="" aria-label={`Map ${u.repository} to a component`}
                   onChange={(e) => e.target.value && run(() => api.setOverride({ repository: u.repository, kind: "map", component: e.target.value }), `Mapped ${u.repository}.`)}>

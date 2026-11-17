@@ -31,7 +31,7 @@ const (
 	ModeAuto     Mode = "auto"     // missing summaries are written in the background
 )
 
-// Settings keys (store.SetSetting; edited in Settings → Summaries).
+// Settings keys (store.SetSetting; edited in Settings → Claude summaries).
 const (
 	KeyMode       = "summaryMode"
 	KeyDailyCap   = "summaryDailyCapMicros"
@@ -123,13 +123,15 @@ type Notes interface {
 type Manager struct {
 	Store   store.Store
 	Catalog *catalog.Catalog
-	Notes   Notes                          // nil = upstream disabled: nothing to summarize
-	Infos   func(id string) *upstream.Info // current upstream info per component
-	Report  func(ctx context.Context) (*report.Report, error)
-	Claude  Claude // nil = no ANTHROPIC_API_KEY
-	Model   string
-	Log     *slog.Logger
-	Now     func() time.Time
+	// CatalogFn, when set, gives the current catalog (built-in + components added in the UI).
+	CatalogFn func() *catalog.Catalog
+	Notes     Notes                          // nil = upstream disabled: nothing to summarize
+	Infos     func(id string) *upstream.Info // current upstream info per component
+	Report    func(ctx context.Context) (*report.Report, error)
+	Claude    Claude // nil = no ANTHROPIC_API_KEY
+	Model     string
+	Log       *slog.Logger
+	Now       func() time.Time
 
 	mu     sync.Mutex
 	jumps  map[string]*jumpState
@@ -152,6 +154,13 @@ type jumpState struct {
 	lastErr   string
 	// collectedAt: when the notes were last read (re-read after notesMaxAge).
 	collectedAt time.Time
+}
+
+func (m *Manager) cat() *catalog.Catalog {
+	if m.CatalogFn != nil {
+		return m.CatalogFn()
+	}
+	return m.Catalog
 }
 
 func (m *Manager) now() time.Time {
@@ -303,7 +312,7 @@ func (m *Manager) collect(ctx context.Context, st *jumpState) {
 // upstream for their notes. Same line: every release after From up to To. Across lines: the first
 // release of each line after From's, and every release of To's line up to To.
 func (m *Manager) notesFor(ctx context.Context, j Jump) ([]upstream.Note, error) {
-	comp := m.Catalog.ByID(j.Component)
+	comp := m.cat().ByID(j.Component)
 	info := m.Infos(j.Component)
 	if comp == nil || info == nil {
 		return nil, fmt.Errorf("upstream data not loaded yet")
@@ -349,7 +358,7 @@ func (m *Manager) notesFor(ctx context.Context, j Jump) ([]upstream.Note, error)
 // Errors from Generate (the server maps them to statuses).
 var (
 	ErrUnknownJump  = errors.New("no such upgrade in the current report")
-	ErrNotAllowed   = errors.New("summaries are off or estimate-only — switch to manual or automatic in Settings → Summaries")
+	ErrNotAllowed   = errors.New("summaries are off or estimate-only — switch to manual or automatic in Settings → Claude summaries")
 	ErrNoKey        = errors.New("ANTHROPIC_API_KEY is not set on the server")
 	ErrPaused       = errors.New("summaries are paused after repeated failures — check the last error and click Resume")
 	ErrTooLarge     = errors.New("the release notes are larger than the input limit")
@@ -418,9 +427,18 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 	case !collected:
 		return ErrNotReady
 	}
-	comp := m.Catalog.ByID(st.Component)
+	comp := m.cat().ByID(st.Component)
+	if comp == nil {
+		return ErrNotReady // a custom component deleted since the jumps were computed
+	}
+	// A name typed in the UI could be internal: for custom components Claude only gets the public
+	// GitHub repository as the name.
+	name := comp.Name
+	if comp.Custom {
+		name = comp.GitHub
+	}
 	req := Request{Model: m.Model, Fallback: fallbacks[m.Model], System: systemPrompt,
-		User: userMessage(comp.Name, comp.GitHub, st.Jump, notes), MaxTokens: set.MaxOutputTokens, Schema: Schema()}
+		User: userMessage(name, comp.GitHub, st.Jump, notes), MaxTokens: set.MaxOutputTokens, Schema: Schema()}
 
 	in, err := m.Claude.CountTokens(ctx, req) // free
 	if err != nil {
@@ -673,7 +691,7 @@ func (m *Manager) List(ctx context.Context) (Overview, error) {
 		// The public view never carries raw API/store error text (admins see it in the request log).
 		v := JumpView{Jump: st.Jump, Name: st.name, Tokens: st.tokens, Exact: st.exact, Error: st.notesErr}
 		if st.lastErr != "" {
-			v.Error = "The last attempt failed — details in Settings → Summaries (admin)."
+			v.Error = "The last attempt failed — details in Settings → Claude summaries (admin)."
 		}
 		for _, n := range st.notes {
 			v.Sources = append(v.Sources, upstream.Note{Version: n.Version, URL: n.URL})
@@ -773,4 +791,24 @@ func ModelLabel(id string) string {
 	}
 	name := strings.ToUpper(parts[0][:1]) + parts[0][1:]
 	return "Claude " + name + " " + strings.Join(parts[1:], ".")
+}
+
+// Forget drops what's known in memory about a component's jumps (notes, failures): a custom component
+// was edited to point at another project, or deleted. Stored summaries are removed by the caller.
+func (m *Manager) Forget(component string) {
+	m.mu.Lock()
+	for k, st := range m.jumps {
+		if st.Component == component {
+			delete(m.jumps, k)
+		}
+	}
+	keep := m.order[:0]
+	for _, k := range m.order {
+		if _, ok := m.jumps[k]; ok {
+			keep = append(keep, k)
+		}
+	}
+	m.order = keep
+	m.mu.Unlock()
+	m.Kick()
 }

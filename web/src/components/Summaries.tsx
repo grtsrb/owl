@@ -59,13 +59,13 @@ function JumpCard({ j, onChanged }: { j: JumpView; onChanged: () => void }) {
   let body;
   switch (j.state) {
     case "ready": body = <Summary s={j.summary!} />; break;
-    case "off": body = <p className="subtle">Summaries are off. <Link to="/settings/summaries">Settings → Summaries</Link></p>; break;
+    case "off": body = <p className="subtle">Summaries are off. <Link to="/settings/summaries">Settings → Claude summaries</Link></p>; break;
     case "collecting": body = <p className="subtle">Collecting release notes…</p>; break;
     case "no_notes": body = <p className="subtle">No release notes available for this upgrade, so there's nothing to summarize.</p>; break;
     case "error": body = <div className="callout warn">Release notes couldn't be fetched: {j.error}</div>; break;
     case "estimate": body = <p className="subtle">Estimate only (nothing is sent): {tokens}, {cost}.</p>; break;
     case "no_key": body = <p className="subtle">ANTHROPIC_API_KEY is not set on the server.</p>; break;
-    case "paused": body = <div className="callout warn">Summaries are paused after repeated failures. <Link to="/settings/summaries">Settings → Summaries</Link></div>; break;
+    case "paused": body = <div className="callout warn">Summaries are paused after repeated failures. <Link to="/settings/summaries">Settings → Claude summaries</Link></div>; break;
     case "too_large": body = <div className="stack"><p className="subtle">Larger than the input limit: {tokens}. Not written automatically.</p>{button("Generate anyway", true)}</div>; break;
     case "failed": body = <div className="stack"><div className="callout warn">Failed today: {j.error}</div>{button("Try again")}</div>; break;
     case "budget": body = <p className="subtle">Waiting for budget: {cost} doesn't fit what's left of today's or this month's cap.</p>; break;

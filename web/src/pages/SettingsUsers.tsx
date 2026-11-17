@@ -257,7 +257,7 @@ function DigestEmailCard() {
   const m = me.data;
   return (
     <Card title="Weekly digest by email">
-      <label className="row" style={{ alignItems: "flex-start", gap: 8 }}>
+      <label className="check-row">
         <input type="checkbox" checked={m.digestEmail} disabled={w.busy || (!m.emailAvailable && !m.digestEmail)}
           onChange={async (e) => {
             const updated = await w.run(() => api.setDigestEmail(e.target.checked), e.target.checked ? "You'll get the digest by email." : "Digest emails off.");

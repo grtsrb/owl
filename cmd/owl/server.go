@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"owl/internal/catalog"
 	"owl/internal/logfile"
 	"owl/internal/notify"
+	"owl/internal/registry"
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
@@ -117,6 +119,9 @@ func runServer(args []string) error {
 		log.Warn("OWL_BACKUP_S3_BUCKET not set: backups are local only (same disk as the database)", "dir", bdir)
 	}
 	app.ApplyOpsSettings(context.Background())
+	if err := app.ReloadCatalog(context.Background()); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
 	logAuthSetup(log, db, authCfg)
 	if *noUpstream {
 		log.Warn("upstream checks disabled")
@@ -125,6 +130,8 @@ func runServer(args []string) error {
 			log.Warn("GITHUB_TOKEN not set: GitHub allows 60 requests/hour; upstream data will be incomplete")
 		}
 		app.Upstream = newUpstreamClient(db)
+		// Label lookups for "New component" suggestions: outbound like upstream, so off with --no-upstream.
+		app.Registry = &registry.Client{UserAgent: "owl/" + version}
 		if err := setupSummaries(app, db, cat, log); err != nil {
 			return err
 		}
@@ -269,9 +276,23 @@ func runUpstream(args []string) error {
 		return err
 	}
 	defer db.Close()
-	cat, err := catalog.Builtin()
+	builtin, err := catalog.Builtin()
 	if err != nil {
 		return err
+	}
+	cat := builtin
+	if rows, err := db.ListCustomComponents(context.Background()); err == nil { // components added in the UI
+		var comps []catalog.Component
+		for _, r := range rows {
+			var c catalog.Component
+			if json.Unmarshal(r.Data, &c) == nil {
+				c.ID = r.ID
+				if catalog.ValidateCustom(&c) == nil {
+					comps = append(comps, c)
+				}
+			}
+		}
+		cat, _ = catalog.Merge(builtin, comps)
 	}
 	if os.Getenv("GITHUB_TOKEN") == "" {
 		fmt.Fprintln(os.Stderr, "warning: GITHUB_TOKEN not set; GitHub allows only 60 requests/hour")
@@ -327,7 +348,7 @@ func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, lo
 		return fmt.Errorf("OWL_CLAUDE_MODEL %q: Owl has no price for this model, so it can't enforce the spending caps (known: %s)",
 			model, strings.Join(summary.KnownModels(), ", "))
 	}
-	m := &summary.Manager{Store: db, Catalog: cat, Notes: app.Upstream, Infos: app.UpstreamInfo,
+	m := &summary.Manager{Store: db, Catalog: cat, CatalogFn: app.CurrentCatalog, Notes: app.Upstream, Infos: app.UpstreamInfo,
 		Report: app.BuildReport, Model: model, Log: log}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		m.Claude = summary.NewClient(key)
@@ -343,7 +364,7 @@ func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, lo
 // the environment only, never logged, shown or stored. Without it, notifications still track state so
 // switching them on later starts from the present.
 func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authCfg server.AuthConfig, log *slog.Logger) error {
-	n := &notify.Notifier{Store: db, Catalog: cat, Report: app.BuildReport, Ready: app.UpstreamLoaded,
+	n := &notify.Notifier{Store: db, Catalog: cat, CatalogFn: app.CurrentCatalog, Report: app.BuildReport, Ready: app.UpstreamLoaded,
 		Incomplete: app.UpstreamIncomplete,
 		Mail:       authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log}
 	if raw := os.Getenv("OWL_MATTERMOST_WEBHOOK_URL"); raw != "" {

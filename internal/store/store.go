@@ -83,6 +83,21 @@ type CatalogOverride struct {
 	UpdatedAt  time.Time    `json:"updatedAt"`
 }
 
+// CustomComponent is a catalog component added in the UI (milestone 11). Data is the component as JSON,
+// validated by the catalog package; the store treats it as opaque.
+type CustomComponent struct {
+	ID        string    `json:"id"`
+	Data      []byte    `json:"-"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// CustomDeleted is what deleting a custom component removed along with it.
+type CustomDeleted struct {
+	Policy    bool     `json:"policy"`    // its version policy
+	Overrides []string `json:"overrides"` // repositories mapped to it
+}
+
 type Cluster struct {
 	ID                int64
 	Name              string
@@ -315,6 +330,18 @@ type Store interface {
 	SetOverride(ctx context.Context, o CatalogOverride) error
 	DeleteOverride(ctx context.Context, repository string) error
 
+	// Custom catalog components (restored with backups). CreateCustomComponent returns ErrExists for a
+	// taken id, UpdateCustomComponent ErrNotFound for a missing one. DeleteCustomComponent also removes
+	// the component's policy and the overrides mapping to it, atomically; DeleteImpact reports what that
+	// would remove without changing anything.
+	ListCustomComponents(ctx context.Context) ([]CustomComponent, error)
+	CreateCustomComponent(ctx context.Context, id string, data []byte) error
+	UpdateCustomComponent(ctx context.Context, id string, data []byte) error
+	// cascade=false deletes only the row: when a built-in component has taken over the id, the policy
+	// and overrides under that id are the built-in's now.
+	DeleteCustomComponent(ctx context.Context, id string, cascade bool) (*CustomDeleted, error)
+	CustomDeleteImpact(ctx context.Context, id string) (*CustomDeleted, error)
+
 	// Settings: small key/value pairs edited in the UI (agent image, server URL, ...).
 	GetSettings(ctx context.Context) (map[string]string, error)
 	SetSetting(ctx context.Context, key, value string) error
@@ -362,6 +389,8 @@ type Store interface {
 	// for them (the spending caps are computed from it).
 	ListSummaries(ctx context.Context) ([]Summary, error)
 	PutSummary(ctx context.Context, s Summary) error
+	// DeleteSummaries removes a component's summaries (a custom component now points at another project).
+	DeleteSummaries(ctx context.Context, component string) error
 	AddSummaryRequest(ctx context.Context, r SummaryRequest) error
 	// ListSummaryRequests returns the newest first.
 	ListSummaryRequests(ctx context.Context, limit int) ([]SummaryRequest, error)

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, useParams } from "react-router-dom";
+import { Link, Navigate, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { agentSecretYAML, api, ApiError, download, useIsAdmin, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
 import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
@@ -8,19 +8,31 @@ import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } fr
 import { overrideText } from "./ClusterDetail";
 import NotificationsTab from "./SettingsNotifications";
 import SummariesTab from "./SettingsSummaries";
-import { AccountTab, UsersTab } from "./SettingsUsers";
+import CatalogComponents from "./SettingsCatalog";
+import { UsersTab } from "./SettingsUsers";
 
 type M = { ok: boolean; text: string } | null;
 
-const TABS: [string, string][] = [
-  ["clusters", "Clusters"], ["stages", "Stages"], ["tenants", "Tenants"], ["policy", "Version policy"],
-  ["overrides", "Catalog overrides"], ["summaries", "Summaries"], ["notifications", "Notifications"], ["backups", "Backups & restore"], ["logs", "Logs & audit"],
-  ["users", "Users"], ["account", "Account"],
+type Section = { id: string; label: string; admin?: boolean };
+const GROUPS: { title: string; items: Section[] }[] = [
+  { title: "Inventory", items: [{ id: "clusters", label: "Clusters" }, { id: "stages", label: "Stages & tenants" },
+    { id: "catalog", label: "Catalog" }, { id: "policy", label: "Version policy" }] },
+  { title: "Integrations", items: [{ id: "notifications", label: "Notifications", admin: true }, { id: "summaries", label: "Claude summaries", admin: true }] },
+  { title: "System", items: [{ id: "users", label: "Users", admin: true }, { id: "backups", label: "Backups & restore", admin: true },
+    { id: "logs", label: "Logs & audit", admin: true }] },
 ];
+// Sections that moved (old links and bookmarks keep working).
+const MOVED: Record<string, string> = { tenants: "/settings/stages", overrides: "/settings/catalog", account: "/account" };
 
 export default function Settings() {
   const { tab = "clusters" } = useParams();
   const admin = useIsAdmin();
+  const navigate = useNavigate();
+  const { search } = useLocation();
+  if (MOVED[tab]) return <Navigate to={MOVED[tab] + search} replace />;
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => admin || !i.admin) })).filter((g) => g.items.length > 0);
+  const all = GROUPS.flatMap((g) => g.items);
+  const current = all.find((i) => i.id === tab);
   return (
     <>
       <div className="page-head">
@@ -29,26 +41,40 @@ export default function Settings() {
           <p className="muted">{admin ? "You're an admin: you can change everything here." : "You're a viewer: settings are read-only. Ask an admin to make changes."}</p>
         </div>
       </div>
-      <nav className="tabs" aria-label="Settings sections">
-        {TABS.map(([id, label]) => <NavLink key={id} to={`/settings/${id}`} className={({ isActive }) => `tab${isActive ? " active" : ""}`}>{label}</NavLink>)}
-      </nav>
-      {tab === "clusters" && <ClustersTab />}
-      {tab === "stages" && <StagesTab />}
-      {tab === "tenants" && <TenantsTab />}
-      {tab === "policy" && <PolicyTab />}
-      {tab === "overrides" && <OverridesTab />}
-      {tab === "summaries" && <SummariesTab />}
-      {tab === "notifications" && <NotificationsTab />}
-      {tab === "backups" && <BackupsTab />}
-      {tab === "logs" && <LogsTab />}
-      {tab === "users" && <UsersTab />}
-      {tab === "account" && <AccountTab />}
-      {!TABS.some(([id]) => id === tab) && <Empty>Unknown section.</Empty>}
+      <div className="settings">
+        <nav className="settings-nav" aria-label="Settings sections">
+          {groups.map((g) => (
+            <div key={g.title} role="group" aria-label={g.title}>
+              <div className="settings-group">{g.title}</div>
+              <div className="settings-items">
+                {g.items.map((i) => <NavLink key={i.id} to={`/settings/${i.id}`} className={({ isActive }) => `settings-link${isActive ? " active" : ""}`}>{i.label}</NavLink>)}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <select className="select settings-select" aria-label="Settings section" value={current?.id ?? ""} onChange={(e) => navigate(`/settings/${e.target.value}`)}>
+          {groups.map((g) => <optgroup key={g.title} label={g.title}>{g.items.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}</optgroup>)}
+        </select>
+        <div className="settings-body">
+          {!current ? <Empty>Unknown section.</Empty>
+            : current.admin && !admin ? <Empty>Only admins can see this section.</Empty>
+            : <>
+              {tab === "clusters" && <ClustersTab />}
+              {tab === "stages" && <><StagesTab /><TenantsTab /></>}
+              {tab === "catalog" && <><CatalogComponents /><OverridesTab /></>}
+              {tab === "policy" && <PolicyTab />}
+              {tab === "summaries" && <SummariesTab />}
+              {tab === "notifications" && <NotificationsTab />}
+              {tab === "backups" && <BackupsTab />}
+              {tab === "logs" && <LogsTab />}
+              {tab === "users" && <UsersTab />}
+            </>}
+        </div>
+      </div>
     </>
   );
 }
 
-/** Runs a write, reports the result, and tells the caller whether it worked. */
 export function useWrite() {
   const [msg, setMsg] = useState<M>(null);
   const [busy, setBusy] = useState(false);
@@ -229,7 +255,7 @@ function AddDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (cl
         </select>
       </label>
       {stage === NEW && (
-        <label className="field">New stage name (added last — reorder in Settings → Stages)
+        <label className="field">New stage name (added last — reorder in Settings → Stages & tenants)
           <input className="input" placeholder="e.g. dev" value={newStage} onChange={(e) => setNewStage(e.target.value.toLowerCase())} />
         </label>
       )}
@@ -271,7 +297,7 @@ function EditDialog({ c, onClose }: { c: Cluster; onClose: () => void }) {
           {(tenants.data ?? [{ name: c.tenant, clusters: 1 }]).map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
         </select>
       </label>
-      <p className="subtle" style={{ margin: 0 }}>The name can't be changed: history and exports refer to it. The agent's token stays valid. New tenants are added in Settings → Tenants.</p>
+      <p className="subtle" style={{ margin: 0 }}>The name can't be changed: history and exports refer to it. The agent's token stays valid. New tenants are added in Settings → Stages & tenants.</p>
       <Msg msg={w.msg} />
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" onClick={onClose}>Cancel</button>

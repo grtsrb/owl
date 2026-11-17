@@ -172,6 +172,14 @@ var migrations = []string{
 		value TEXT NOT NULL
 	);
 	ALTER TABLE users ADD COLUMN digest_email INTEGER NOT NULL DEFAULT 0;`,
+	// Components added in the UI (milestone 11). Restored with a backup (configuration, like overrides).
+	// data is the component as JSON (validated by the catalog package; opaque here).
+	`CREATE TABLE custom_components (
+		id         TEXT PRIMARY KEY,
+		data       TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 type DB struct{ db *sql.DB }

@@ -156,6 +156,19 @@ Policies: `lts-or-n-1`, `lts`, `latest`, `n-1`, `n-2` (any `n-<0..10>`), `pin:<v
 
 `repository` is `registry/path` without tag or digest, e.g. `harbor.example.com/proxy/redis`.
 
+## Catalog components (milestone 11)
+
+| Endpoint | |
+|---|---|
+| `GET /catalog` | The current catalog: built-in components plus the ones added in the UI (`custom: true`). |
+| `GET /catalog/custom` | `[{component, state: {id, active, replacedBy?, problem?}, createdAt, updatedAt}]` |
+| `POST /catalog/custom` 🔒 | `{component: {id, name, images, github, eol?, versionParts?, tagPrefix?, releaseTagPrefix?, versionPattern?}}` → `201` list. `409` when the id or an image is taken (built-in or added); `400` for invalid fields (`osv`, `releaseNotes`, `source`, `notes` can't be set). |
+| `PUT /catalog/custom/{id}` 🔒 | Same body (the id comes from the path) → list |
+| `GET /catalog/custom/{id}/impact` 🔒 | `{policy, overrides: [repository]}` — what a delete would also remove |
+| `DELETE /catalog/custom/{id}` 🔒 | Deletes it, its policy and the overrides mapped to it → `{removed, components}` |
+| `POST /catalog/preview` 🔒 | Same body as create; nothing is saved → `{upstream, githubLatest, eolLatest, tags: [{image, clusters, status, version?, reason?}], warnings, conflict?}` |
+| `GET /catalog/suggest?image=<repository>` 🔒 | `{image, name, id, github: [{repo, from: label \| same-name}], eol: [{slug, label}], labelSource?, labelError?}` |
+
 ## Settings 🔒
 
 | Endpoint | Body |

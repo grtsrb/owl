@@ -2,6 +2,20 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 11 — Catalog from the UI, Settings reorganised
+
+- **Add components from the UI**: **New component** on a cluster's unrecognized image, in Settings →
+  Catalog, or from the Mattermost alert. Owl suggests the GitHub repository (the image's source label on
+  public registries, or a repository with exactly the image's name) and endoflife.date products;
+  **Preview** shows release data, how every running tag is read, and warns when GitHub and
+  endoflife.date disagree. A **version pattern** reads tags like `9.7_p1-r4-ls163`.
+- Edit, delete (with its policy and mapped overrides, listed first), **Copy as YAML**; built-in
+  components always win. Restored with backups. Claude only ever gets their GitHub repository as name.
+- **Settings** now has a grouped menu (Inventory, Integrations, System; a dropdown on phones); Stages
+  and Tenants are one page; **Account** moved to your name in the sidebar; viewers no longer see
+  admin-only sections. Old links redirect.
+- The Critical alert's title counts components and clusters separately.
+
 ## Milestone 10 — Mattermost notifications
 
 - **Mattermost** via an incoming webhook (`OWL_MATTERMOST_WEBHOOK_URL`), four notifications, each off
@@ -14,7 +28,7 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
     refreshes (new advisories, EOL dates). Once per occurrence, batched per check.
   - **Unrecognized image** the first time any cluster runs an image Owl doesn't know.
   - **New cluster connected**: one summary of a cluster's first report.
-- **Digest by email**, opt-in per user (Settings → Account); text + simple HTML.
+- **Digest by email**, opt-in per user (your name in the sidebar → Account); text + simple HTML.
 - Switching alerts on, restarts and restores never re-post what's already known. Nothing is ever sent
   to Claude for a notification.
 - Dev: `make mattermost-up` / `mattermost-down` for a throwaway Mattermost.

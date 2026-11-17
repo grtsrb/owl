@@ -88,7 +88,26 @@ export interface StageInfo { name: string; position: number; clusters: number }
 export interface TenantInfo { name: string; clusters: number }
 export interface CatalogOverride { repository: string; kind: "map" | "inhouse" | "ignore"; component?: string; updatedAt: string }
 export interface ServerSettings { serverURL: string; agentImage: string }
-export interface CatalogComponent { id: string; name: string; source?: string }
+export interface CatalogComponent {
+  id: string; name: string; source?: string; images?: string[]; github?: string; eol?: string;
+  versionParts?: number; tagPrefix?: string; releaseTagPrefix?: string; versionPattern?: string; custom?: boolean;
+}
+/** A component as entered in the New component form (milestone 11). */
+export interface CustomInput {
+  id: string; name: string; images: string[]; github: string; eol?: string;
+  versionParts?: number; tagPrefix?: string; releaseTagPrefix?: string; versionPattern?: string;
+}
+export interface CustomState { id: string; active: boolean; replacedBy?: string; problem?: string }
+export interface CustomView { component: CatalogComponent; state: CustomState; createdAt: string; updatedAt: string }
+export interface CustomImpact { policy: boolean; overrides: string[] }
+export interface PreviewTag { image: string; clusters: string[]; status: string; version?: string; reason?: string }
+export interface Preview {
+  upstream?: UpstreamInfo; githubLatest?: string; eolLatest?: string; tags: PreviewTag[]; warnings: string[]; conflict?: string;
+}
+export interface Suggestion {
+  image: string; name: string; id: string; github: { repo: string; from: "label" | "same-name" }[];
+  eol: { slug: string; label: string; aliases?: string[] }[]; labelSource?: string; labelError?: string;
+}
 
 export interface OpsSettings {
   backupTime: string; backupLocalDays: number; backupLocalCopies: number;
@@ -202,6 +221,13 @@ export const api = {
   exportCluster: (name: string) => request<unknown>("GET", `/api/v1/clusters/${encodeURIComponent(name)}/export`),
 
   overrides: () => request<CatalogOverride[]>("GET", "/api/v1/catalog/overrides"),
+  customComponents: () => request<CustomView[]>("GET", "/api/v1/catalog/custom"),
+  createComponent: (c: CustomInput) => request<CustomView[]>("POST", "/api/v1/catalog/custom", { component: c }),
+  updateComponent: (c: CustomInput) => request<CustomView[]>("PUT", `/api/v1/catalog/custom/${encodeURIComponent(c.id)}`, { component: c }),
+  componentImpact: (id: string) => request<CustomImpact>("GET", `/api/v1/catalog/custom/${encodeURIComponent(id)}/impact`),
+  deleteComponent: (id: string) => request<{ removed: CustomImpact; components: CustomView[] }>("DELETE", `/api/v1/catalog/custom/${encodeURIComponent(id)}`),
+  previewComponent: (c: CustomInput) => request<Preview>("POST", "/api/v1/catalog/preview", { component: c }),
+  suggestComponent: (image: string) => request<Suggestion>("GET", `/api/v1/catalog/suggest?image=${encodeURIComponent(image)}`),
   setOverride: (o: { repository: string; kind: CatalogOverride["kind"]; component?: string }) =>
     request<CatalogOverride[]>("PUT", "/api/v1/catalog/overrides", o),
   deleteOverride: (repository: string) =>

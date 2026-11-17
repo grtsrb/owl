@@ -89,3 +89,8 @@ func (d *DB) SummarySpend(ctx context.Context, since time.Time) (int64, error) {
 		since.UTC().Format(ts)).Scan(&n)
 	return n, err
 }
+
+func (d *DB) DeleteSummaries(ctx context.Context, component string) error {
+	_, err := d.db.ExecContext(ctx, "DELETE FROM summaries WHERE component = ?", component)
+	return err
+}

@@ -19,8 +19,8 @@ you're signed in. The link works once, for 72 hours; ask for a new one if it exp
 
 Next time, sign in with your email and password, or with Google. **Forgot password?** on the sign-in
 page emails you a link (when the server can send email); otherwise ask an admin for a reset link.
-You stay signed in for up to 30 days (7 days without using Owl signs you out). **Sign out** is at the
-bottom of the sidebar and in Settings → Account.
+You stay signed in for up to 30 days (7 days without using Owl signs you out). Your name at the
+bottom of the sidebar leads to **Account** and **Sign out**.
 
 ## Layout
 
@@ -91,11 +91,12 @@ its page.
   action and the reasons. Flags (with tooltips and a legend): unpinned, scaled to 0, rollout in
   progress, mapped, in-house, in-house (marked), unrecognized, ignored. Filter by level, search, page.
 - **Unrecognized images** — images Owl doesn't know, per repository. Admins can:
+  - add it as a **New component** (see [Catalog](#catalog)) — for software Owl's catalog doesn't know,
   - **Map** to a component (e.g. your mirror `harbor.example.com/x/redis` → Redis),
   - mark **in-house** (listed, never scored),
   - **ignore** (hidden).
 
-  The decision applies to that repository in every cluster. Undo in Settings → Catalog overrides.
+  The decision applies to that repository in every cluster. Undo in Settings → Catalog.
 
 ## Changes
 
@@ -104,7 +105,10 @@ changes (old → new), Kubernetes version changes, and each cluster's first repo
 
 ## Settings
 
-Only admins can change anything here; viewers see the settings read-only.
+A menu on the left (a dropdown on phones) in three groups: **Inventory** (Clusters, Stages & tenants,
+Catalog, Version policy), **Integrations** (Notifications, Claude summaries) and **System** (Users,
+Backups & restore, Logs & audit). Only admins can change anything; viewers see Clusters, Stages &
+tenants, Catalog and Version policy read-only, and don't see the admin-only sections.
 
 ### Clusters
 
@@ -124,23 +128,40 @@ Only admins can change anything here; viewers see the settings read-only.
 - **Agent settings** — the agent image (e.g. `registry.example.com/team/owl:0.7.0`) and the server URL
   agents should use. Until set, generated files contain placeholders and a warning.
 
-### Stages
+### Stages & tenants
 
-Add, reorder (↑/↓) and delete stages. Order defines promotion direction for drift. A stage in use
-can't be deleted.
-
-### Tenants
-
-Add, rename (applies to every cluster of that tenant), delete when unused.
+- **Stages** — add, reorder (↑/↓) and delete. Order defines promotion direction for drift. A stage in
+  use can't be deleted.
+- **Tenants** — add, rename (applies to every cluster of that tenant), delete when unused.
 
 ### Version policy
 
 The global policy (default `lts-or-n-1`) and per-component overrides. See
 [policies](concepts.md#version-policies-and-targets).
 
-### Catalog overrides
+### Catalog
 
-Every map / in-house / ignore decision, with **Undo**.
+- **Your components** — software added to Owl's catalog from the UI, with **Edit**, **Delete** and
+  **Copy as YAML** (a `catalog.yaml` entry, to make it built-in). A component is *in effect*, or
+  *Replaced by built-in* when a newer Owl ships it itself (delete yours then).
+- **+ Add component** (or **New component** on a cluster's unrecognized image, or the link in the
+  Mattermost alert) opens the form:
+  - **Name**, **ID** (fixed once saved), **image repositories** (without tag), **GitHub repository**
+    (releases and advisories are read there), optional **endoflife.date product** — only if it's the
+    same project.
+  - Owl **suggests** the GitHub repository from the image's source label (public registries only) or
+    a GitHub repository with exactly the image's name, and endoflife.date products with a matching
+    name. Check them — they're suggestions.
+  - **Advanced**: version parts (tags with fewer are floating), tag prefix, GitHub release tag prefix,
+    and a **version pattern** for tags Owl can't read (a regular expression; its groups joined with dots
+    are the version — `^(\d+\.\d+)_p(\d+)` reads `9.7_p1-r4-ls163` as 9.7.1).
+  - **Preview** shows the release lines, latest stable, advisory source and how every running tag of
+    these images is read — plus warnings, e.g. when GitHub and endoflife.date disagree about the newest
+    release (probably different projects). You can save anyway; the button then says so.
+- Deleting a component makes its images unrecognized again and also removes its version policy and
+  any overrides mapped to it — the dialog lists them.
+- **Built-in components** — the list Owl ships with (read-only).
+- **Catalog overrides** — every map / in-house / ignore decision, with **Undo**.
 
 ### Backups & restore
 
@@ -214,7 +235,7 @@ message, the last error and when the next digest is due.
   it (everyone then signs in with Google); Google status and the redirect URI to register; email
   status and **Send me a test email**.
 
-### Account
+### Account (your name in the sidebar)
 
 Your email, role and sign-in methods, **Sign out**, and **Change password** (signs out your other
 sessions). **Email me the weekly digest** — the digest by email, on the schedule an admin set in

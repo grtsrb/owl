@@ -9,11 +9,11 @@ export const FLAG = {
   unpinned: { text: "unpinned", tone: "warn", title: "The tag (e.g. :latest or :16) doesn't say which version runs, so it can't be checked. Pin an exact version." },
   scaled0: { text: "scaled to 0", tone: "", title: "0 replicas: nothing runs right now, but the image is still deployed and would start if scaled up, so it's checked like any other." },
   rollout: { text: "rollout in progress", tone: "warn", title: "Pods run more than one image version: an update is half-way (or stuck)." },
-  mapped: { text: "mapped", tone: "info", title: "You mapped this image to a component (Settings → Catalog overrides)." },
+  mapped: { text: "mapped", tone: "info", title: "You mapped this image to a component (Settings → Catalog)." },
   inhouse: { text: "in-house", tone: "info", title: "From an internal registry: our own software. Listed for inventory, not checked against upstream." },
   inhouseMarked: { text: "in-house (marked)", tone: "info", title: "You marked this image as our own software. Listed, not checked against upstream." },
   unrecognized: { text: "unrecognized", tone: "warn", title: "Not in the catalog, so nothing is checked. Map it to a component, mark it in-house or ignore it (below)." },
-  ignored: { text: "ignored", tone: "", title: "You chose to ignore this image. Undo in Settings → Catalog overrides." },
+  ignored: { text: "ignored", tone: "", title: "You chose to ignore this image. Undo in Settings → Catalog." },
 } satisfies Record<string, Flag>;
 
 export interface WorkloadRow {

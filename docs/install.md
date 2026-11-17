@@ -133,8 +133,8 @@ you're signed in. Then:
 
 1. **Settings → Users → Invite user** for everyone else (viewer or admin). With email set up they get
    the link by email; otherwise copy it and send it yourself (e.g. on Mattermost).
-2. **Settings → Stages**: adjust the stage list and order (default `staging → prelive → live`).
-3. **Settings → Tenants**: add your tenants (e.g. `IT`, `DS`).
+2. **Settings → Stages & tenants**: adjust the stage list and order (default `staging → prelive → live`).
+3. On the same page, add your tenants (e.g. `IT`, `DS`).
 4. **Settings → Clusters → Agent settings**: set the **agent image** (as pushed above) and the
    **server URL** agents use (usually the same as `OWL_PUBLIC_URL`).
 5. Optional: **Settings → Version policy** — change the global default if `lts-or-n-1` doesn't fit.

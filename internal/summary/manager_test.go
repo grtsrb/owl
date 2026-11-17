@@ -474,3 +474,28 @@ func TestNotesAreReReadWhenOld(t *testing.T) {
 		t.Errorf("old notes are re-read (a release body may have been filled in): %d fetches", fn.calls)
 	}
 }
+
+// A component added in the UI has a typed name that could be internal: Claude only gets its public
+// GitHub repository as the name.
+func TestCustomComponentSendsOnlyTheRepo(t *testing.T) {
+	m, fc, _, _ := setup(t, ModeAuto)
+	custom := catalog.Component{ID: "billing", Name: "secret-internal-billing", Images: []string{"example.org/team/billing"}, GitHub: "acme/billing"}
+	if err := catalog.ValidateCustom(&custom); err != nil {
+		t.Fatal(err)
+	}
+	merged, _ := catalog.Merge(m.Catalog, []catalog.Component{custom})
+	m.CatalogFn = func() *catalog.Catalog { return merged }
+	rep := &report.Report{Components: []report.ComponentReport{{
+		ID: "billing", Name: "secret-internal-billing", Target: &policy.Target{Line: "1.2", Version: "1.2.2"},
+		Instances: []report.ScoredInstance{{Instance: inventory.Instance{Cluster: "c", Image: "example.org/team/billing:1.2.0", Version: "1.2.0", Status: "identified"}}},
+	}}}
+	m.Report = func(context.Context) (*report.Report, error) { return rep, nil }
+	m.cycle(context.Background())
+	if fc.sent() != 1 {
+		t.Fatalf("%d sent", fc.sent())
+	}
+	raw, _ := json.Marshal(fc.sends)
+	if strings.Contains(string(raw), "secret-internal-billing") || !strings.Contains(fc.sends[0].User, "acme/billing") {
+		t.Errorf("the typed name reached Claude, or the repo is missing:\n%s", fc.sends[0].User)
+	}
+}
