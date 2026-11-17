@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type BackupInfo, type Cluster, type OpsSettings, type ServerSettings } from "../api";
+import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
 import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
@@ -528,8 +528,7 @@ function BackupsTab() {
 
 function BackupsTabInner() {
   const ops = useApi(api.ops);
-  const canWrite = true;
-  const list = useApi<{ backups: BackupInfo[]; remoteError?: string }>(() => (canWrite ? api.backups() : Promise.resolve({ backups: [] })), [canWrite]);
+  const list = useApi(api.backups);
   const { reload: reloadData } = useAppData();
   const w = useWrite();
   const [confirm, setConfirm] = useState<{ what: string; run: () => Promise<{ safetyBackup: string }> } | null>(null);
@@ -549,7 +548,7 @@ function BackupsTabInner() {
 
   return (
     <>
-      <Card title="Backups" actions={<button className="btn primary" disabled={!canWrite || w.busy}
+      <Card title="Backups" actions={<button className="btn primary" disabled={w.busy}
         onClick={async () => { if (await w.run(() => api.backupNow(), "Backup taken.")) refresh(); }}>{w.busy ? "Working…" : "Back up now"}</button>}>
         {st.warnings.map((x) => <div key={x} className="callout warn"><Icon.warn /><span>{x}</span></div>)}
         <div className="kv-grid">
@@ -560,11 +559,10 @@ function BackupsTabInner() {
         <Msg msg={w.msg} />
       </Card>
 
-      <BackupSettings ops={ops.data.settings} s3={!!st.target} canWrite={canWrite} onSaved={ops.reload} />
+      <BackupSettings ops={ops.data.settings} s3={!!st.target} onSaved={ops.reload} />
 
       <Card title="Stored backups" actions={<span className="subtle">{st.target ? "Local copies and the bucket" : `Local folder ${st.dir}`}</span>}>
-        {!canWrite ? <div className="callout info"><Icon.info /><span>Set the admin token to list, download or restore backups.</span></div> :
-          list.error ? <ErrorBox error={list.error} retry={list.reload} /> : !list.data ? <Loading /> : (
+        {list.error ? <ErrorBox error={list.error} retry={list.reload} /> : !list.data ? <Loading /> : (
           <>
             {list.data.remoteError && <div className="callout warn"><Icon.warn /><span>Bucket listing failed: {list.data.remoteError}</span></div>}
             {list.data.backups.length === 0 ? <Empty>No backups yet. “Back up now” takes the first one.</Empty> : (
@@ -594,9 +592,9 @@ function BackupsTabInner() {
           </>
         )}
         <div className="row">
-          <FileButton label="Restore from file…" accept=".gz,.db" disabled={!canWrite || w.busy}
+          <FileButton label="Restore from file…" accept=".gz,.db" disabled={w.busy}
             onFile={(f) => setConfirm({ what: `file ${f.name}`, run: () => api.restoreUpload(f) })} />
-          <FileButton label="Import cluster export…" accept=".json,application/json" disabled={!canWrite || w.busy} onFile={importFile} />
+          <FileButton label="Import cluster export…" accept=".json,application/json" disabled={w.busy} onFile={importFile} />
         </div>
         <p className="subtle" style={{ margin: 0 }}>Import brings back one deleted cluster from its export (Delete → “Export cluster data”), with a new agent token.</p>
       </Card>
@@ -636,7 +634,7 @@ function RestoreDialog({ what, onClose, onConfirm }: { what: string; onClose: ()
   );
 }
 
-function BackupSettings({ ops, s3, canWrite, onSaved }: { ops: OpsSettings; s3: boolean; canWrite: boolean; onSaved: () => void }) {
+function BackupSettings({ ops, s3, onSaved }: { ops: OpsSettings; s3: boolean; onSaved: () => void }) {
   const [v, setV] = useState(ops);
   const w = useWrite();
   const dirty = JSON.stringify(v) !== JSON.stringify(ops);
@@ -655,7 +653,7 @@ function BackupSettings({ ops, s3, canWrite, onSaved }: { ops: OpsSettings; s3: 
           <div><span className="subtle" style={{ display: "block", margin: 0 }}>Bucket retention</span>{s3 ? "Set by a lifecycle rule on the bucket. The server never deletes there." : "No bucket configured."}</div>
         </div>
         <p className="subtle" style={{ margin: 0 }}>{s3 ? "A local copy is never deleted before it's in the bucket." : "The newest backup is always kept."}</p>
-        <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
+        <div className="row"><button className="btn primary" disabled={!dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
       </form>
     </Card>
   );
@@ -670,8 +668,7 @@ function LogsTab() {
 
 function LogsTabInner() {
   const ops = useApi(api.ops);
-  const canWrite = true;
-  const audit = useApi(() => (canWrite ? api.audit() : Promise.resolve([])), [canWrite]);
+  const audit = useApi(() => api.audit());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePageSize();
   if (ops.error) return <ErrorBox error={ops.error} retry={ops.reload} />;
@@ -679,10 +676,9 @@ function LogsTabInner() {
   const pg = paginate(audit.data ?? [], page, pageSize);
   return (
     <>
-      <LogSettings ops={ops.data.settings} logFile={ops.data.logFile} canWrite={canWrite} onSaved={ops.reload} />
+      <LogSettings ops={ops.data.settings} logFile={ops.data.logFile} onSaved={ops.reload} />
       <Card title="Audit log" actions={<span className="subtle">Every admin action: what, when, from where. Kept {ops.data.settings.auditRetentionDays} days.</span>}>
-        {!canWrite ? <div className="callout info"><Icon.info /><span>Set the admin token to read the audit log (it contains IP addresses).</span></div> :
-          audit.error ? <ErrorBox error={audit.error} retry={audit.reload} /> : !audit.data ? <Loading /> :
+        {audit.error ? <ErrorBox error={audit.error} retry={audit.reload} /> : !audit.data ? <Loading /> :
           audit.data.length === 0 ? <Empty>No admin actions recorded yet.</Empty> : (
           <>
             <div className="table-wrap">
@@ -707,7 +703,7 @@ function LogsTabInner() {
   );
 }
 
-function LogSettings({ ops, logFile, canWrite, onSaved }: { ops: OpsSettings; logFile: boolean; canWrite: boolean; onSaved: () => void }) {
+function LogSettings({ ops, logFile, onSaved }: { ops: OpsSettings; logFile: boolean; onSaved: () => void }) {
   const [v, setV] = useState(ops);
   const w = useWrite();
   const dirty = JSON.stringify(v) !== JSON.stringify(ops);
@@ -728,7 +724,7 @@ function LogSettings({ ops, logFile, canWrite, onSaved }: { ops: OpsSettings; lo
           </label>
         </div>
         <p className="subtle" style={{ margin: 0 }}>{logFile ? "JSON logs go to stderr and to logs/server.log next to the database: a new file every day (or at 50 MB), older files gzipped." : "Logs go to stderr only (no log directory configured)."} Tokens and Authorization headers are never logged.</p>
-        <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
+        <div className="row"><button className="btn primary" disabled={!dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
       </form>
     </Card>
   );

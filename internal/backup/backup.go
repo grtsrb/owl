@@ -484,6 +484,7 @@ func next(set Settings, now time.Time, ranDay string) time.Time {
 // RunScheduler takes the daily backup at the configured time (checked every minute, so a changed
 // time applies right away). A backup already taken today after that time counts.
 func (m *Manager) RunScheduler(ctx context.Context) {
+	m.cleanLeftovers()
 	if local, _ := m.local(); len(local) > 0 {
 		set, now := m.settings(ctx), m.now()
 		if !local[0].At.Before(scheduledAt(set, now)) {
@@ -498,6 +499,29 @@ func (m *Manager) RunScheduler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+	}
+}
+
+// cleanLeftovers removes temp files a crash during a backup or restore left behind (a raw restore
+// copy can be gigabytes) and upload markers whose backup is gone. Called once at startup, before
+// any backup or restore can run.
+func (m *Manager) cleanLeftovers() {
+	entries, err := os.ReadDir(m.Dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		n := e.Name()
+		stale := strings.HasPrefix(n, ".tmp-owl-") || strings.HasPrefix(n, ".restore-") ||
+			(ValidName(strings.TrimSuffix(n, ".tmp")) && strings.HasSuffix(n, ".tmp"))
+		if b, ok := strings.CutSuffix(strings.TrimPrefix(n, "."), ".uploaded"); ok && strings.HasPrefix(n, ".") && ValidName(b) {
+			_, err := os.Stat(filepath.Join(m.Dir, b))
+			stale = errors.Is(err, os.ErrNotExist)
+		}
+		if stale && !e.IsDir() {
+			_ = os.Remove(filepath.Join(m.Dir, n))
+			m.Log.Info("removed leftover backup file", "name", n)
 		}
 	}
 }

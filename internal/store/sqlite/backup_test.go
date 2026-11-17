@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -128,5 +129,30 @@ func TestRestoreKeepsLaterRevocations(t *testing.T) {
 	}
 	if _, err := db.GetCluster(ctx, "b"); err != nil {
 		t.Errorf("the cluster itself is restored (only its token stays dead): %v", err)
+	}
+}
+
+// A valid SQLite file that isn't an Owl database (or an empty one) must not be "migrated" into an
+// empty Owl schema and then restored over the real data.
+func TestRestoreRejectsForeignSQLite(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	_, _ = db.CreateCluster(ctx, "prod", store.StageLive, "IT")
+	for name, ddl := range map[string]string{"empty": "", "other app": "CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT)"} {
+		p := filepath.Join(t.TempDir(), "foreign.db")
+		other, err := sql.Open("sqlite", "file:"+p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := other.Exec("PRAGMA user_version = 0; " + ddl + ";"); err != nil {
+			t.Fatal(err)
+		}
+		other.Close()
+		if err := db.Restore(ctx, p); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("%s: want ErrInvalid, got %v", name, err)
+		}
+		if _, err := db.GetCluster(ctx, "prod"); err != nil {
+			t.Fatalf("%s: current data was replaced: %v", name, err)
+		}
 	}
 }

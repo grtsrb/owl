@@ -79,16 +79,16 @@ var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "c
 // Restore migrates a copy of the backup to the current schema (Open does that, and refuses a newer
 // schema), then replaces the restorable tables in one transaction.
 func (d *DB) Restore(ctx context.Context, path string) error {
+	// Check before migrating: Open would turn any SQLite file (user_version 0) into an empty Owl
+	// schema, and restoring that would wipe everything.
+	if err := checkOwlDB(ctx, path); err != nil {
+		return fmt.Errorf("%w: %v", store.ErrInvalid, err)
+	}
 	bak, err := Open(path) // migrates in place: callers pass a private temp copy
 	if err != nil {
 		return fmt.Errorf("%w: %v", store.ErrInvalid, err)
 	}
-	var n int
-	err = bak.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='clusters'").Scan(&n)
 	bak.Close()
-	if err != nil || n == 0 {
-		return fmt.Errorf("%w: not an Owl backup (no clusters table)", store.ErrInvalid)
-	}
 
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
@@ -130,6 +130,26 @@ func (d *DB) Restore(ctx context.Context, path string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// checkOwlDB opens path read-only, without migrating, and checks it was written by Owl.
+func checkOwlDB(ctx context.Context, path string) error {
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var v, n int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
+		return fmt.Errorf("not an SQLite database: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='clusters'").Scan(&n); err != nil {
+		return err
+	}
+	if v < 1 || n == 0 {
+		return fmt.Errorf("not an Owl backup (schema v%d, no clusters table)", v)
+	}
+	return nil
 }
 
 func (d *DB) ImportCluster(ctx context.Context, imp store.ClusterImport, hash, prefix string) (*store.Cluster, error) {

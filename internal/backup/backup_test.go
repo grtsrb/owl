@@ -191,3 +191,25 @@ func TestPendingUploadsRetried(t *testing.T) {
 		t.Errorf("status after successful retry: %+v", st)
 	}
 }
+
+func TestCleanLeftovers(t *testing.T) {
+	m, _, _ := setup(t, nil)
+	_ = os.MkdirAll(m.Dir, 0o750)
+	keep := []string{"owl-20261117-030000.db.gz", ".owl-20261117-030000.db.gz.uploaded", "notes.txt"}
+	gone := []string{".tmp-owl-20261117-040000.db", "owl-20261117-040000.db.gz.tmp", ".restore-123.db",
+		".restore-123.db-wal", ".owl-20261101-030000.db.gz.uploaded"}
+	for _, n := range append(append([]string{}, keep...), gone...) {
+		_ = os.WriteFile(filepath.Join(m.Dir, n), nil, 0o640)
+	}
+	m.cleanLeftovers()
+	for _, n := range keep {
+		if _, err := os.Stat(filepath.Join(m.Dir, n)); err != nil {
+			t.Errorf("%s must be kept: %v", n, err)
+		}
+	}
+	for _, n := range gone {
+		if _, err := os.Stat(filepath.Join(m.Dir, n)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s must be removed", n)
+		}
+	}
+}
