@@ -8,6 +8,10 @@ with upstream releases / EOL / advisories, scores upgrade priority, and uses Cla
 version jumps. **`DESIGN.md` is the source of truth for decisions** — read it before non-trivial work,
 and update it when a decision changes.
 
+**User/operator docs live in `README.md` + `docs/`** and describe what's on `main`. Every change users
+or operators can notice updates the matching page in the same branch (which page: table at the end of
+`docs/development.md`); each merged milestone adds a `docs/changelog.md` entry.
+
 ## Status
 Milestones 1–7 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
 redesign + cluster management, backups/restore/logging/audit) done; next 8 (Claude summaries). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
