@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 // Typed access to the server API. Shapes mirror the Go JSON types in internal/report, internal/inventory,
 // internal/upstream and internal/store.
 
@@ -171,7 +173,7 @@ export const api = {
   saveSettings: (s: ServerSettings) => request<ServerSettings>("PUT", "/api/v1/settings", s),
   agentManifestURL: "/api/v1/agent/manifest",
 
-  ops: () => request<Ops>("GET", "/api/v1/ops"),
+  ops: () => request<Ops>("GET", "/api/v1/ops", undefined, true), // admin-only read
   saveOps: (o: OpsSettings) => request<Ops>("PUT", "/api/v1/ops", o),
   backups: () => request<{ backups: BackupInfo[]; remoteError?: string }>("GET", "/api/v1/backups", undefined, true),
   backupNow: () => request<BackupInfo>("POST", "/api/v1/backups"),
@@ -203,10 +205,34 @@ async function rawPost<T>(path: string, body: BodyInit, contentType: string): Pr
 // The admin token lives only in this tab's sessionStorage (cleared when the tab closes) — never in
 // localStorage or a cookie. Interim until real sign-in.
 const KEY = "owl-admin-token";
+const tokenListeners = new Set<() => void>();
 export const adminToken = {
   get: (): string => { try { return sessionStorage.getItem(KEY) ?? ""; } catch { return ""; } },
-  set: (t: string) => { try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } },
+  set: (t: string) => {
+    try { t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY); } catch { /* storage blocked */ }
+    tokenListeners.forEach((f) => f()); // every component using useAdminToken re-renders
+  },
+  subscribe: (f: () => void) => { tokenListeners.add(f); return () => { tokenListeners.delete(f); }; },
 };
+
+/** The admin token, re-rendering the caller when it's set or forgotten anywhere in the app. */
+export function useAdminToken(): string {
+  return useSyncExternalStore(adminToken.subscribe, adminToken.get);
+}
+
+/** Cleans up what people paste: the whole `OWL_ADMIN_TOKEN=…` line from .env, quotes, "Bearer ". */
+export function normalizeToken(raw: string): string {
+  return raw.trim().replace(/^(export\s+)?OWL_ADMIN_TOKEN\s*=\s*/, "").replace(/^Bearer\s+/i, "").replace(/^(["'])(.*)\1$/, "$2").trim();
+}
+
+/** Checks a token against the server (an admin-only read) without storing it. */
+export async function verifyAdminToken(token: string): Promise<void> {
+  const res = await fetch("/api/v1/ops", { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } });
+  if (res.ok) return;
+  let msg = res.statusText;
+  try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not JSON */ }
+  throw new ApiError(res.status, res.status === 401 ? "The server rejected this token — check it matches OWL_ADMIN_TOKEN on the server." : msg);
+}
 
 /** Save text as a file (blob URL: no server round trip, so a token never travels in a URL). */
 export function download(filename: string, text: string, type = "application/yaml") {

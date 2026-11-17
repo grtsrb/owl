@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { adminToken, api, type Cluster, type StageInfo } from "./api";
+import { api, useAdminToken, type Cluster, type StageInfo } from "./api";
 import { Icon } from "./icons";
 import { orderClusters, useClusterSelection } from "./model";
 import { useApi } from "./ui";
@@ -54,7 +54,7 @@ export default function App() {
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
           <div className="side-foot">
-            <span>Admin token: {adminToken.get() ? "set for this tab" : "not set"}</span>
+            <AdminTokenState />
           </div>
         </nav>
         <div className="main">
@@ -109,4 +109,9 @@ function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
       <span className="topbar-r">{sel.selected.length} of {clusters.length} clusters</span>
     </div>
   );
+}
+
+function AdminTokenState() {
+  const token = useAdminToken();
+  return <span>Admin token: {token ? "set for this tab" : "not set"}</span>;
 }

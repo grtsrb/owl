@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, adminToken, writeErrorText, type ComponentReport, type Match } from "../api";
+import { api, useAdminToken, writeErrorText, type ComponentReport, type Match } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
 
 export default function ComponentPage() {
@@ -196,7 +196,7 @@ function PolicyEditor({ scope, current, inherited, presets, onSaved }: {
   const [value, setValue] = useState(current ?? "");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const hasToken = adminToken.get() !== "";
+  const hasToken = useAdminToken() !== "";
 
   async function run(fn: () => Promise<unknown>, ok: string): Promise<boolean> {
     setBusy(true); setMsg(null);

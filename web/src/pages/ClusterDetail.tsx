@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { adminToken, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
+import { useAdminToken, api, LEVELS, writeErrorText, type CatalogOverride, type Inventory, type Report } from "../api";
 import { useAppData } from "../App";
 import { paginate, usePageSize, useQueryState } from "../model";
 import { FLAG, unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } from "../clusterview";
@@ -143,7 +143,7 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
   const overrides = useApi(api.overrides);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const canWrite = adminToken.get() !== "";
+  const canWrite = useAdminToken() !== "";
   const open = unrecognizedIn(cluster, inv);
   // Repositories in this cluster that an override decided (mapped ones are scored, so they're in the report).
   const decidedRepos = new Set([...inv.inHouse, ...inv.ignored, ...report.components.flatMap((c) => c.instances)]

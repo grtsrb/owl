@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
-import { adminToken, agentSecretYAML, api, ApiError, download, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
+import { adminToken, agentSecretYAML, api, ApiError, download, normalizeToken, useAdminToken, verifyAdminToken, writeErrorText, type Cluster, type OpsSettings, type ServerSettings } from "../api";
 import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
@@ -16,7 +16,7 @@ const TABS: [string, string][] = [
 
 export default function Settings() {
   const { tab = "clusters" } = useParams();
-  const hasToken = adminToken.get() !== "";
+  const hasToken = useAdminToken() !== "";
   return (
     <>
       <div className="page-head">
@@ -90,7 +90,7 @@ function ClustersTab() {
   const settings = useApi(api.settings);
   const w = useWrite();
   const [dlg, setDlg] = useState<DialogState | null>(null);
-  const canWrite = adminToken.get() !== "";
+  const canWrite = useAdminToken() !== "";
 
   if (!clusters) return <Loading />;
   const close = () => { setDlg(null); reload(); };
@@ -355,7 +355,7 @@ function StagesTab() {
   const { stages, reload } = useAppData();
   const [name, setName] = useState("");
   const w = useWrite();
-  const canWrite = adminToken.get() !== "";
+  const canWrite = useAdminToken() !== "";
   if (!stages) return <Loading />;
   const names = stages.map((s) => s.name);
   const move = (i: number, d: number) => {
@@ -397,7 +397,7 @@ function TenantsTab() {
   const [editing, setEditing] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const w = useWrite();
-  const canWrite = adminToken.get() !== "";
+  const canWrite = useAdminToken() !== "";
   const done = () => { tenants.reload(); reload(); };
   if (tenants.error) return <ErrorBox error={tenants.error} retry={tenants.reload} />;
   if (!tenants.data) return <Loading />;
@@ -447,6 +447,7 @@ function PolicyTab() {
   const policies = useApi(api.policies);
   const [value, setValue] = useState<string | null>(null);
   const w = useWrite();
+  const hasToken = useAdminToken() !== "";
   if (policies.error) return <ErrorBox error={policies.error} retry={policies.reload} />;
   if (!policies.data) return <Loading />;
   const current = policies.data.global;
@@ -459,7 +460,7 @@ function PolicyTab() {
       }}>
         <input className="input mono" list="gpresets" value={v} onChange={(e) => setValue(e.target.value)} aria-label="Global policy" />
         <datalist id="gpresets">{policies.data.presets.filter((p) => !p.includes("<")).map((p) => <option key={p} value={p} />)}</datalist>
-        <button className="btn primary" disabled={!v || v === current || w.busy || !adminToken.get()}>Save</button>
+        <button className="btn primary" disabled={!v || v === current || w.busy || !hasToken}>Save</button>
       </form>
       <p className="subtle" style={{ margin: 0 }}><code>lts-or-n-1</code> (default): newest LTS line if the product has one, otherwise the previous release line. Per-component policies are set on the component page.</p>
       {Object.keys(policies.data.overrides).length > 0 && (
@@ -474,6 +475,7 @@ function OverridesTab() {
   const overrides = useApi(api.overrides);
   const catalog = useApi(api.catalog);
   const w = useWrite();
+  const hasToken = useAdminToken() !== "";
   if (overrides.error) return <ErrorBox error={overrides.error} retry={overrides.reload} />;
   if (!overrides.data) return <Loading />;
   return (
@@ -485,7 +487,7 @@ function OverridesTab() {
               <span className="mono grow" style={{ wordBreak: "break-all" }}>{o.repository}</span>
               <span className="tag tone-ok">{overrideText(o, catalog.data?.components ?? [])}</span>
               <span className="subtle" style={{ margin: 0 }}>{ago(o.updatedAt)}</span>
-              <button className="btn small" disabled={w.busy || !adminToken.get()}
+              <button className="btn small" disabled={w.busy || !hasToken}
                 onClick={() => w.run(() => api.deleteOverride(o.repository), `Undone: ${o.repository}.`).then((r) => r && overrides.reload())}>Undo</button>
             </div>
           ))}
@@ -498,16 +500,23 @@ function OverridesTab() {
 
 function TokenTab() {
   const [value, setValue] = useState("");
-  const [has, setHas] = useState(adminToken.get() !== "");
+  const has = useAdminToken() !== "";
+  const w = useWrite();
+  async function use() {
+    const t = normalizeToken(value);
+    if (await w.run(async () => { await verifyAdminToken(t); return true; })) { adminToken.set(t); setValue(""); }
+  }
   return (
     <Card title="Admin token">
-      <p className="subtle" style={{ margin: 0 }}>Needed for changes. Kept only in this browser tab (session storage) and sent only with write requests.</p>
+      <p className="subtle" style={{ margin: 0 }}>Needed for changes and for backups, logs and the audit log. Kept only in this browser tab
+        (session storage: a new tab or window asks again) and sent only with admin requests.</p>
       {has ? (
-        <div className="row"><Tag tone="ok">token set for this tab</Tag><button className="btn" onClick={() => { adminToken.set(""); setHas(false); }}>Forget</button></div>
+        <div className="row"><Tag tone="ok">token set for this tab</Tag><button className="btn" onClick={() => adminToken.set("")}>Forget</button></div>
       ) : (
-        <form className="row" onSubmit={(e) => { e.preventDefault(); adminToken.set(value.trim()); setValue(""); setHas(true); }}>
+        <form className="row" onSubmit={(e) => { e.preventDefault(); void use(); }}>
           <input className="input mono wide" type="password" autoComplete="off" placeholder="OWL_ADMIN_TOKEN" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Admin token" />
-          <button className="btn primary" disabled={!value.trim()}>Use</button>
+          <button className="btn primary" disabled={!normalizeToken(value) || w.busy}>{w.busy ? "Checking…" : "Use"}</button>
+          <Msg msg={w.msg} />
         </form>
       )}
     </Card>
@@ -521,7 +530,7 @@ function size(n: number) {
 }
 
 function BackupsTab() {
-  const canWrite = adminToken.get() !== "";
+  const canWrite = useAdminToken() !== "";
   if (!canWrite) return <Card title="Backups"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see and manage backups.</span></div></Card>;
   return <BackupsTabInner />;
 }
@@ -662,7 +671,7 @@ function BackupSettings({ ops, s3, onSaved }: { ops: OpsSettings; s3: boolean; o
 // ---------------- logs & audit ----------------
 
 function LogsTab() {
-  if (!adminToken.get()) return <Card title="Logs & audit"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see log settings and the audit log.</span></div></Card>;
+  if (!useAdminToken()) return <Card title="Logs & audit"><div className="callout info"><Icon.info /><span>Set the admin token (Settings → Admin token) to see log settings and the audit log.</span></div></Card>;
   return <LogsTabInner />;
 }
 
