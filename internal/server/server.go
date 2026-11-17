@@ -71,7 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("POST "+snapshot.IngestPath, s.ingest)
-	// Read API. NOTE: unauthenticated until admin auth lands (milestone 8) — bind to localhost or keep
+	// Read API. NOTE: unauthenticated until sign-in lands (milestone 9) — bind to localhost or keep
 	// behind a private network until then.
 	mux.HandleFunc("GET /api/v1/clusters", s.listClusters)
 	mux.HandleFunc("GET /api/v1/clusters/{name}/images", s.clusterImages)
@@ -567,7 +567,7 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("policy changed", "scope", scope, "policy", sp.Raw, "by", "admin-token", "remote", r.RemoteAddr)
+	s.audit(r, "policy set", "scope", scope, "policy", sp.Raw)
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": sp.Raw})
 }
 
@@ -577,7 +577,7 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("policy override removed", "scope", scope, "by", "admin-token", "remote", r.RemoteAddr)
+	s.audit(r, "policy removed", "scope", scope)
 	writeJSON(w, http.StatusOK, map[string]string{"scope": scope, "policy": "inherited"})
 }
 

@@ -58,7 +58,7 @@ make dev-down
   reference `stages`/`tenants` (rename cascades, delete in use fails).
 - `internal/server` — HTTP API. Ingest authenticates by SHA-256 token hash (`internal/auth`), enforces
   compressed/decompressed size limits (413) and `SchemaVersion`. Read endpoints are unauthenticated
-  until milestone 8 and only answer allowlisted `Host` headers (localhost + `OWL_ALLOWED_HOSTS`) to
+  until sign-in (milestone 9) and only answer allowlisted `Host` headers (localhost + `OWL_ALLOWED_HOSTS`) to
   block DNS rebinding — don't bind the server to a public interface before auth lands.
 - SQLite timestamps use a fixed-width layout so `ORDER BY` on the text column is chronological.
 - `internal/catalog` — `catalog.yaml` (embedded) maps image names → component → GitHub repo /

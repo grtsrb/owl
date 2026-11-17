@@ -488,6 +488,9 @@ func TestAuditAndLogHygiene(t *testing.T) {
 	}
 	agentToken := out["token"].(string)
 	push(t, srv.URL, agentToken, snap("v1.36.4+k3s1", nil))
+	if code, out := call(t, "PUT", srv.URL+"/api/v1/policies/grafana", `{"policy":"n-2"}`, true); code != 200 {
+		t.Fatal(code, out)
+	}
 	if code, _ := call(t, "GET", srv.URL+"/api/v1/audit", "", false); code != 401 {
 		t.Errorf("audit log needs the admin token: %d", code)
 	}
@@ -500,7 +503,8 @@ func TestAuditAndLogHygiene(t *testing.T) {
 	var entries []store.AuditEntry
 	_ = json.NewDecoder(resp.Body).Decode(&entries)
 	resp.Body.Close()
-	if len(entries) != 1 || entries[0].Action != "cluster added" || !strings.Contains(entries[0].Details, "cluster=c1") || entries[0].Remote == "" {
+	if len(entries) != 2 || entries[0].Action != "policy set" || entries[0].Details != "scope=grafana policy=n-2" ||
+		entries[1].Action != "cluster added" || !strings.Contains(entries[1].Details, "cluster=c1") || entries[1].Remote == "" {
 		t.Errorf("audit: %+v", entries)
 	}
 	if resp.Header.Get("X-Request-ID") == "" {

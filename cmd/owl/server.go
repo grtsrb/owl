@@ -112,7 +112,7 @@ func runServer(args []string) error {
 	}
 	app.ApplyOpsSettings(context.Background())
 	if app.AdminToken == "" {
-		log.Warn("OWL_ADMIN_TOKEN not set: write endpoints (policies) are disabled")
+		log.Warn("OWL_ADMIN_TOKEN not set: write endpoints (cluster management, settings, backups, policies) are disabled")
 	} else if len(app.AdminToken) < 24 {
 		return errors.New("OWL_ADMIN_TOKEN must be at least 24 characters")
 	}

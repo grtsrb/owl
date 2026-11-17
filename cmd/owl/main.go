@@ -76,7 +76,7 @@ func runAgent(args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg.UserAgent = "service-owl-agent/" + version
+	cfg.UserAgent = "owl-agent/" + version
 	cfg.QPS, cfg.Burst = 5, 10 // be gentle with the API server
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
