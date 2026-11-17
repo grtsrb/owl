@@ -12,7 +12,7 @@ export const FLAG = {
   mapped: { text: "mapped", tone: "info", title: "You mapped this image to a component (Settings → Catalog)." },
   inhouse: { text: "in-house", tone: "info", title: "From an internal registry: our own software. Listed for inventory, not checked against upstream." },
   inhouseMarked: { text: "in-house (marked)", tone: "info", title: "You marked this image as our own software. Listed, not checked against upstream." },
-  unrecognized: { text: "unrecognized", tone: "warn", title: "Not in the catalog, so nothing is checked. Map it to a component, mark it in-house or ignore it (below)." },
+  unrecognized: { text: "unrecognized", tone: "warn", title: "Not in the catalog, so nothing is checked. Add it as a new component, map it to an existing one, mark it in-house or ignore it (below)." },
   ignored: { text: "ignored", tone: "", title: "You chose to ignore this image. Undo in Settings → Catalog." },
 } satisfies Record<string, Flag>;
 

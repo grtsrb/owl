@@ -166,27 +166,30 @@ function UnrecognizedCard({ cluster, inv, report, onChanged }: { cluster: string
         const here = u.instances.filter((i) => i.cluster === cluster);
         const elsewhere = new Set(u.instances.filter((i) => i.cluster !== cluster).map((i) => i.cluster)).size;
         return (
-          <div key={u.repository} className="inst" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div key={u.repository} className="inst unrec">
             <div style={{ minWidth: 0 }}>
-              <div className="mono" style={{ fontWeight: 500 }}>{u.repository}</div>
+              <div className="mono" style={{ fontWeight: 500, wordBreak: "break-all" }}>{u.repository}</div>
               <div className="subtle">
                 {here.map((i) => `${i.namespace}/${i.workload} (${i.image.split(":").pop()})`).join(", ")}
                 {elsewhere > 0 && ` · also in ${elsewhere} other ${elsewhere === 1 ? "cluster" : "clusters"}`}
               </div>
             </div>
-            <div className="row">
-              {canWrite && <Link className="btn small primary" to={`/settings/catalog?new=${encodeURIComponent(u.repository)}`}
-                title="Add it to Owl's catalog: GitHub repo, release data, version rules">New component</Link>}
-              <label className="row small" style={{ gap: 6 }}>Map to
-                <select className="select" disabled={busy || !canWrite} value="" aria-label={`Map ${u.repository} to a component`}
+            {canWrite && (
+              <div className="unrec-actions">
+                <Link className="btn small" to={`/settings/catalog?new=${encodeURIComponent(u.repository)}`}
+                  title="Add it to Owl's catalog: GitHub repository, release data, version rules">+ New component</Link>
+                <select className="select small" disabled={busy} value="" aria-label={`Map ${u.repository} to an existing component`}
+                  title="Treat it as a component Owl already knows (e.g. your mirror of Redis)"
                   onChange={(e) => e.target.value && run(() => api.setOverride({ repository: u.repository, kind: "map", component: e.target.value }), `Mapped ${u.repository}.`)}>
-                  <option value="">component…</option>
+                  <option value="">Map to existing…</option>
                   {components.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-              </label>
-              <button className="btn small" disabled={busy || !canWrite} onClick={() => run(() => api.setOverride({ repository: u.repository, kind: "inhouse" }), `Marked ${u.repository} in-house.`)}>In-house</button>
-              <button className="btn small" disabled={busy || !canWrite} onClick={() => run(() => api.setOverride({ repository: u.repository, kind: "ignore" }), `Ignoring ${u.repository}.`)}>Ignore</button>
-            </div>
+                <button className="btn small" disabled={busy} title="Your own software: listed, never scored"
+                  onClick={() => run(() => api.setOverride({ repository: u.repository, kind: "inhouse" }), `Marked ${u.repository} in-house.`)}>In-house</button>
+                <button className="btn small" disabled={busy} title="Hide it from this list"
+                  onClick={() => run(() => api.setOverride({ repository: u.repository, kind: "ignore" }), `Ignoring ${u.repository}.`)}>Ignore</button>
+              </div>
+            )}
           </div>
         );
       })}
