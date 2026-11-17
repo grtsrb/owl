@@ -101,25 +101,26 @@ and `429`; if all fail, the next interval tries again. It never retries `4xx` (b
 
 | Setting | Where | Default |
 |---|---|---|
-| Stages and their order | Settings → Stages | `staging`, `prelive`, `live` |
-| Tenants | Settings → Tenants | — |
+| Stages and their order | Settings → Stages & tenants | `staging`, `prelive`, `live` |
+| Tenants | Settings → Stages & tenants | — |
 | Agent image, server URL (used in generated manifests) | Settings → Clusters → Agent settings | placeholders |
 | Users and their roles | Settings → Users | — (first admin: `owl user invite --admin`) |
 | Password sign-in on/off | Settings → Users | on |
 | Global and per-component version policy | Settings → Version policy | `lts-or-n-1` |
-| Catalog overrides (map / in-house / ignore) | Cluster page, Settings → Catalog overrides | — |
+| Components added to the catalog | Settings → Catalog, cluster page (New component) | — |
+| Catalog overrides (map / in-house / ignore) | Cluster page, Settings → Catalog | — |
 | Daily backup time (server local time) | Settings → Backups & restore | `03:00` |
 | Local backups to keep — without S3: days | 〃 | 15 days |
 | Local backups to keep — with S3: copies | 〃 | 3 copies |
 | Log level | Settings → Logs & audit | from `OWL_LOG_LEVEL` |
 | Log file retention | 〃 | 5 days (1–365) |
 | Audit log retention | 〃 | 365 days (1–3650) |
-| Summary mode: off / estimate / manual / automatic | Settings → Summaries | **off** |
+| Summary mode: off / estimate / manual / automatic | Settings → Claude summaries | **off** |
 | Daily / monthly spending cap (UTC) | 〃 | $5 / $20 ($0.01–$1000; daily ≤ monthly) |
 | Max input / output tokens per summary | 〃 | 30,000 / 4,000 (2k–200k / 1k–16k) |
 | Weekly digest, Critical alert, unrecognized image alert, new cluster message | Settings → Notifications | all **off** |
 | Digest day, time, time zone | 〃 | Monday 09:00 Europe/Belgrade |
-| Digest by email (per user, for yourself) | Settings → Account | off |
+| Digest by email (per user, for yourself) | Account (your name in the sidebar) | off |
 
 ## Data directory
 

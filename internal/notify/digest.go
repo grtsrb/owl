@@ -145,6 +145,7 @@ func (n *Notifier) BuildDigest(ctx context.Context) (Doc, error) {
 	if err != nil {
 		return Doc{}, err
 	}
+	cat := n.cat() // one snapshot for the whole digest
 	now := n.now()
 	since := now.Add(-weekly)
 	changes, err := n.Store.ChangesSince(ctx, since)
@@ -164,7 +165,7 @@ func (n *Notifier) BuildDigest(ctx context.Context) (Doc, error) {
 		return Doc{}, err
 	}
 	in := digestInputs{rep: rep, clusters: clusters, since: since, now: now, resolved: resolved,
-		identify: inventory.Identifier(n.Catalog, ovs), cat: n.Catalog, headlines: headlines(sums)}
+		identify: inventory.Identifier(cat, ovs), cat: cat, headlines: headlines(sums)}
 	in.changes = changes
 	set, _ := n.settings(ctx)
 	loc, err := loadTZ(set.DigestTZ)

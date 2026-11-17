@@ -220,7 +220,7 @@ func TestFirstCheckIsQuietThenAlertsOnlyNew(t *testing.T) {
 	}
 	e.crit("redis@it-aws-prod", "grafana@it-aws-prod", "coredns@it-aws-prod")
 	e.check()
-	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "1 component became Critical") {
+	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "Coredns became Critical") {
 		t.Fatalf("critical again: %q", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestNewClusterOneMessage(t *testing.T) {
 	e.crit("redis@ds-prod", "redis@ds-test")
 	e.check()
 	got = e.mm.texts()
-	if len(got) != 2 || !strings.Contains(got[0], "Redis** on **ds-test") || !strings.Contains(got[1], "`example.org/other/new` on") {
+	if len(got) != 2 || !strings.Contains(got[0], "Redis** on **ds-test") || !strings.Contains(got[1], "`example.org/other/new` on") || !strings.Contains(got[1], "(https://owl.example.com/settings/catalog?new=example.org%2Fother%2Fnew)") {
 		t.Fatalf("alerts: %q", got)
 	}
 }
@@ -617,5 +617,14 @@ func TestNoLongerCriticalSkipsCriticalAgain(t *testing.T) {
 	}
 	if md := d.Markdown(); strings.Contains(md, "No longer Critical") {
 		t.Errorf("lists a pair that is Critical again:\n%s", md)
+	}
+}
+
+func TestCriticalTitleCountsComponentsAndClusters(t *testing.T) {
+	n := &Notifier{}
+	one := n.criticalDoc([]*critical{{pair: pair{"lpp", "a"}, Name: "LPP"}, {pair: pair{"lpp", "b"}, Name: "LPP"}}).Title
+	two := n.criticalDoc([]*critical{{pair: pair{"lpp", "a"}, Name: "LPP"}, {pair: pair{"redis", "a"}, Name: "Redis"}}).Title
+	if !strings.Contains(one, "LPP became Critical on 2 clusters") || !strings.Contains(two, "2 components became Critical") || strings.Contains(two, "clusters") {
+		t.Errorf("%q / %q", one, two)
 	}
 }

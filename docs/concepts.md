@@ -26,7 +26,7 @@ A **cluster** is one Kubernetes cluster with one Owl agent in it. Each cluster h
 - a **stage** — where it sits in your promotion path, and
 - a **tenant** — who uses it.
 
-**Stages** are an ordered list you define (Settings → Stages), e.g. `staging → prelive → live`.
+**Stages** are an ordered list you define (Settings → Stages & tenants), e.g. `staging → prelive → live`.
 Order matters: Owl expects versions to move from earlier to later stages. Several clusters can
 share a stage. A stage can only be deleted when no cluster uses it.
 

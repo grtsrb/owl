@@ -54,8 +54,8 @@ Design decisions and the roadmap live in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Pre-1.0, used internally. Milestones 1–10 are done (agent, server, catalog, upstream data, scoring,
+Pre-1.0, used internally. Milestones 1–11 are done (agent, server, catalog, upstream data, scoring,
 UI, cluster management, backups/logging/audit, Claude upgrade summaries — off by default, with spending
 caps — invite-only sign-in with passwords or Google, email, Docker Compose/Kubernetes packaging, and
-Mattermost notifications: weekly digest and alerts). Next: adding catalog components from the UI (11)
-and the CLI with API tokens (12).
+Mattermost notifications: weekly digest and alerts, and adding catalog components from the UI). Next:
+the CLI with API tokens (12).

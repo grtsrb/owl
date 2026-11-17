@@ -11,7 +11,7 @@ import Clusters from "./pages/Clusters";
 import ClusterDetail from "./pages/ClusterDetail";
 import Settings from "./pages/Settings";
 import { AcceptPage, LoginPage } from "./pages/Login";
-import { signOut } from "./pages/SettingsUsers";
+import { AccountTab, signOut } from "./pages/SettingsUsers";
 import { ErrorBox, Loading } from "./ui";
 
 interface AppData {
@@ -72,8 +72,8 @@ function Shell() {
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
           <div className="side-foot">
-            <span className="side-user" title={me.email}>{me.email}</span>
-            <span>{me.role} · <button className="side-link" onClick={() => void signOut()}>Sign out</button></span>
+            <NavLink to="/account" className="side-user" title={`${me.email} — your account`}>{me.email}</NavLink>
+            <span>{me.role} · <NavLink to="/account" className="side-link">Account</NavLink> · <button className="side-link" onClick={() => void signOut()}>Sign out</button></span>
           </div>
         </nav>
         <div className="main">
@@ -87,6 +87,7 @@ function Shell() {
               <Route path="/changes" element={<Changes />} />
               <Route path="/settings" element={<Navigate to="/settings/clusters" replace />} />
               <Route path="/settings/:tab" element={<Settings />} />
+              <Route path="/account" element={<AccountPage />} />
               <Route path="/images" element={<Navigate to="/clusters" replace />} />
               <Route path="*" element={<p className="empty">Page not found.</p>} />
             </Routes>
@@ -127,5 +128,15 @@ function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
       ))}
       <span className="topbar-r">{sel.selected.length} of {clusters.length} clusters</span>
     </div>
+  );
+}
+
+/** Your own account (password, digest email, sign out): under your name in the sidebar, not in Settings. */
+function AccountPage() {
+  return (
+    <>
+      <div className="page-head"><div><h1>Account</h1><p className="muted">Your sign-in and what Owl sends you.</p></div></div>
+      <AccountTab />
+    </>
   );
 }

@@ -105,7 +105,7 @@ function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void })
         <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="subtle" style={{ marginBottom: 4 }}>Mode</legend>
           {MODES.map(([id, label, desc]) => (
-            <label key={id} className="row" style={{ alignItems: "flex-start", gap: 8 }}>
+            <label key={id} className="check-row">
               <input type="radio" name="mode" checked={v.mode === id} onChange={() => setV({ ...v, mode: id })}
                 disabled={(id === "manual" || id === "auto") && !s.enabled} />
               <span><b>{label}</b> <span className="subtle">{desc}</span></span>

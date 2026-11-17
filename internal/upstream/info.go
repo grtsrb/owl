@@ -476,3 +476,60 @@ func parseDate(s string) *time.Time {
 	}
 	return nil
 }
+
+// EOLProduct is one endoflife.date product (for suggestions when adding a component in the UI).
+type EOLProduct struct {
+	Slug    string   `json:"slug"`
+	Label   string   `json:"label"`
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+// EOLProducts lists endoflife.date's products (cached like every upstream call).
+func (c *Client) EOLProducts(ctx context.Context) ([]EOLProduct, error) {
+	res, err := c.F.get(ctx, "eol:products", "https://endoflife.date/api/v1/products")
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		Result []struct {
+			Name    string   `json:"name"`
+			Label   string   `json:"label"`
+			Aliases []string `json:"aliases"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(res.Body, &p); err != nil {
+		return nil, err
+	}
+	out := make([]EOLProduct, 0, len(p.Result))
+	for _, r := range p.Result {
+		out = append(out, EOLProduct{Slug: r.Name, Label: r.Label, Aliases: r.Aliases})
+	}
+	return out, nil
+}
+
+// GitHubRepo returns the canonical owner/name of a public GitHub repository, or "" if there's none
+// with that exact name (one cached lookup — not a search). Used for "New component" suggestions.
+func (c *Client) GitHubRepo(ctx context.Context, repo string) string {
+	res, err := c.F.get(ctx, "gh-repo:"+repo, "https://api.github.com/repos/"+repo)
+	if err != nil {
+		return ""
+	}
+	var r struct {
+		FullName string `json:"full_name"`
+		Private  bool   `json:"private"`
+	}
+	if json.Unmarshal(res.Body, &r) != nil || r.Private {
+		return ""
+	}
+	return r.FullName
+}
+
+// GitHubLatest is the newest stable GitHub release of a component (release lines only: no repo status
+// or advisories) — for comparing with endoflife.date in the "New component" preview.
+func (c *Client) GitHubLatest(ctx context.Context, comp *catalog.Component) string {
+	info := &Info{ComponentID: comp.ID}
+	if comp.GitHub == "" || c.githubLines(ctx, comp, info) != nil {
+		return ""
+	}
+	return info.LatestStable
+}

@@ -88,6 +88,7 @@ internal/server/         HTTP API, admin, ops (backups/logs/audit endpoints)
 internal/backup/         backup manager, S3 remote
 internal/logfile/        rotating log file
 internal/notify/         Mattermost digest and alerts, digest email (state in notify_* tables)
+internal/registry/       OCI labels from public registries (New component suggestions)
 web/                     React + TypeScript UI (Vite), embedded via web/embed.go
 deploy/agent/agent.yaml  agent manifest (embedded; served at /api/v1/agent/manifest)
 dev/                     local stack and seed scripts

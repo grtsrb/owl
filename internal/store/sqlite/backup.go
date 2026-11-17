@@ -80,7 +80,7 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 // tables restored from a backup; audit_log, revoked_tokens, upstream_cache, summaries and everything
 // about sign-in (users, sessions, auth_tokens) stay as they are.
 var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "current_images", "changes",
-	"policies", "catalog_overrides", "settings"}
+	"policies", "catalog_overrides", "settings", "custom_components"}
 
 // Restore migrates a copy of the backup to the current schema (Open does that, and refuses a newer
 // schema), then replaces the restorable tables in one transaction.

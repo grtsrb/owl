@@ -31,8 +31,14 @@ type Component struct {
 	// ReleaseNotes names where upgrade summaries read release notes when the GitHub releases don't
 	// carry them (see ReleaseNoteSources). Empty = GitHub release bodies.
 	ReleaseNotes string `json:"releaseNotes,omitempty"`
+	// VersionPattern (custom components): a regexp whose groups, joined with ".", are the version in an
+	// image tag — for tags ParseVersion can't read, like 9.7_p1-r4-ls163.
+	VersionPattern string `json:"versionPattern,omitempty"`
+	// Custom: added in the UI (stored in the database), not part of the built-in catalog.
+	Custom bool `json:"custom,omitempty"`
 
-	refs []Ref // parsed Images, built once in Builtin()
+	refs      []Ref // parsed Images, built once in prepare()
+	versionRe *regexp.Regexp
 }
 
 type OSVPackage struct {
@@ -76,11 +82,11 @@ func Builtin() (*Catalog, error) {
 		if comp.ReleaseNotes != "" && !slices.Contains(ReleaseNoteSources, comp.ReleaseNotes) {
 			return nil, fmt.Errorf("builtin catalog: %s: unknown releaseNotes %q", comp.ID, comp.ReleaseNotes)
 		}
-		if comp.VersionParts == 0 {
-			comp.VersionParts = 3
+		if comp.Custom {
+			return nil, fmt.Errorf("builtin catalog: %s: custom is only for components added in the UI", comp.ID)
 		}
-		for _, img := range comp.Images {
-			comp.refs = append(comp.refs, ParseRef(img+":x")) // dummy tag; only the name is used
+		if err := comp.prepare(); err != nil {
+			return nil, fmt.Errorf("builtin catalog: %s: %w", comp.ID, err)
 		}
 	}
 	return &c, nil
@@ -138,7 +144,20 @@ func identifyAs(id Identification, comp *Component) Identification {
 		id.Status, id.Reason = StatusUnpinned, "pinned by digest only — version unknown"
 		return id
 	}
-	v, ok := ParseVersion(ref.Tag, comp.TagPrefix)
+	tag, prefix := ref.Tag, comp.TagPrefix
+	if comp.versionRe != nil {
+		if comp.TagPrefix != "" && !strings.HasPrefix(ref.Tag, comp.TagPrefix) {
+			id.Status, id.Reason = StatusUnpinned, fmt.Sprintf("tag %q doesn't start with %q", ref.Tag, comp.TagPrefix)
+			return id
+		}
+		t, ok := comp.versionFromTag(strings.TrimPrefix(ref.Tag, comp.TagPrefix))
+		if !ok {
+			id.Status, id.Reason = StatusUnpinned, fmt.Sprintf("tag %q doesn't match the component's version pattern", ref.Tag)
+			return id
+		}
+		tag, prefix = t, ""
+	}
+	v, ok := ParseVersion(tag, prefix)
 	switch {
 	case !ok:
 		id.Status, id.Reason = StatusUnpinned, fmt.Sprintf("tag %q is not a version", ref.Tag)

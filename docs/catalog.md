@@ -51,6 +51,7 @@ components:
 | `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. |
 | `source: cluster` | Not matched by image: the version comes from the cluster's nodes. |
 | `notes` | Shown with the component. |
+| `versionPattern` | A regular expression for tags `ParseVersion` can't read: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). |
 | `releaseNotes` | Where [upgrade summaries](concepts.md#upgrade-summaries) read release notes when the GitHub releases don't carry them: `kubernetes-changelog`, `redis-releasenotes`, `haproxy-changelog`, `postgres-release-notes`. Empty = GitHub release notes. A new source needs code in `internal/upstream/notes.go`. |
 
 `releaseTagPrefix` is also stripped before reading a version from a GitHub release tag (nginx tags
@@ -75,7 +76,10 @@ releases `release-1.27.4`).
 4. Add a case to `internal/catalog/catalog_test.go` for any unusual tag format.
 5. `make test`, rebuild, and check the component in the UI.
 
-Adding components from the UI is planned for a later version.
+Or add a component **from the UI** (Settings → Catalog, or **New component** on an unrecognized image):
+see [User guide → Catalog](user-guide.md#catalog). Those live in the database (restored with backups),
+can't set `osv` or `releaseNotes`, and a built-in component with the same id or image always wins.
+**Copy as YAML** turns one into an entry for this file.
 
 ## Overrides (in the UI)
 
@@ -89,6 +93,6 @@ use the actions on a cluster's **Unrecognized images** card instead of editing t
 | ignore | Hidden from the unrecognized list. |
 
 Overrides are per repository (across all clusters), stored in the database, included in backups and
-listed with **Undo** in Settings → Catalog overrides. They **never** change how an image the catalog
+listed with **Undo** in Settings → Catalog. They **never** change how an image the catalog
 already recognizes is treated. Registries passed in `--internal-registries` are in-house without any
 override.

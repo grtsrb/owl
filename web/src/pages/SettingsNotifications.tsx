@@ -87,7 +87,7 @@ function SettingsForm({ s, status, onSaved }: { s: NotifySettings; status: Notif
         <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="subtle" style={{ marginBottom: 4 }}>Send</legend>
           {KINDS.map(([k, label, desc]) => (
-            <label key={k} className="row" style={{ alignItems: "flex-start", gap: 8 }}>
+            <label key={k} className="check-row">
               <input type="checkbox" checked={v[k] as boolean} onChange={(e) => setV({ ...v, [k]: e.target.checked })} />
               <span><b>{label}</b> <span className="subtle">{desc}</span></span>
             </label>

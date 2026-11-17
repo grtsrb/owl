@@ -217,3 +217,45 @@ func TestRestoreKeepsNotifyState(t *testing.T) {
 		t.Error("settings should come from the backup")
 	}
 }
+
+// Custom components are configuration: restored with a backup. Deleting one takes its policy and the
+// overrides mapping to it along, atomically.
+func TestCustomComponents(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	if err := db.CreateCustomComponent(ctx, "sftp", []byte(`{"name":"SFTP"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateCustomComponent(ctx, "sftp", []byte(`{}`)); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	if err := db.UpdateCustomComponent(ctx, "nope", []byte(`{}`)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("update missing: %v", err)
+	}
+	_ = db.SetPolicy(ctx, "sftp", "n-1")
+	_ = db.SetOverride(ctx, store.CatalogOverride{Repository: "harbor.example.com/x/sftp", Kind: store.OverrideMap, Component: "sftp"})
+	_ = db.SetOverride(ctx, store.CatalogOverride{Repository: "harbor.example.com/x/redis", Kind: store.OverrideMap, Component: "redis"})
+	bak := filepath.Join(t.TempDir(), "b.db")
+	if err := db.Backup(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	imp, err := db.CustomDeleteImpact(ctx, "sftp")
+	if err != nil || !imp.Policy || len(imp.Overrides) != 1 {
+		t.Fatalf("impact %+v %v", imp, err)
+	}
+	if _, err := db.DeleteCustomComponent(ctx, "sftp", true); err != nil {
+		t.Fatal(err)
+	}
+	pols, _ := db.ListPolicies(ctx)
+	ovs, _ := db.ListOverrides(ctx)
+	cs, _ := db.ListCustomComponents(ctx)
+	if pols["sftp"] != "" || len(ovs) != 1 || ovs[0].Component != "redis" || len(cs) != 0 {
+		t.Fatalf("after delete: %v %+v %+v", pols, ovs, cs)
+	}
+	if err := db.Restore(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	if cs, _ := db.ListCustomComponents(ctx); len(cs) != 1 || string(cs[0].Data) != `{"name":"SFTP"}` {
+		t.Fatalf("not restored: %+v", cs)
+	}
+}

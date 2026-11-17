@@ -262,13 +262,37 @@ a.cc2:hover { box-shadow: var(--shadow); }
   .tiles, .lvtiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-top { grid-template-columns: minmax(0, 1fr); }
 }
+/* ---------- settings ---------- */
+.settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
+/* Group names are headings (bright, bold, with a rule); the settings under them are indented on a guide line. */
+.settings-nav { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 18px; }
+.settings-group { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text); font-weight: 700;
+  padding: 0 0 6px 2px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.settings-items { display: flex; flex-direction: column; gap: 2px; margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--border); }
+.settings-link { padding: 6px 10px; border-radius: 6px; color: var(--text-2); font-size: 13.5px; }
+.settings-link:hover { background: var(--panel-2); text-decoration: none; color: var(--text); }
+.settings-link.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.settings-body { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.settings-select { display: none; }
+/* A checkbox/radio with a long label: the box stays beside its text instead of wrapping above it. */
+.check-row { display: flex; align-items: flex-start; gap: 8px; }
+.check-row > input { flex: none; margin-top: 3px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.side-foot .side-user:hover { text-decoration: underline; }
+@media (max-width: 900px) {
+  .settings { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .settings-nav { display: none; }
+  .settings-select { display: block; width: 100%; }
+}
 @media (max-width: 760px) {
   .shell { flex-direction: column; }
   .side { width: auto; height: auto; position: static; flex-direction: row; flex-wrap: wrap; padding: 10px 12px; }
   .brand { padding: 4px 10px; }
-  .side-foot { display: none; }
+  /* Account stays reachable on phones: a compact line instead of the footer block. */
+  .side-foot { margin-top: 0; padding: 4px 10px; border-top: 0; flex-direction: row; align-items: center; width: 100%; }
+  .side-foot .side-user { display: none; }
   .content, .topbar { padding-left: 16px; padding-right: 16px; }
-  .kv-grid { grid-template-columns: minmax(0, 1fr); }
+  .kv-grid, .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .why-cell { min-width: 240px; }

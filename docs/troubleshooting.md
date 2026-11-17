@@ -108,7 +108,7 @@ hidden for clusters not selected in the cluster picker.
 
 | You see | Meaning / fix |
 |---|---|
-| "Summaries are off" | The default. Settings → Summaries → choose a mode. |
+| "Summaries are off" | The default. Settings → Claude summaries → choose a mode. |
 | Manual/Automatic can't be selected | `ANTHROPIC_API_KEY` isn't set on the server (check the startup log). |
 | Server won't start: "OWL_CLAUDE_MODEL … has no price" | Use one of the models listed in [Configuration](configuration.md); Owl only runs models it can price. |
 | "Collecting release notes…" for long | Notes are fetched after each upstream refresh; check the log for `summaries: refresh failed`. |
@@ -132,6 +132,16 @@ hidden for clusters not selected in the cluster picker.
 | No alert although something is Critical | Alerts fire when something *becomes* Critical. What was Critical when you switched alerts on is in the next digest, not an alert. |
 | No digest this week | It's sent at most 24 hours late; check the next-digest time and the last error in Settings → Notifications. |
 | Messages have no links | `OWL_PUBLIC_URL` isn't set. |
+
+## Catalog components
+
+| You see | Meaning / fix |
+|---|---|
+| "… already belongs to the built-in component …" | Owl already knows that image; use it (or Map) instead of adding a component. |
+| A component shows **Replaced by built-in** | A newer Owl ships it in its built-in catalog, which wins. Delete yours (move its policy first if you set one). |
+| Every running tag shows **unpinned** in the preview | Tags like `latest`/`alpine` say no version. Pin versioned tags, or set a tag prefix / version pattern under Advanced. |
+| "endoflife.date's newest release is … but GitHub's is …" | Probably different projects with the same name. Leave the endoflife.date product empty unless you've checked. |
+| No suggestion for the GitHub repository | The image has no source label and no GitHub repository has its exact name — or it's on a private registry (no lookups there). Enter it yourself. |
 
 ## Backups
 

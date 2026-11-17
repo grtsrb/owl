@@ -13,9 +13,9 @@ or operators can notice updates the matching page in the same branch (which page
 `docs/development.md`); each merged milestone adds a `docs/changelog.md` entry.
 
 ## Status
-Milestones 1–10 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
+Milestones 1–11 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
 redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging,
-Mattermost notifications) done; next 11 (catalog from the UI — grill first), 12 (CLI with API tokens). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Mattermost notifications, catalog from the UI + Settings reorganised) done; next 12 (CLI with API tokens). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -82,6 +82,13 @@ make dev-down
   pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
   "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
   version, not images.
+- Custom catalog components (milestone 11): `catalog.ValidateCustom` / `Merge` (built-in always wins;
+  `CustomState` says why one isn't in effect); stored as JSON in `custom_components` (**restored** with
+  backups). The server keeps the merged catalog in `Server.live` (atomic pointer) — always read it via
+  `s.cat()` (notifier/summary manager via `CatalogFn`), never `s.Catalog` (built-in only), and reload
+  with `ReloadCatalog` after a change or restore. `versionPattern` = regexp, groups joined with ".".
+  Summaries send `comp.GitHub` as the name for custom components (tested). `internal/registry` reads
+  OCI labels anonymously from the public registries in `registry.Hosts` only, on demand.
 - `internal/inventory` — computed on read from current state + catalog + catalog overrides (map /
   inhouse / ignore per repository, applied **only to images the catalog doesn't recognize**). Server flag `--internal-registries` marks in-house images.
 - `internal/upstream` — `Fetcher` (cached GET/POST in `upstream_cache`, ETag revalidation, stale

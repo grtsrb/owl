@@ -246,7 +246,17 @@ func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader, from string) {
 	ctx := context.WithoutCancel(r.Context()) // don't abort half-way if the browser goes away
 	var safety string
-	run := func() (err error) { safety, err = s.Backups.Restore(ctx, body); return err }
+	run := func() (err error) {
+		if safety, err = s.Backups.Restore(ctx, body); err != nil {
+			return err
+		}
+		// Custom components come back with the backup: rebuild the catalog before anything reads it.
+		// The restore itself succeeded either way, so a failure here is logged, not reported as one.
+		if err := s.ReloadCatalog(ctx); err != nil {
+			s.Log.Error("catalog reload after restore failed", "err", err)
+		}
+		return nil
+	}
 	var err error
 	if s.Notify != nil {
 		// No check may see the restored data before notifications have recorded it quietly (an old
@@ -269,6 +279,7 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 		s.Summaries.Kick() // settings (mode, caps) and clusters came back from the backup
 	}
 	s.audit(r, "database restored", "from", from, "safetyBackup", safety)
+	go s.RefreshUpstream(context.Background()) // components the backup added or removed (cached: cheap)
 	writeJSON(w, http.StatusOK, map[string]string{"restored": from, "safetyBackup": safety})
 }
 

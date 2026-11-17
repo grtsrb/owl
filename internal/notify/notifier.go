@@ -38,7 +38,9 @@ const (
 type Notifier struct {
 	Store   store.Store
 	Catalog *catalog.Catalog
-	Report  func(ctx context.Context) (*report.Report, error)
+	// CatalogFn, when set, gives the current catalog (built-in + components added in the UI).
+	CatalogFn func() *catalog.Catalog
+	Report    func(ctx context.Context) (*report.Report, error)
 	// Ready reports whether upstream data has loaded: before that, levels built on it would look
 	// resolved and alert again once it arrives, so checks wait.
 	Ready func() bool
@@ -58,6 +60,13 @@ type Notifier struct {
 	kickOne  sync.Once
 	// quietNext: a quiet check was asked for before upstream data loaded; the first real check is quiet.
 	quietNext bool
+}
+
+func (n *Notifier) cat() *catalog.Catalog {
+	if n.CatalogFn != nil {
+		return n.CatalogFn()
+	}
+	return n.Catalog
 }
 
 func (n *Notifier) now() time.Time {
@@ -171,7 +180,7 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 	}
 	inv := rep.Inventory
 	if inv == nil { // report built without its inventory (tests)
-		if inv, err = inventory.Build(ctx, n.Store, n.Catalog); err != nil {
+		if inv, err = inventory.Build(ctx, n.Store, n.cat()); err != nil {
 			return nil, err
 		}
 	}
@@ -336,9 +345,17 @@ func (n *Notifier) footer(text, path string, query ...string) []Line {
 }
 
 func (n *Notifier) criticalDoc(list []*critical) Doc {
-	title := "1 component became Critical"
-	if len(list) != 1 {
-		title = itoa(len(list)) + " components became Critical"
+	// Count components and clusters separately: one component on two clusters isn't "2 components".
+	comps, clusters := map[string]bool{}, map[string]bool{}
+	for _, c := range list {
+		comps[c.Component], clusters[c.Cluster] = true, true
+	}
+	title := plural(len(comps), "component") + " became Critical"
+	if len(comps) == 1 {
+		title = list[0].Name + " became Critical"
+	}
+	if len(clusters) > 1 {
+		title += " on " + plural(len(clusters), "cluster")
 	}
 	b := Block{Title: "Newly Critical"}
 	shown, more := capLines(len(list), 10)
@@ -393,6 +410,9 @@ func (n *Notifier) unrecognizedDoc(repos []string, where map[string][]string, co
 				l = append(l, B(c))
 			}
 		}
+		if link := n.link("/settings/catalog", "new", repo); link != "" {
+			l = append(l, T(" · "), L("add as component", link))
+		}
 		b.Items = append(b.Items, l)
 	}
 	b.More, b.MoreLink = more, n.link("/clusters")
@@ -400,7 +420,7 @@ func (n *Notifier) unrecognizedDoc(repos []string, where map[string][]string, co
 	if len(repos) != 1 {
 		title = itoa(len(repos)) + " new unrecognized images"
 	}
-	return Doc{Title: title, Intro: []Line{Ln(T("Owl can't score these yet. On the cluster's page: map each to a component, mark it in-house, or ignore it."))},
+	return Doc{Title: title, Intro: []Line{Ln(T("Owl can't score these yet. Add one as a component, or on the cluster's page map it to an existing one, mark it in-house, or ignore it."))},
 		Sections: []Section{{Blocks: []Block{b}}}}
 }
 

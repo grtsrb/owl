@@ -363,7 +363,7 @@ func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) {
 	case !o.Kind.Valid():
 		httpError(w, http.StatusBadRequest, "kind: map, inhouse or ignore")
 		return
-	case o.Kind == store.OverrideMap && s.Catalog.ByID(o.Component) == nil:
+	case o.Kind == store.OverrideMap && s.cat().ByID(o.Component) == nil:
 		httpError(w, http.StatusBadRequest, "component: unknown component id")
 		return
 	case o.Kind != store.OverrideMap:

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"owl/internal/auth"
@@ -27,6 +28,7 @@ import (
 	"owl/internal/inventory"
 	"owl/internal/notify"
 	"owl/internal/policy"
+	"owl/internal/registry"
 	"owl/internal/snapshot"
 	"owl/internal/store"
 	"owl/internal/summary"
@@ -40,7 +42,9 @@ const (
 )
 
 type Server struct {
-	Store    store.Store
+	Store store.Store
+	// Catalog is the built-in catalog. Requests use cat(): built-in plus the components added in the UI
+	// (ReloadCatalog swaps it atomically, so every request sees one consistent catalog).
 	Catalog  *catalog.Catalog
 	Upstream *upstream.Client // nil = upstream checks disabled
 	Log      *slog.Logger
@@ -61,10 +65,15 @@ type Server struct {
 	Backups *backup.Manager
 	// Summaries writes Claude upgrade summaries (nil = upstream checks disabled).
 	Summaries *summary.Manager
+	// Registry reads OCI labels from public registries for "New component" suggestions (nil = off).
+	Registry *registry.Client
 	// Notify posts the digest and alerts (milestone 10); nil in tests that don't need it.
 	Notify   *notify.Notifier
 	LogLevel *slog.LevelVar
 	LogFile  interface{ SetRetentionDays(int) }
+
+	live    atomic.Pointer[liveCatalog]
+	reloadM sync.Mutex // one catalog reload at a time
 
 	uiOnce  sync.Once
 	uiIndex []byte
@@ -86,7 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/policies", s.listPolicies)
 	mux.HandleFunc("PUT /api/v1/policies/{scope}", s.requireAdmin(s.setPolicy))
 	mux.HandleFunc("DELETE /api/v1/policies/{scope}", s.requireAdmin(s.deletePolicy))
-	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Catalog) })
+	mux.HandleFunc("GET /api/v1/catalog", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.cat()) })
 	mux.HandleFunc("GET /api/v1/catalog/overrides", s.listOverrides)
 	mux.HandleFunc("GET /api/v1/stages", s.listStages)
 	mux.HandleFunc("GET /api/v1/tenants", s.listTenants)
@@ -110,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	s.opsRoutes(mux)
 	s.summaryRoutes(mux)
 	s.notifyRoutes(mux)
+	s.catalogRoutes(mux)
 	s.signinRoutes(mux)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, s.clientIP, securityHeaders(s.checkHost(s.authn(mux))))
@@ -353,7 +363,8 @@ func (s *Server) listChanges(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) inventory(w http.ResponseWriter, r *http.Request) {
-	inv, err := inventory.Build(r.Context(), s.Store, s.Catalog)
+	cat := s.cat()
+	inv, err := inventory.Build(r.Context(), s.Store, cat)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -424,8 +435,9 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	start := time.Now()
 	fresh := map[string]*upstream.Info{}
 	errs := 0
-	for i := range s.Catalog.Components {
-		c := &s.Catalog.Components[i]
+	cat := s.cat()
+	for i := range cat.Components {
+		c := &cat.Components[i]
 		info := s.Upstream.Refresh(ctx, c)
 		if len(info.Errors) > 0 {
 			errs++
@@ -434,6 +446,19 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 		fresh[c.ID] = info
 	}
 	s.mu.Lock()
+	// The catalog may have changed while this ran (a component added in the UI): keep what customChanged
+	// fetched for components this refresh didn't cover, and drop components that are gone.
+	now := s.cat()
+	for id, info := range s.upstream {
+		if _, ok := fresh[id]; !ok && now.ByID(id) != nil {
+			fresh[id] = info
+		}
+	}
+	for id := range fresh {
+		if now.ByID(id) == nil {
+			delete(fresh, id)
+		}
+	}
 	s.upstream = fresh
 	s.mu.Unlock()
 	s.Log.Info("upstream refreshed", "components", len(fresh), "withErrors", errs, "took", time.Since(start).Round(time.Millisecond))
@@ -484,12 +509,13 @@ type versionAdvisories struct {
 // componentDetail: where the component runs, upstream info, and advisories per running version.
 func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	comp := s.Catalog.ByID(id)
+	cat := s.cat()
+	comp := cat.ByID(id)
 	if comp == nil {
 		httpError(w, http.StatusNotFound, "unknown component")
 		return
 	}
-	inv, err := inventory.Build(r.Context(), s.Store, s.Catalog)
+	inv, err := inventory.Build(r.Context(), s.Store, cat)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -563,7 +589,7 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := r.PathValue("scope")
-	if scope != "global" && s.Catalog.ByID(scope) == nil {
+	if scope != "global" && s.cat().ByID(scope) == nil {
 		httpError(w, http.StatusNotFound, "unknown component (use a component id or \"global\")")
 		return
 	}

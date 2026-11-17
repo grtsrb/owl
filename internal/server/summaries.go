@@ -24,7 +24,7 @@ func (s *Server) summaryRoutes(mux *http.ServeMux) {
 // BuildReport is the scored report (also what summaries derive their jumps from).
 func (s *Server) BuildReport(ctx context.Context) (*report.Report, error) {
 	return report.Build(ctx, report.Inputs{
-		Catalog: s.Catalog, Store: s.Store, Upstream: s.Upstream, Infos: s.upstreamInfo, Now: time.Now().UTC(),
+		Catalog: s.cat(), Store: s.Store, Upstream: s.Upstream, Infos: s.upstreamInfo, Now: time.Now().UTC(),
 	})
 }
 
