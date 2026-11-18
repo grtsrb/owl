@@ -200,6 +200,8 @@ func describeChange(ch planChange) string {
 			parts = append(parts, fmt.Sprintf("role %s → %s", ch.FromRole, ch.Role))
 		case "enable":
 			parts = append(parts, "enable")
+		case "reinvite":
+			parts = append(parts, "new invite (never signed in, invite expired)")
 		case "disable":
 			parts = append(parts, "disable (not in the file)")
 		case "manage":
@@ -245,7 +247,7 @@ func usersPlanApply(a *App, ctx context.Context, sub string, args []string) erro
 	f := a.newFlags("users "+sub, usersUse, sub == "plan")
 	file := f.String("f", "", "the users file (- for stdin)")
 	prune := f.Bool("prune", false, "disable users who aren't in the file (never deletes)")
-	detailed := f.Bool("detailed-exitcode", false, "plan: exit 0 = no changes, 2 = changes (drift), 1 = error")
+	detailed := f.Bool("detailed-exitcode", false, "plan: exit 0 = no changes, 2 = changes (drift), 1 = error (including bad flags)")
 	yes := f.Bool("yes", false, "apply: don't ask for confirmation")
 	pos, err := f.parse(args)
 	if err != nil {
@@ -307,28 +309,30 @@ func usersPlanApply(a *App, ctx context.Context, sub string, args []string) erro
 		return err
 	}
 	fmt.Fprintf(a.Stdout, "Applied %d change(s).\n", len(p.Changes))
-	a.printLinks(out.Links)
+	a.printLinks(c, out.Links)
 	return nil
 }
 
-// printLinks shows invite links that weren't emailed (they're shown once).
-func (a *App) printLinks(ls []linkJSON) {
+// printLinks reports invites. The server never hands invite links to a token, so without email an
+// admin sends them from the web UI.
+func (a *App) printLinks(c *client, ls []linkJSON) {
 	for _, l := range ls {
-		if l.Emailed {
+		switch {
+		case l.Emailed:
 			fmt.Fprintf(a.Stdout, "Invite emailed to %s.\n", l.User.Email)
-			continue
-		}
-		link := l.Link
-		if strings.HasPrefix(link, "/") {
-			if c, err := a.client(); err == nil {
+		case l.Link != "": // an older server
+			link := l.Link
+			if strings.HasPrefix(link, "/") {
 				link = c.base.String() + link
 			}
+			fmt.Fprintf(a.Stdout, "Invite for %s (send it yourself; works once, 72 h):\n  %s\n", l.User.Email, link)
+		default:
+			why := "email isn't set up on the server"
+			if l.EmailError != "" {
+				why = "the email failed"
+			}
+			fmt.Fprintf(a.Stdout, "Invite for %s not sent (%s): in Owl, Settings → Users → Send invite again, and send the link yourself.\n", l.User.Email, why)
 		}
-		why := "email isn't set up on the server"
-		if l.EmailError != "" {
-			why = "the email failed"
-		}
-		fmt.Fprintf(a.Stdout, "Invite for %s (%s — send it yourself; works once, 72 h, not shown again):\n  %s\n", l.User.Email, why, link)
 	}
 }
 
@@ -360,7 +364,7 @@ func usersOne(a *App, ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		fmt.Fprintf(a.Stdout, "Invited %s as %s.\n", l.User.Email, l.User.Role)
-		a.printLinks([]linkJSON{l})
+		a.printLinks(c, []linkJSON{l})
 		return nil
 	}
 	us, err := a.listUsers(ctx, c)

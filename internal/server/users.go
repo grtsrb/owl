@@ -71,8 +71,10 @@ func (s *Server) sendLink(r *http.Request, u *store.User, kind store.AuthTokenKi
 			out.Emailed = true
 		}
 	}
-	if out.Emailed && sessionFrom(r).APIToken != nil {
-		out.Link = "" // emailed: a script (`owl users add/apply`) doesn't need the secret too
+	if sessionFrom(r).APIToken != nil {
+		// Never to a token: with it, a leaked token could create a sign-in that outlives it. Without
+		// email, an admin sends the invite from Settings → Users (Send invite again).
+		out.Link = ""
 	}
 	return out, nil
 }
@@ -249,8 +251,21 @@ func (s *Server) checkGoogleAdmin(w http.ResponseWriter, r *http.Request, id int
 }
 
 // GoogleAdminGuard returns ErrLastAdmin when password sign-in is off (and Google configured) and user
-// id is the only active admin with a linked Google account. Also used by `owl user delete`.
+// id is the only active admin with a linked Google account. Also used by `owl db user delete`.
 func GoogleAdminGuard(ctx context.Context, st store.Store, googleConfigured bool, id int64) error {
+	return googleAdminGuard(ctx, st, googleConfigured, map[int64]plannedUser{id: {Role: store.RoleViewer, Disabled: true}})
+}
+
+// plannedUser is a user's role and disabled state after a change.
+type plannedUser struct {
+	Role     store.Role
+	Disabled bool
+}
+
+// googleAdminGuard: with password sign-in off (and Google configured), at least one active admin who
+// signs in with Google must remain after all the planned changes together (checked as a whole, so a
+// users file can't demote every one of them while each change alone looks fine).
+func googleAdminGuard(ctx context.Context, st store.Store, googleConfigured bool, after map[int64]plannedUser) error {
 	m, err := st.GetSettings(ctx)
 	if err != nil {
 		return err
@@ -262,8 +277,12 @@ func GoogleAdminGuard(ctx context.Context, st store.Store, googleConfigured bool
 	if err != nil {
 		return err
 	}
-	for i := range us {
-		if us[i].ID != id && us[i].Role == store.RoleAdmin && us[i].Active() && us[i].HasGoogle {
+	for _, u := range us {
+		role, disabled := u.Role, u.DisabledAt != nil
+		if p, ok := after[u.ID]; ok {
+			role, disabled = p.Role, p.Disabled
+		}
+		if role == store.RoleAdmin && !disabled && u.ActivatedAt != nil && u.HasGoogle {
 			return nil
 		}
 	}

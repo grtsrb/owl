@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CLI downloads (milestone 12): the image carries the client-only build of `owl` for a few platforms
@@ -28,10 +29,12 @@ type cliFile struct {
 	gz     bool
 }
 
-// cliFiles caches the list once it was read successfully; an error is retried on the next request.
+// cliFiles caches the list while SHA256SUMS stays the same (a rebuild or a late-mounted volume is
+// picked up on the next request); errors aren't cached.
 type cliFiles struct {
 	mu    sync.Mutex
 	files map[string]cliFile // "darwin-arm64" -> file
+	stamp time.Time          // SHA256SUMS modification time the cache was built from (zero: no file)
 }
 
 var rePlatform = regexp.MustCompile(`^owl-([a-z0-9]+)-([a-z0-9]+)$`)
@@ -41,19 +44,22 @@ var rePlatform = regexp.MustCompile(`^owl-([a-z0-9]+)-([a-z0-9]+)$`)
 func (c *cliFiles) load(dir string) (map[string]cliFile, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.files != nil {
-		return c.files, nil
-	}
 	files := map[string]cliFile{}
 	if dir == "" {
-		c.files = files
 		return files, nil
 	}
-	f, err := os.Open(filepath.Join(dir, "SHA256SUMS"))
+	sums := filepath.Join(dir, "SHA256SUMS")
+	st, err := os.Stat(sums)
 	if errors.Is(err, os.ErrNotExist) {
-		c.files = files
 		return files, nil
 	} else if err != nil {
+		return nil, err
+	}
+	if c.files != nil && st.ModTime().Equal(c.stamp) {
+		return c.files, nil
+	}
+	f, err := os.Open(sums)
+	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
@@ -81,7 +87,7 @@ func (c *cliFiles) load(dir string) (map[string]cliFile, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	c.files = files
+	c.files, c.stamp = files, st.ModTime()
 	return files, nil
 }
 

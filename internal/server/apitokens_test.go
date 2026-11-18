@@ -266,3 +266,40 @@ func TestAPITokenReviewFixes(t *testing.T) {
 		t.Fatalf("token revived by enable: %d", code)
 	}
 }
+
+func TestAPITokenAllowlistAndPasswordChange(t *testing.T) {
+	e := newSigninEnv(t)
+	base := e.srv.URL
+	ctx := context.Background()
+	cli := &http.Client{}
+	e.app.Auth.Mail = nil // no email: invite links would have to be handed back
+	write, _ := newToken(t, asAdmin(t, base), base, `{"name":"ci","scope":"write"}`)
+
+	// Writes outside the CLI's set are browser-only, even for an admin's write token.
+	for _, c := range []struct{ method, path, body string }{
+		{"PUT", "/api/v1/policies/redis", `{"policy":"latest"}`},
+		{"PUT", "/api/v1/settings", `{"serverURL":"https://x"}`},
+		{"POST", "/api/v1/backups/x/restore", ""},
+		{"POST", "/api/v1/stages", `{"name":"qa"}`},
+	} {
+		if code, _ := doJSON(t, cli, c.method, base+c.path, c.body, bearer(write)...); code != 403 {
+			t.Errorf("%s %s with a write token: %d, want 403", c.method, c.path, code)
+		}
+	}
+	// Reads of admin data still work.
+	if code, _ := doJSON(t, cli, "GET", base+"/api/v1/audit", "", bearer(write)...); code != 200 {
+		t.Fatalf("admin read: %d", code)
+	}
+	// Inviting with a token never returns the link (not even without email).
+	if code, out := doJSON(t, cli, "POST", base+"/api/v1/users", `{"email":"x@example.com","role":"admin"}`, bearer(write)...); code != 201 || out["link"] != "" {
+		t.Fatalf("invite link handed to a token: %d %v", code, out)
+	}
+	// A password change revokes the user's API tokens.
+	admin, _ := e.db.UserByEmail(ctx, "admin@example.com")
+	if err := e.db.SetPassword(ctx, admin.ID, "$argon2id$new", ""); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := doJSON(t, cli, "GET", base+"/api/v1/report", "", bearer(write)...); code != 401 {
+		t.Fatalf("token survived a password change: %d", code)
+	}
+}

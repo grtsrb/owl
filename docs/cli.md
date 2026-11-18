@@ -54,7 +54,9 @@ a scope and an expiry. It's shown **once** — Owl keeps only a hash.
 - **Expiry**: 30, 90 (default) or 365 days, or never. You get an email a week before (if Owl can send
   email). Expired tokens stay listed for 30 days.
 - A token acts as you: changes are in the audit log as `you@example.com (token: gitlab-ci)`. It can
-  **never** change your password, sign-in settings or create tokens. Disabling your user deletes all your
+  read what you can, but **change** only what the CLI does (clusters, backups, users) — never your
+  password, sign-in settings, policies or settings, and never create tokens. Changing your password
+  revokes all your tokens. Disabling your user deletes all your
   tokens; admins can see and revoke anyone's tokens in Settings → Users.
 
 ## owl login / logout / whoami
@@ -71,14 +73,16 @@ owl logout --keep-token                         # only removes it here; it keeps
 - The server and token are saved in `~/.config/owl/config.yaml` (or `$XDG_CONFIG_HOME/owl/`), mode
   0600. You stay signed in across restarts until the token expires or is revoked.
 - **CI**: set `OWL_SERVER` and `OWL_TOKEN` instead — they override the file. Keep the token in a
-  protected, masked variable.
+  protected, masked variable. `OWL_SERVER` alone, pointing elsewhere than the saved server, is
+  refused: the saved token is never sent to another server.
 - The token is never accepted as a command-line argument (it would show in `ps` and shell history).
 - `http://` is refused except to `localhost`/`127.0.0.1` — the token would travel unencrypted.
 - To log in again after `owl logout`, create a new token in the UI.
 
 ## Reading
 
-Every read command takes `-o json` for scripts.
+Every read command takes `-o json` for scripts. Exit codes: 0 OK, 1 an error (including a bad flag)
+or `--fail-on` matched, 2 only for drift with `users plan --detailed-exitcode`.
 
 ```bash
 owl status                         # components per level, unrecognized/unpinned counts, clusters + last report
@@ -138,7 +142,7 @@ owl users export > users.yaml                    # start from who's in Owl today
 owl users plan -f users.yaml                     # what would change (a read-only token is enough)
 owl users apply -f users.yaml                    # shows the plan, asks, applies (--yes in CI)
 owl users apply -f users.yaml --prune            # also disables users who aren't in the file
-owl users plan -f users.yaml --detailed-exitcode # exit 0 = in sync, 2 = drift, 1 = error (scheduled job)
+owl users plan -f users.yaml --detailed-exitcode # exit 0 = in sync, 2 = drift, 1 = error or bad flags
 ```
 
 ```
@@ -156,7 +160,9 @@ In Owl but not in the file (can still sign in):
   Users). The server is the state.
 - Only `email` and `role` (`admin` or `viewer`). Emails are case-insensitive; duplicates and unknown
   fields are rejected before anything is sent. The weekly-digest email stays each user's own choice.
-- New users get the normal **invite** — emailed, or the link is printed once when Owl can't send email.
+- New users get the normal **invite** by email. Without email, the CLI tells you to send it from
+  Settings → Users → Send invite again (invite links are never handed to a token). Someone listed who
+  never signed in and whose invite expired gets a new one (`reinvite`).
 - Listed but disabled users are enabled again. Users not in the file are **drift**; `--prune` disables
   them (never deletes). Removing someone from the file without `--prune` stops managing them.
 - Safety: `apply` needs a write token, refuses to disable or demote **you** (the token's owner), keeps

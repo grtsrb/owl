@@ -40,7 +40,7 @@ func TestUsersFileFlow(t *testing.T) {
 		t.Fatalf("apply with read token: %d %s", code, errs)
 	}
 	code, out, errs = e.run("", write, "users", "apply", "-f", path, "--yes")
-	if code != 0 || !strings.Contains(out, "Applied 3 change(s)") || !strings.Contains(out, "/invite#") {
+	if code != 0 || !strings.Contains(out, "Applied 3 change(s)") || !strings.Contains(out, "Send invite again") || strings.Contains(out, "/invite#") {
 		t.Fatalf("apply: %d %s %s", code, out, errs)
 	}
 	if code, out, _ := e.run("", read, "users", "plan", "-f", path, "--detailed-exitcode"); code != 0 || !strings.Contains(out, "No changes") {

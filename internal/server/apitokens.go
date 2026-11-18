@@ -114,7 +114,13 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if len(existing) >= maxTokensPerUser {
+	live := 0
+	for _, t := range existing {
+		if t.ExpiresAt == nil || t.ExpiresAt.After(time.Now()) {
+			live++
+		}
+	}
+	if live >= maxTokensPerUser {
 		httpError(w, http.StatusConflict, fmt.Sprintf("you already have %d tokens: revoke some first", maxTokensPerUser))
 		return
 	}
@@ -167,11 +173,15 @@ func (s *Server) revokeCurrentToken(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "only an API token can revoke itself")
 		return
 	}
-	if _, err := s.Store.DeleteAPIToken(r.Context(), sess.APIToken.ID, sess.User.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	_, err := s.Store.DeleteAPIToken(r.Context(), sess.APIToken.ID, sess.User.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound): // revoked meanwhile (a parallel logout, an admin): nothing to audit
+	case err != nil:
 		s.fail(w, err)
 		return
+	default:
+		s.audit(r, "api token revoked", "name", sess.APIToken.Name, "owner", sess.User.Email)
 	}
-	s.audit(r, "api token revoked", "name", sess.APIToken.Name, "owner", sess.User.Email)
 	w.WriteHeader(http.StatusNoContent)
 }
 

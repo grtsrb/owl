@@ -313,6 +313,8 @@ export interface User {
   disabledAt?: string; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean;
   /** Listed in a users file (`owl users apply`). */
   managed: boolean;
+  /** An invite link that still works exists. */
+  invitePending: boolean;
 }
 export type TokenScope = "read" | "write";
 /** A personal API token (milestone 12). The secret is only in CreatedApiToken, once. */

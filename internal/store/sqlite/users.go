@@ -11,16 +11,19 @@ import (
 	"owl/internal/store"
 )
 
-const userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at, digest_email, managed"
+// invitePending is computed: the user has an invite link that still works (same text layout as ts).
+const invitePending = "EXISTS(SELECT 1 FROM auth_tokens a WHERE a.user_id = %s.id AND a.kind = 'invite' AND a.expires_at > strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ', 'now'))"
+
+var userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at, digest_email, managed, " + fmt.Sprintf(invitePending, "users")
 
 // userColsU is userCols for a query that joins users as "u".
-const userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at, u.digest_email, u.managed"
+var userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at, u.digest_email, u.managed, " + fmt.Sprintf(invitePending, "u")
 
 func scanUser(row interface{ Scan(...any) error }) (*store.User, error) {
 	var u store.User
 	var created string
 	var activated, lastLogin, disabled sql.NullString
-	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled, &u.DigestEmail, &u.Managed); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled, &u.DigestEmail, &u.Managed, &u.InvitePending); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -124,14 +127,7 @@ func (d *DB) UpdateUser(ctx context.Context, id int64, role store.Role, disabled
 		return nil, err
 	}
 	if disabled {
-		if err := endSessions(ctx, tx, id, ""); err != nil {
-			return nil, err
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM auth_tokens WHERE user_id = ?", id); err != nil {
-			return nil, err
-		}
-		// API tokens go too: enabling the user later must not bring back a token that leaked meanwhile.
-		if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", id); err != nil {
+		if err := revokeAccess(ctx, tx, id, ""); err != nil {
 			return nil, err
 		}
 	}
@@ -178,13 +174,7 @@ func (d *DB) ApplyUserChanges(ctx context.Context, changes []store.UserChange) (
 			return nil, err
 		}
 		if c.Disabled && !c.WasDisabled {
-			if err := endSessions(ctx, tx, c.UserID, ""); err != nil {
-				return nil, err
-			}
-			if _, err := tx.ExecContext(ctx, "DELETE FROM auth_tokens WHERE user_id = ?", c.UserID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", c.UserID); err != nil {
+			if err := revokeAccess(ctx, tx, c.UserID, ""); err != nil {
 				return nil, err
 			}
 		}
@@ -230,6 +220,20 @@ func (d *DB) DeleteUser(ctx context.Context, id int64) error {
 	return tx.Commit()
 }
 
+// revokeAccess ends every credential of a user — sessions (except keepSession), one-time links and API
+// tokens — on disable and on a password change. Enabling the user later brings none of them back.
+func revokeAccess(ctx context.Context, tx *sql.Tx, userID int64, keepSession string) error {
+	if err := endSessions(ctx, tx, userID, keepSession); err != nil {
+		return err
+	}
+	for _, q := range []string{"DELETE FROM auth_tokens WHERE user_id = ?", "DELETE FROM api_tokens WHERE user_id = ?"} {
+		if _, err := tx.ExecContext(ctx, q, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func endSessions(ctx context.Context, tx *sql.Tx, userID int64, keep string) error {
 	_, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", userID, keep)
 	return err
@@ -252,12 +256,9 @@ func (d *DB) SetPassword(ctx context.Context, id int64, hash, keepSession string
 	if n, _ := res.RowsAffected(); n == 0 {
 		return store.ErrNotFound
 	}
-	// A new password ends every other session and voids outstanding links (a leaked reset link or a
-	// stolen session doesn't outlive the password change).
-	if err := endSessions(ctx, tx, id, keepSession); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM auth_tokens WHERE user_id = ?", id); err != nil {
+	// A new password ends every other session, voids outstanding links and revokes API tokens: a leaked
+	// reset link, a stolen session or a token minted from it doesn't outlive the password change.
+	if err := revokeAccess(ctx, tx, id, keepSession); err != nil {
 		return err
 	}
 	return tx.Commit()

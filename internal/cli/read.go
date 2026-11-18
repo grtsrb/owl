@@ -335,6 +335,7 @@ type componentDetail struct {
 	} `json:"upstream"`
 	AdvisoriesByVersion []struct {
 		Version    string `json:"version"`
+		Error      string `json:"error"`
 		Advisories []struct {
 			ID          string `json:"id"`
 			Severity    string `json:"severity"`
@@ -342,6 +343,7 @@ type componentDetail struct {
 			URL         string `json:"url"`
 			RelevantFix string `json:"relevantFix"`
 			NoFix       bool   `json:"noFix"`
+			Certain     bool   `json:"certain"`
 		} `json:"advisories"`
 	} `json:"advisoriesByVersion"`
 }
@@ -451,20 +453,36 @@ func runComponent(a *App, ctx context.Context, args []string) error {
 			fmt.Fprintf(w, "  drift: %s\n", dr.Text)
 		}
 	}
+	// No advisory source means "no data", never "no vulnerabilities" (DESIGN.md).
+	if d.Upstream == nil || d.Upstream.AdvisorySource == "" {
+		fmt.Fprintln(w, "\nAdvisories: no advisory data for this component (not the same as none).")
+	}
 	for _, v := range d.AdvisoriesByVersion {
+		if v.Error != "" {
+			fmt.Fprintf(w, "\nAdvisories for %s: not checked (%s)\n", v.Version, v.Error)
+			continue
+		}
 		if len(v.Advisories) == 0 {
 			continue
 		}
 		fmt.Fprintf(w, "\nAdvisories for %s:\n", v.Version)
 		tw := a.table()
+		review := false
 		for _, adv := range v.Advisories {
 			fix := "fixed in " + dash(adv.RelevantFix)
 			if adv.NoFix {
 				fix = "no fix yet"
 			}
+			if !adv.Certain {
+				fix += " (review)"
+				review = true
+			}
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", strings.ToUpper(dash(adv.Severity)), adv.ID, fix, adv.URL)
 		}
 		tw.Flush()
+		if review {
+			fmt.Fprintln(w, "  (review) = the advisory's affected versions can't be matched for sure: check it")
+		}
 	}
 	return nil
 }
@@ -531,21 +549,28 @@ func runUnrecognized(a *App, ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/api/v1/inventory", nil, &raw); err != nil {
+		return err
+	}
+	if f.json() { // the server's own objects, untouched
+		var part struct {
+			Unrecognized json.RawMessage `json:"unrecognized"`
+		}
+		if err := json.Unmarshal(raw, &part); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(a.Stdout, string(part.Unrecognized))
+		return err
+	}
 	var inv struct {
 		Unrecognized []struct {
 			Repository string         `json:"repository"`
 			Instances  []instanceJSON `json:"instances"`
 		} `json:"unrecognized"`
 	}
-	var raw json.RawMessage
-	if err := c.do(ctx, http.MethodGet, "/api/v1/inventory", nil, &raw); err != nil {
-		return err
-	}
 	if err := json.Unmarshal(raw, &inv); err != nil {
 		return err
-	}
-	if f.json() {
-		return a.printJSON(inv.Unrecognized)
 	}
 	if len(inv.Unrecognized) == 0 {
 		fmt.Fprintln(a.Stdout, "Every image is recognized.")
@@ -559,7 +584,7 @@ func runUnrecognized(a *App, ctx context.Context, args []string) error {
 			if !slices.Contains(cl, in.Cluster) {
 				cl = append(cl, in.Cluster)
 			}
-			tag := in.Image[strings.LastIndexAny(in.Image, ":@")+1:]
+			tag := imageTag(in.Image)
 			if !slices.Contains(tags, tag) {
 				tags = append(tags, tag)
 			}
@@ -569,4 +594,20 @@ func runUnrecognized(a *App, ctx context.Context, args []string) error {
 	tw.Flush()
 	fmt.Fprintln(a.Stdout, "\nAdd them in Owl: Clusters → Unrecognized images, or Settings → Catalog.")
 	return nil
+}
+
+// imageTag is the tag of an image reference ("latest" when there's none), or a short digest.
+func imageTag(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		d := image[i+1:]
+		if len(d) > 19 {
+			d = d[:19] + "…"
+		}
+		return "@" + d
+	}
+	name := image[strings.LastIndex(image, "/")+1:] // a registry port (host:5000/…) isn't a tag
+	if i := strings.LastIndex(name, ":"); i >= 0 {
+		return name[i+1:]
+	}
+	return "latest"
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // The few changes the CLI makes (decided 2026-11-18): clusters for GitOps bootstrapping, backups,
@@ -149,7 +150,8 @@ func runBackup(a *App, ctx context.Context, args []string) error {
 		return err
 	}
 	var raw json.RawMessage
-	if err := c.do(ctx, http.MethodPost, "/api/v1/backups", nil, &raw); err != nil {
+	// VACUUM INTO + gzip + upload run while we wait: allow a big database on a slow bucket.
+	if err := c.doTimeout(ctx, 30*time.Minute, http.MethodPost, "/api/v1/backups", nil, &raw); err != nil {
 		return err
 	}
 	if f.json() {

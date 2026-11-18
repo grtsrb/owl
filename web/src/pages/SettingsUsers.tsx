@@ -241,7 +241,7 @@ export function AccountTab() {
         <Card title="Change password">
           <form className="stack" style={{ maxWidth: 420 }} onSubmit={async (e) => {
             e.preventDefault();
-            if (await w.run(() => api.changePassword(cur, next), "Password changed. Your other sessions were signed out.")) { setCur(""); setNext(""); setAgain(""); }
+            if (await w.run(() => api.changePassword(cur, next), "Password changed. Your other sessions were signed out and your API tokens revoked.")) { setCur(""); setNext(""); setAgain(""); }
           }}>
             <input type="email" autoComplete="username" value={me.email} readOnly hidden />
             <label className="field">Current password

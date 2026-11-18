@@ -50,8 +50,17 @@ func TestPlanUsers(t *testing.T) {
 		t.Error("plan ids must differ between plans and be stable")
 	}
 	// Applied state: nothing to do.
-	if p := planUsers([]store.User{{ID: 1, Email: "a@example.com", Role: store.RoleAdmin, Managed: true}}, []fileUser{{"a@example.com", store.RoleAdmin}}, true); len(p.Changes) != 0 {
+	if p := planUsers([]store.User{{ID: 1, Email: "a@example.com", Role: store.RoleAdmin, Managed: true, ActivatedAt: &now}}, []fileUser{{"a@example.com", store.RoleAdmin}}, true); len(p.Changes) != 0 {
 		t.Errorf("no-op plan: %+v", p)
+	}
+	// Invited, never signed in: fine while the invite works; a new invite once it expired.
+	pending := []store.User{{ID: 1, Email: "a@example.com", Role: store.RoleViewer, Managed: true, InvitePending: true}}
+	if p := planUsers(pending, []fileUser{{"a@example.com", store.RoleViewer}}, false); len(p.Changes) != 0 {
+		t.Errorf("pending invite: %+v", p)
+	}
+	pending[0].InvitePending = false
+	if got := acts(planUsers(pending, []fileUser{{"a@example.com", store.RoleViewer}}, false)); got["a@example.com"] != "reinvite" {
+		t.Errorf("expired invite: %v", got)
 	}
 }
 

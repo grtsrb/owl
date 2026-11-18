@@ -90,7 +90,7 @@ func TestLoginWhoamiLogout(t *testing.T) {
 	if code, _, errs := e.run("not-a-token\n", nil, "login", "--server", e.url); code != 1 || !strings.Contains(errs, "owl_pat_") {
 		t.Fatalf("login with garbage: %d %s", code, errs)
 	}
-	if code, _, errs := e.run(tok+"\n", nil, "login", tok); code != 2 || !strings.Contains(errs, "never passed on the command line") {
+	if code, _, errs := e.run(tok+"\n", nil, "login", tok); code != 1 || !strings.Contains(errs, "never passed on the command line") {
 		t.Fatalf("token as argument: %d %s", code, errs)
 	}
 	code, out, errs := e.run(tok+"\n", nil, "login", "--server", e.url)
@@ -184,7 +184,7 @@ func TestReadCommandsAndFailOn(t *testing.T) {
 	if code, out, _ := e.run("", vars, "outdated", "--all", "--cluster", "nope", "-o", "json", "--fail-on", "unknown"); code != 0 || strings.TrimSpace(out) != "[]" {
 		t.Fatalf("filtered out: %d %s", code, out)
 	}
-	if code, _, _ := e.run("", vars, "outdated", "--level", "bad"); code != 2 {
+	if code, _, _ := e.run("", vars, "outdated", "--level", "bad"); code != 1 { // 2 means drift (users plan)
 		t.Fatalf("bad level: %d", code)
 	}
 }
@@ -222,5 +222,28 @@ func TestClusterWrites(t *testing.T) {
 	audit, _ := e.db.ListAudit(context.Background(), 1)
 	if len(audit) != 1 || audit[0].Action != "cluster deleted" || !strings.HasPrefix(audit[0].Actor, "admin@example.com (token: ") {
 		t.Fatalf("audit: %+v", audit)
+	}
+}
+
+func TestSavedTokenStaysWithItsServer(t *testing.T) {
+	e := newEnv(t)
+	tok := e.token("admin@example.com", store.ScopeRead)
+	e.run(tok+"\n", nil, "login", "--server", e.url)
+	if code, _, errs := e.run("", map[string]string{"OWL_SERVER": "https://elsewhere.example.com"}, "status"); code != 1 || !strings.Contains(errs, "saved token is for") {
+		t.Fatalf("token sent to another server? %d %s", code, errs)
+	}
+	if code, _, _ := e.run("", map[string]string{"OWL_SERVER": e.url + "/"}, "status"); code != 0 {
+		t.Fatalf("same server via env: %d", code)
+	}
+}
+
+func TestImageTag(t *testing.T) {
+	for in, want := range map[string]string{
+		"redis:7.2.4": "7.2.4", "registry.local:5000/team/app": "latest", "registry.local:5000/team/app:1.0": "1.0",
+		"app@sha256:0123456789abcdef0123456789": "@sha256:0123456789ab…",
+	} {
+		if got := imageTag(in); got != want {
+			t.Errorf("imageTag(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

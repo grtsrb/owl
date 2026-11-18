@@ -96,7 +96,8 @@ func setCookie(w http.ResponseWriter, r *http.Request, base, value string, maxAg
 
 // authn loads the session (if any), requires one for the API (except publicAPI), and rejects
 // cross-origin writes (net/http's CrossOriginProtection: Sec-Fetch-Site, else Origin vs Host).
-func (s *Server) authn(next http.Handler) http.Handler {
+func (s *Server) authn(mux *http.ServeMux) http.Handler {
+	var next http.Handler = mux
 	cop := http.NewCrossOriginProtection()
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusForbidden, "cross-origin request refused")
@@ -118,7 +119,8 @@ func (s *Server) authn(next http.Handler) http.Handler {
 			if !ok {
 				return
 			}
-			if msg := tokenRefused(r, sess); msg != "" {
+			_, pattern := mux.Handler(r)
+			if msg := tokenRefused(r, pattern, sess); msg != "" {
 				httpError(w, http.StatusForbidden, msg)
 				return
 			}
@@ -203,35 +205,47 @@ func readOnly(r *http.Request) bool {
 	return r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodPost && readOnlyPOST[r.URL.Path]
 }
 
+// tokenWrites are the only changes an API token can make (route patterns, as registered): what the CLI
+// does — clusters, a backup, users — and revoking itself. Everything else that changes something is
+// browser-only, so a new route is closed to tokens until it's added here on purpose. Sign-in links for
+// existing accounts (reset, invite again), passwords, sign-in settings and token management are
+// deliberately absent: a leaked token must not be able to take over or create sign-ins.
+var tokenWrites = map[string]bool{
+	"POST /api/v1/clusters":                     true,
+	"POST /api/v1/clusters/{name}/rotate-token": true,
+	"DELETE /api/v1/clusters/{name}":            true,
+	"POST /api/v1/backups":                      true,
+	"POST /api/v1/users":                        true,
+	"PATCH /api/v1/users/{id}":                  true,
+	"POST /api/v1/users/plan":                   true, // reads (readOnlyPOST)
+	"POST /api/v1/users/apply":                  true,
+	"DELETE /api/v1/tokens/current":             true,
+}
+
+// tokenRefused: reads are allowed except sign-in internals (/auth/… other than GET /auth/me); writes only
+// from tokenWrites, and only with an effective write scope (read-only POSTs excepted).
+func tokenRefused(r *http.Request, pattern string, sess *store.Session) string {
+	if readOnly(r) && r.Method != http.MethodPost {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && pattern != "GET /api/v1/auth/me" {
+			return "API tokens can't do this: use the Owl web UI"
+		}
+		return ""
+	}
+	if !tokenWrites[pattern] {
+		return "API tokens can't do this: use the Owl web UI"
+	}
+	if !readOnly(r) && !sess.CanWrite() && pattern != "DELETE /api/v1/tokens/current" {
+		return "this API token is read-only"
+	}
+	return ""
+}
+
 // isAPIBearer: the request carries a personal API token. Other Authorization headers (basic auth or an
 // SSO proxy's bearer token forwarded by a reverse proxy) are ignored, so they don't break the UI.
 func isAPIBearer(r *http.Request) bool {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	return len(h) > len(p) && strings.EqualFold(h[:len(p)], p) && strings.HasPrefix(strings.TrimSpace(h[len(p):]), auth.APITokenPrefix)
-}
-
-// tokenRefused is what an API token may never do, whatever its scope: anything about signing in
-// (passwords, sessions, sign-in settings, reset/re-invite links for existing users) and creating or
-// managing tokens — except reading who it is,
-// listing its owner's tokens and revoking itself. A read-only token (or a write token whose owner is no
-// longer an admin) only reads.
-func tokenRefused(r *http.Request, sess *store.Session) string {
-	p := r.URL.Path
-	read := readOnly(r)
-	switch {
-	case p == "/api/v1/tokens/current" && r.Method == http.MethodDelete:
-		return ""
-	case strings.HasPrefix(p, "/api/v1/auth/") && !(p == "/api/v1/auth/me" && read),
-		(p == "/api/v1/tokens" || strings.HasPrefix(p, "/api/v1/tokens/")) && !read,
-		// Sign-in links for existing accounts (password reset, a pending invite sent again) would let a
-		// leaked token take over that person's account: browser sessions only.
-		r.Method == http.MethodPost && strings.HasPrefix(p, "/api/v1/users/") && (strings.HasSuffix(p, "/reset") || strings.HasSuffix(p, "/invite")):
-		return "API tokens can't do this: use the Owl web UI"
-	case !read && !sess.CanWrite():
-		return "this API token is read-only"
-	}
-	return ""
 }
 
 // loadSession returns the valid session of the request's cookie, or nil (clearing a cookie whose

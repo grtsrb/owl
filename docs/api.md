@@ -29,14 +29,16 @@ The UI uses exactly this API, so anything the UI does can be scripted. The TypeS
 - A **read-only** token may only `GET` (plus `POST /users/plan`, which changes nothing). A
   **read & write** token works only while its owner is an admin; otherwise it's read-only (`403 this
   API token is read-only`).
-- Never with a token, whatever its scope (`403 API tokens can't do this`): `/auth/…` except
-  `GET /auth/me`, and creating or revoking tokens — except `DELETE /tokens/current` (revoke itself).
+- A token may **read** everything its owner can (except `/auth/…` other than `GET /auth/me`), and
+  **change** only what the CLI needs: `POST /clusters`, `POST /clusters/{name}/rotate-token`,
+  `DELETE /clusters/{name}`, `POST /backups`, `POST /users`, `PATCH /users/{id}`, `POST /users/plan`,
+  `POST /users/apply` and `DELETE /tokens/current` (revoke itself). Every other write is
+  browser-only: `403 API tokens can't do this`.
 - A missing, revoked or expired token, or a disabled owner: `401` with a `WWW-Authenticate: Bearer`
   header. After 30 failed attempts from one IP in 15 minutes, further bad tokens get `429` (valid
   tokens keep working).
-- Also never with a token: `POST /users/{id}/reset` and `POST /users/{id}/invite` (links that sign in
-  as an existing person). When a token invites a new user and the invite is emailed, the answer's
-  `link` is empty.
+- Invite links are never returned to a token (`link` is empty): without email, an admin sends the
+  invite from the UI.
 - Only `Authorization: Bearer owl_pat_…` counts as a token; other `Authorization` headers (e.g. a
   reverse proxy's basic auth) are ignored.
 - A cookie **and** a token on one request: `400`. Token requests skip the cross-origin check (no
@@ -45,8 +47,7 @@ The UI uses exactly this API, so anything the UI does can be scripted. The TypeS
 ```bash
 B=https://owl.example.com
 curl -s -H "Authorization: Bearer $OWL_TOKEN" $B/api/v1/report
-curl -s -H "Authorization: Bearer $OWL_TOKEN" -H 'Content-Type: application/json' \
-  -X PUT -d '{"policy":"pin:12.3"}' $B/api/v1/policies/grafana     # needs a read & write token
+curl -s -H "Authorization: Bearer $OWL_TOKEN" -X POST $B/api/v1/backups   # needs a read & write token
 ```
 
 ## Status codes
@@ -92,13 +93,13 @@ All under `/api/v1/auth/` except the two Google redirects.
 
 | Endpoint | |
 |---|---|
-| `GET /users` | `[{id, email, role, createdAt, activatedAt?, lastLoginAt?, disabledAt?, hasPassword, hasGoogle, digestEmail, managed}]` — `managed`: listed in a users file |
+| `GET /users` | `[{id, email, role, createdAt, activatedAt?, lastLoginAt?, disabledAt?, hasPassword, hasGoogle, digestEmail, managed, invitePending}]` — `managed`: listed in a users file; `invitePending`: an invite link that still works |
 | `POST /users` | `{email, role: admin \| viewer}` → `201 {user, link, emailed, emailError?}` — the invite link is returned **only here** (and emailed when SMTP is set up) |
 | `POST /users/{id}/invite` | New invite link for a pending user (the old one stops working) → `{user, link, emailed}` |
 | `POST /users/{id}/reset` | Password-reset link for an active user (1 hour) → `{user, link, emailed}`. `409` when password sign-in is off. |
 | `PATCH /users/{id}` | `{role, disabled}` → user. Disabling ends their sessions. `409` for yourself, the last active admin, or — with password sign-in off — the last admin who signs in with Google. |
 | `DELETE /users/{id}` | `409` in the same cases. |
-| `POST /users/plan` | Users file → plan, changes nothing (a read-only admin token may call it). Body `{users: [{email, role}], prune?, source?}` (≤ 2000 users, ≤ 1 MiB; every problem listed in one `400`). → `{id, changes: [{email, actions, role, fromRole?}], notInFile: [email]}`. Actions: `invite`, `role`, `enable`, `disable` (prune), `manage`, `unmanage`. |
+| `POST /users/plan` | Users file → plan, changes nothing (a read-only admin token may call it). Body `{users: [{email, role}], prune?, source?}` (≤ 2000 users, ≤ 1 MiB; every problem listed in one `400`). → `{id, changes: [{email, actions, role, fromRole?}], notInFile: [email]}`. Actions: `invite`, `role`, `enable`, `reinvite` (never signed in, invite expired), `disable` (prune), `manage`, `unmanage`. |
 | `POST /users/apply` | Same body plus `expect: <plan id>` → `{plan, links: [{user, link, emailed, emailError?}]}` (one invite per new user). `409` when users changed since that plan, when it would disable or demote the caller, or leave no active admin. One transaction; audited with `via=<source>`. |
 | `GET /auth/settings` | `{passwordLogin, google: {configured, domain, redirectURL, linkedAdmins}, mail: {configured, host, port, from, tls}, publicURL}` |
 | `PUT /auth/settings` | `{passwordLogin}` — turning it off needs Google configured and an admin who signed in with Google (`409` otherwise). |

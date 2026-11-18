@@ -212,8 +212,9 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 - **Personal API tokens**, created by each user in **Account → API tokens**: a name ("laptop", "gitlab-ci"),
   shown once (`owl_pat_…`), stored as SHA-256 (like agent tokens). List shows created / last used / expires.
   Admins see and revoke every user's tokens on the Users page. Disabling or deleting a user deletes their
-  tokens (re-enabling doesn't revive them). A token can never create tokens, change passwords, manage sign-in or
-  get reset/re-invite links for existing users; it may revoke itself. Only `Bearer owl_pat_…` counts as a token
+  tokens (re-enabling doesn't revive them). Tokens read like their owner but **change only an allowlist** (what the CLI does: clusters,
+  backups, users, revoking itself); they never get sign-in links, passwords, sign-in settings or tokens. A password
+  change revokes the user's tokens. Only `Bearer owl_pat_…` counts as a token
   (other Authorization headers from proxies are ignored); valid tokens work even when an IP is over the failure limit.
 - **Scope**: read-only by default; "read & write" only for admins. Effective rights = min(scope, owner's
   current role) — a demoted admin's write tokens become read-only.

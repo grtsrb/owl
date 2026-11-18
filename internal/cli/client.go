@@ -121,7 +121,6 @@ type client struct {
 	token   string
 	http    *http.Client
 	version string
-	header  http.Header // extra headers on every request (users apply: X-Owl-Source)
 }
 
 // apiError is an error answer from the server.
@@ -143,15 +142,24 @@ func newClient(server, token, version string) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &client{base: u, token: token, version: version, header: http.Header{},
-		http: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error {
+	return &client{base: u, token: token, version: version,
+		http: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse // never follow redirects with the token
 		}}}, nil
 }
 
+// requestTimeout bounds every request except slow ones (a backup runs on the server while we wait).
+const requestTimeout = 2 * time.Minute
+
 // do sends a request and decodes a JSON answer into out (if not nil). Errors carry the server's
 // message ({"error": "..."}).
 func (c *client) do(ctx context.Context, method, path string, body, out any) error {
+	return c.doTimeout(ctx, requestTimeout, method, path, body, out)
+}
+
+func (c *client) doTimeout(ctx context.Context, timeout time.Duration, method, path string, body, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	var rd io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -163,9 +171,6 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 	req, err := http.NewRequestWithContext(ctx, method, c.base.String()+path, rd)
 	if err != nil {
 		return err
-	}
-	for k, v := range c.header {
-		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")

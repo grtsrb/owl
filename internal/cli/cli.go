@@ -92,7 +92,7 @@ func (a *App) Run(name string, args []string) int {
 	c, ok := commands[name]
 	if !ok {
 		fmt.Fprintf(a.Stderr, "unknown command %q\n", name)
-		return 2
+		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -106,7 +106,7 @@ func (a *App) Run(name string, args []string) int {
 	case errors.Is(err, flag.ErrHelp):
 		return 0
 	case errors.Is(err, errUsage):
-		return 2
+		return 1 // 2 is reserved for "drift" (users plan --detailed-exitcode), like terraform
 	}
 	fmt.Fprintln(a.Stderr, "error:", err)
 	return 1
@@ -114,7 +114,7 @@ func (a *App) Run(name string, args []string) int {
 
 var errUsage = errors.New("usage")
 
-// usageErr prints a usage problem and returns errUsage (exit 2).
+// usageErr prints a usage problem and returns errUsage (exit 1).
 func (a *App) usageErr(format string, args ...any) error {
 	fmt.Fprintf(a.Stderr, format+"\n", args...)
 	return errUsage
@@ -180,11 +180,16 @@ func (a *App) client() (*client, error) {
 		return nil, err
 	}
 	server, token := cfg.Server, cfg.Token
-	if v := a.Getenv("OWL_SERVER"); v != "" {
-		server = v
+	envServer, envToken := a.Getenv("OWL_SERVER"), a.Getenv("OWL_TOKEN")
+	if envServer != "" && envToken == "" && token != "" && strings.TrimRight(envServer, "/") != strings.TrimRight(cfg.Server, "/") {
+		// The saved token belongs to the saved server: never send it somewhere else.
+		return nil, fmt.Errorf("OWL_SERVER is %s but the saved token is for %s: set OWL_TOKEN too, or unset OWL_SERVER", envServer, cfg.Server)
 	}
-	if v := a.Getenv("OWL_TOKEN"); v != "" {
-		token = v
+	if envServer != "" {
+		server = envServer
+	}
+	if envToken != "" {
+		token = envToken
 	}
 	if server == "" || token == "" {
 		return nil, errors.New("not signed in: run `owl login --server https://owl.example.com` (or set OWL_SERVER and OWL_TOKEN)")

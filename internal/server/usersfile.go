@@ -32,8 +32,9 @@ type usersFileBody struct {
 	Expect string     `json:"expect"` // apply: the plan id that was shown
 }
 
-// UserPlanChange is one user's change. Actions, in order: "invite", "role", "enable", "disable",
-// "manage" (start managing a user that already matches), "unmanage" (no longer in the file).
+// UserPlanChange is one user's change. Actions, in order: "invite", "role", "enable", "reinvite" (a new
+// invite for someone who never signed in and whose link expired), "disable", "manage" (start managing a
+// user that already matches), "unmanage" (no longer in the file).
 type UserPlanChange struct {
 	Email    string     `json:"email"`
 	Actions  []string   `json:"actions"`
@@ -108,6 +109,9 @@ func planUsers(current []store.User, desired []fileUser, prune bool) UsersPlan {
 		if u.DisabledAt != nil {
 			acts = append(acts, "enable")
 		}
+		if u.ActivatedAt == nil && (u.DisabledAt != nil || !u.InvitePending) {
+			acts = append(acts, "reinvite") // never signed in and no working invite left
+		}
 		if !u.Managed {
 			acts = append(acts, "manage")
 		}
@@ -153,35 +157,6 @@ func planUsers(current []store.User, desired []fileUser, prune bool) UsersPlan {
 	sum := sha256.Sum256(raw)
 	plan.ID = hex.EncodeToString(sum[:8])
 	return plan
-}
-
-// googleAdminAfter: with password sign-in off (and Google configured), at least one active admin who
-// signs in with Google must remain after all the changes together (checking each change alone would
-// let a plan demote every one of them).
-func (s *Server) googleAdminAfter(r *http.Request, current []store.User, changes []store.UserChange) (bool, error) {
-	m, err := s.Store.GetSettings(r.Context())
-	if err != nil {
-		return false, err
-	}
-	if m[settingPasswordLogin] != "off" || s.Auth.Google == nil {
-		return true, nil
-	}
-	after := map[int64]store.UserChange{}
-	for _, c := range changes {
-		if !c.Invite {
-			after[c.UserID] = c
-		}
-	}
-	for _, u := range current {
-		role, disabled := u.Role, u.DisabledAt != nil
-		if c, ok := after[u.ID]; ok {
-			role, disabled = c.Role, c.Disabled
-		}
-		if role == store.RoleAdmin && !disabled && u.ActivatedAt != nil && u.HasGoogle {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // readUsersFile decodes and validates the body (users files can be bigger than other bodies).
@@ -263,11 +238,17 @@ func (s *Server) usersApply(w http.ResponseWriter, r *http.Request) {
 	for _, c := range plan.Changes {
 		changes = append(changes, c.change)
 	}
-	if ok, err := s.googleAdminAfter(r, us, changes); err != nil {
-		s.fail(w, err)
-		return
-	} else if !ok {
+	after := map[int64]plannedUser{}
+	for _, c := range changes {
+		if !c.Invite {
+			after[c.UserID] = plannedUser{Role: c.Role, Disabled: c.Disabled}
+		}
+	}
+	if err := googleAdminGuard(r.Context(), s.Store, s.Auth.Google != nil, after); errors.Is(err, store.ErrLastAdmin) {
 		httpError(w, http.StatusConflict, "Password sign-in is off and the plan leaves no active admin who signs in with Google: keep one in the file as admin (or turn password sign-in back on).")
+		return
+	} else if err != nil {
+		s.fail(w, err)
 		return
 	}
 	out := usersApplyJSON{Plan: plan, Links: []linkJSON{}}
@@ -294,6 +275,8 @@ func (s *Server) usersApply(w http.ResponseWriter, r *http.Request) {
 				s.audit(r, "user role changed", append(args, "from", c.FromRole, "to", c.Role)...)
 			case "enable":
 				s.audit(r, "user enabled", args...)
+			case "reinvite":
+				s.audit(r, "invite sent again", args...)
 			case "disable":
 				s.audit(r, "user disabled", args...)
 			case "manage":
@@ -305,6 +288,13 @@ func (s *Server) usersApply(w http.ResponseWriter, r *http.Request) {
 	}
 	// Invite links after the commit: a failed email (or link) doesn't undo the users; the admin can
 	// send the invite again from the UI.
+	for _, c := range plan.Changes {
+		if slices.Contains(c.Actions, "reinvite") {
+			if u, err := s.Store.GetUser(r.Context(), c.change.UserID); err == nil {
+				invited = append(invited, *u)
+			}
+		}
+	}
 	for i := range invited {
 		l, err := s.sendLink(r, &invited[i], store.TokenInvite)
 		if err != nil {

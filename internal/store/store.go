@@ -182,6 +182,9 @@ type User struct {
 	// Managed: the user is listed in a users file (`owl users apply`, milestone 12). Changes in the UI
 	// still work but show as drift until the file is updated.
 	Managed bool `json:"managed"`
+	// InvitePending: an invite link that still works exists (an invited user whose link expired needs
+	// a new one).
+	InvitePending bool `json:"invitePending"`
 	// PasswordHash (argon2id, PHC string) and GoogleSub never leave the server.
 	PasswordHash string `json:"-"`
 	GoogleSub    string `json:"-"`

@@ -36,7 +36,17 @@ func (d *DB) CreateAPIToken(ctx context.Context, t store.APIToken, hash string) 
 	if t.ExpiresAt != nil {
 		expires = t.ExpiresAt.UTC().Format(ts)
 	}
-	res, err := d.db.ExecContext(ctx, `INSERT INTO api_tokens(user_id, name, token_hash, prefix, scope, created_at, expires_at)
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	// An expired token (still listed for 30 days) doesn't block its name: the replacement the expiry
+	// email asks for usually has the same one.
+	if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ? AND name = ? AND expires_at <= ?", t.UserID, t.Name, now().Format(ts)); err != nil {
+		return nil, err
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO api_tokens(user_id, name, token_hash, prefix, scope, created_at, expires_at)
 		VALUES (?,?,?,?,?,?,?)`, t.UserID, t.Name, hash, t.Prefix, string(t.Scope), now().Format(ts), expires)
 	if isUnique(err) {
 		return nil, store.ErrExists
@@ -44,7 +54,11 @@ func (d *DB) CreateAPIToken(ctx context.Context, t store.APIToken, hash string) 
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
-	return scanAPIToken(d.db.QueryRowContext(ctx, "SELECT "+apiTokenCols+" FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.id = ?", id))
+	created, err := scanAPIToken(tx.QueryRowContext(ctx, "SELECT "+apiTokenCols+" FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.id = ?", id))
+	if err != nil {
+		return nil, err
+	}
+	return created, tx.Commit()
 }
 
 func (d *DB) listAPITokens(ctx context.Context, where string, args ...any) ([]store.APIToken, error) {
@@ -72,20 +86,15 @@ func (d *DB) ListAPITokens(ctx context.Context, userID int64) ([]store.APIToken,
 }
 
 func (d *DB) APITokenByHash(ctx context.Context, hash string) (*store.APIToken, *store.User, error) {
-	var t store.APIToken
-	var created string
-	var expires, used, warned sql.NullString
-	row := d.db.QueryRowContext(ctx, "SELECT "+apiTokenCols+", "+userColsU+
-		" FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?", hash)
-	u, err := scanUser(scanPrefix{row, []any{&t.ID, &t.UserID, &t.UserEmail, &t.Name, &t.Prefix, &t.Scope, &created, &expires, &used, &warned}})
+	t, err := scanAPIToken(d.db.QueryRowContext(ctx, "SELECT "+apiTokenCols+" FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?", hash))
 	if err != nil {
 		return nil, nil, err
 	}
-	if c := parseTime(sql.NullString{String: created, Valid: true}); c != nil {
-		t.CreatedAt = *c
+	u, err := d.GetUser(ctx, t.UserID)
+	if err != nil {
+		return nil, nil, err
 	}
-	t.ExpiresAt, t.LastUsedAt, t.WarnedAt = parseTime(expires), parseTime(used), parseTime(warned)
-	return &t, u, nil
+	return t, u, nil
 }
 
 func (d *DB) TouchAPIToken(ctx context.Context, id int64) error {

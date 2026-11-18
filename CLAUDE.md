@@ -58,7 +58,8 @@ make dev-down
   `~/.config/owl/config.yaml` (0600), `OWL_SERVER`/`OWL_TOKEN` override; refuses `http://` except
   loopback, never follows redirects, token never as an argument. Local JSON structs for API answers
   (don't import server packages). `App` is injectable for tests (`cli_test.go` runs a real in-process
-  server). Exit codes: 1 error / `--fail-on` hit, 2 usage or `users plan --detailed-exitcode` drift. `cmd/owl/auth.go`
+  server). Exit codes: 1 error, bad flags or `--fail-on` hit; 2 only `users plan --detailed-exitcode` drift. A
+  saved token is never sent to an `OWL_SERVER` other than the saved one. `cmd/owl/auth.go`
   parses the sign-in env (`OWL_PUBLIC_URL`, `OWL_TRUSTED_PROXIES`, Google, SMTP).
 - `internal/snapshot` — **wire contract** agent → server. Contains no cluster identity (server derives
   it from the token). Bump `SchemaVersion` on breaking changes.
@@ -114,9 +115,11 @@ make dev-down
   sessions/auth_tokens. Store guards: `ErrLastAdmin` (no demote/disable/delete of the last active admin).
 - Personal API tokens (milestone 12): `api_tokens` table (hash, prefix, scope read|write, expiry; never
   in backups, never restored). `authn` → `tokenSession` (Bearer `owl_pat_…`; cookie + bearer = 400;
-  failures per IP in `limits`) builds a `store.Session` with `APIToken` set; `tokenRefused` blocks
-  `/auth/*` (except GET me) and token management (except `DELETE /tokens/current`) for every token, and
-  non-reads for read scope. `Session.CanWrite()` = admin role AND (no token OR write scope) — checked in
+  failures per IP in `limits`, valid tokens never refused) builds a `store.Session` with `APIToken` set;
+  `tokenRefused` uses the mux **route pattern**: reads allowed (not `/auth/*` except GET me), writes only
+  from the `tokenWrites` allowlist (what the CLI does) — a new write route is closed to tokens until
+  added there. Invite links are never returned to tokens. Password change / disable revoke API tokens
+  (`revokeAccess`). `Session.CanWrite()` = admin role AND (no token OR write scope) — checked in
   `requireAdmin` too; `readOnlyPOST` lists POSTs that change nothing (`/users/plan`). Token secrets
   only via `POST /tokens` with a browser session. Expiry emails in `RunMaintenance`.
 - Users from a file: `usersfile.go` — `planUsers` (pure) + `POST /users/plan|apply`; apply recomputes

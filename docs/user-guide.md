@@ -242,7 +242,7 @@ message, the last error and when the next digest is due.
 ### Account (your name in the sidebar)
 
 Your email, role and sign-in methods, **Sign out**, and **Change password** (signs out your other
-sessions). **Email me the weekly digest** — the digest by email, on the schedule an admin set in
+sessions and revokes your API tokens). **Email me the weekly digest** — the digest by email, on the schedule an admin set in
 Settings → Notifications (needs email to be set up on the server).
 
 - **Command-line tool** — downloads of the `owl` CLI for macOS and Linux (with checksums) and how to
