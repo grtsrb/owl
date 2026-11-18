@@ -1,146 +1,58 @@
-// Command owl is the owl binary: `owl agent` runs in each cluster, `owl server` is the
-// central service, `owl cluster` manages cluster registrations and agent tokens.
+// Command owl is the owl binary. Client commands (owl login, status, outdated, …) talk to an Owl
+// server with a personal API token (internal/cli). The full build also has `owl agent` (runs in each
+// cluster), `owl server` (the central service) and `owl db …` (operator commands on the database
+// file); the downloadable client build (-tags owlclient) has only the client commands.
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
-	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-
-	"owl/internal/agent"
+	"owl/internal/cli"
 )
 
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
+
+// fullCommands are the server-side commands, registered by full.go (not in the client build).
+var fullCommands = map[string]func(args []string) error{}
+
+// fullUsage is their part of the usage text.
+var fullUsage string
 
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
-	var err error
-	switch os.Args[1] {
-	case "agent":
-		err = runAgent(os.Args[2:])
-	case "server":
-		err = runServer(os.Args[2:])
-	case "cluster":
-		err = runCluster(os.Args[2:])
-	case "user":
-		err = runUser(os.Args[2:])
-	case "healthcheck":
-		err = runHealthcheck(os.Args[2:])
-	case "upstream":
-		err = runUpstream(os.Args[2:])
-	case "version":
+	name, args := os.Args[1], os.Args[2:]
+	if name == "version" || name == "--version" {
 		fmt.Println(version)
-	default:
+		return
+	}
+	if name == "help" || name == "-h" || name == "--help" {
 		usage()
-		os.Exit(2)
+		return
 	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+	if legacy(name, args) {
+		name = "db"
+		args = append([]string{os.Args[1]}, args...)
 	}
+	if run, ok := fullCommands[name]; ok {
+		if err := run(args); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if cli.Has(name) {
+		os.Exit(cli.NewApp(version).Run(name, args))
+	}
+	usage()
+	os.Exit(2)
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `usage: owl <command> [flags]
-
-commands:
-  agent     collect workload inventory from a cluster and push it to the server
-  server    run the central inventory server
-  cluster   manage registered clusters and agent tokens (add, list, rotate-token, delete)
-  user      manage who can sign in (invite, list, reset-link, delete) — the first admin and emergencies
-  healthcheck  exit 0 if the local server answers /healthz (for Docker HEALTHCHECK)
-  upstream  show upstream release lines, EOL, archived status and advisories for components
-  version   print version`)
-}
-
-func runAgent(args []string) error {
-	fs := flag.NewFlagSet("agent", flag.ExitOnError)
-	kubeconfig := fs.String("kubeconfig", "", "path to kubeconfig (default: in-cluster, then $KUBECONFIG / ~/.kube/config)")
-	kubeContext := fs.String("context", "", "kubeconfig context to use (out-of-cluster only)")
-	once := fs.Bool("once", false, "collect and push once, then exit")
-	printOnly := fs.Bool("print", false, "collect once and print the snapshot as JSON instead of pushing")
-	interval := fs.Duration("interval", envDuration("OWL_INTERVAL", 15*time.Minute), "collection interval")
-	server := fs.String("server", os.Getenv("OWL_SERVER_URL"), "server base URL (env OWL_SERVER_URL)")
-	_ = fs.Parse(args)
-
-	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	cfg, err := kubeConfig(*kubeconfig, *kubeContext)
-	if err != nil {
-		return err
-	}
-	cfg.UserAgent = "owl-agent/" + version
-	cfg.QPS, cfg.Burst = 5, 10 // be gentle with the API server
-	client, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return err
-	}
-	col := &agent.Collector{Client: client, Version: version}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if *printOnly {
-		snap, err := col.Collect(ctx)
-		if err != nil {
-			return err
-		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(snap)
-	}
-
-	a := &agent.Agent{
-		Collector: col,
-		Log:       log,
-		HTTP:      agent.NewHTTPClient(),
-		Config: agent.Config{
-			ServerURL: *server,
-			Token:     os.Getenv("OWL_TOKEN"), // env only: never accept the token as a flag (shows in ps)
-			Interval:  *interval,
-			Timeout:   5 * time.Minute,
-
-			AllowInsecureHTTP: os.Getenv("OWL_ALLOW_INSECURE_HTTP") == "true",
-		},
-	}
-	if *once {
-		return a.RunOnce(ctx)
-	}
-	return a.Run(ctx)
-}
-
-func kubeConfig(path, kubeContext string) (*rest.Config, error) {
-	if path == "" && kubeContext == "" {
-		if cfg, err := rest.InClusterConfig(); err == nil {
-			return cfg, nil
-		}
-	}
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if path != "" {
-		rules.ExplicitPath = path
-	}
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules,
-		&clientcmd.ConfigOverrides{CurrentContext: kubeContext}).ClientConfig()
-}
-
-func envDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
+	fmt.Fprint(os.Stderr, "usage: owl <command> [flags]\n\nclient commands (sign in once with `owl login`; OWL_SERVER/OWL_TOKEN for CI):\n"+
+		cli.Usage()+fullUsage+"  version      print version\n")
 }

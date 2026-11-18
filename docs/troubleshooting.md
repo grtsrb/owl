@@ -35,9 +35,9 @@ The client's *Authorized redirect URI* in the Google Cloud console must be exact
 
 <a id="locked-out"></a>
 **Locked out (no admin can sign in).**
-On the server: `docker compose exec owl /owl user reset-link --email you@example.com` prints a link
+On the server: `docker compose exec owl /owl db user reset-link --email you@example.com` prints a link
 that sets a new password and signs you in — it works even with password sign-in turned off. No users
-at all yet: `owl user invite --admin you@example.com`.
+at all yet: `owl db user invite --admin you@example.com`.
 
 **Emails don't arrive.**
 Settings → Users → **Send me a test email** shows the SMTP error. "doesn't offer STARTTLS": the port is
@@ -156,6 +156,33 @@ The backup comes from a newer Owl. Upgrade the server first, then restore.
 **After a restore an agent gets `401`.**
 Its token was rotated, or its cluster deleted, after the backup was taken. Revocations survive
 restores by design — **Rotate token** and apply the new Secret.
+
+## CLI
+
+**`not signed in: run owl login`.**
+No saved token and no `OWL_SERVER`/`OWL_TOKEN`. Create a token in Account → API tokens and run
+`owl login --server https://owl.example.com`.
+
+**`401 … invalid or revoked API token` / `this API token expired`.**
+The token was revoked (`owl logout`, the UI, an admin) or expired, or your user was disabled. Create a
+new one and `owl login` again (in CI: replace `OWL_TOKEN`).
+
+**`403 this API token is read-only`.**
+The token's scope is read-only, or its owner is no longer an admin. Writes need a *read & write* token
+from an admin.
+
+**`refusing plain http://`.**
+Tokens only travel over HTTPS, except to `localhost`/`127.0.0.1`.
+
+**macOS: "owl can't be opened because Apple cannot check it".**
+Downloaded with a browser, the unsigned binary is quarantined: `xattr -d com.apple.quarantine owl`.
+
+**`owl users apply`: users changed since the plan was shown.**
+Someone changed users between the plan and the apply. Nothing was changed — run it again.
+
+**`no Owl database at owl.db`.**
+`owl db …` works on the server's database file, so it runs on the server (`docker compose exec owl
+/owl db …`). From your machine use the client commands (`owl clusters`, `owl users`).
 
 ## Local development
 

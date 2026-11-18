@@ -107,6 +107,24 @@ func (s *Server) authn(next http.Handler) http.Handler {
 			return
 		}
 		api := r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")
+		if api && isAPIBearer(r) {
+			// Personal API tokens (CLI, CI): no cookie, so no cross-site request can carry one and
+			// cross-origin protection doesn't apply.
+			if _, err := r.Cookie(cookieName(r, "session")); err == nil {
+				httpError(w, http.StatusBadRequest, "send either a session cookie or an API token, not both")
+				return
+			}
+			sess, ok := s.tokenSession(w, r)
+			if !ok {
+				return
+			}
+			if msg := tokenRefused(r, sess); msg != "" {
+				httpError(w, http.StatusForbidden, msg)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxSessionKey{}, sess)))
+			return
+		}
 		// Only the API and the Google redirects use the session: static files and the SPA shell don't
 		// need a database lookup.
 		if api || strings.HasPrefix(r.URL.Path, "/auth/") {
@@ -126,6 +144,94 @@ func (s *Server) authn(next http.Handler) http.Handler {
 		}
 		cop.Handler(next).ServeHTTP(w, r)
 	})
+}
+
+const (
+	apiTokenTouch    = time.Minute // last-used is written at most this often
+	apiTokenFailures = 30          // failed token attempts per IP per 15 minutes
+)
+
+// tokenSession authenticates a request by its personal API token. It writes the error response
+// itself (ok=false): 401 for a missing, unknown, expired or disabled user's token, 429 when the IP
+// has failed too often.
+func (s *Server) tokenSession(w http.ResponseWriter, r *http.Request) (*store.Session, bool) {
+	// Failures are counted per IP, but a valid token always works: 256-bit tokens can't be guessed, and
+	// refusing good tokens after someone else's failures (shared NAT, CI runners) would let anyone on
+	// the network lock everyone out. Over the limit, bad tokens get 429 instead of 401.
+	key := "apitoken-ip:" + s.limitIP(r)
+	refuse := func(msg string) (*store.Session, bool) {
+		if !s.limits.allow(key, apiTokenFailures, 15*time.Minute, true) {
+			httpError(w, http.StatusTooManyRequests, "too many failed API token attempts: wait 15 minutes")
+			return nil, false
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="owl"`)
+		httpError(w, http.StatusUnauthorized, msg)
+		return nil, false
+	}
+	secret := strings.TrimSpace(r.Header.Get("Authorization")[len("Bearer "):])
+	if !auth.IsAPIToken(secret) {
+		return refuse("invalid API token: expected Authorization: Bearer owl_pat_…")
+	}
+	t, u, err := s.Store.APITokenByHash(r.Context(), auth.Hash(secret))
+	if errors.Is(err, store.ErrNotFound) {
+		return refuse("invalid or revoked API token: create a new one in Owl under Account → API tokens")
+	} else if err != nil {
+		s.Log.Error("API token lookup failed", "err", err, "req", requestID(r))
+		httpError(w, http.StatusServiceUnavailable, "temporarily unavailable, try again")
+		return nil, false
+	}
+	now := time.Now()
+	if t.ExpiresAt != nil && !now.Before(*t.ExpiresAt) {
+		return refuse("this API token expired: create a new one in Owl under Account → API tokens")
+	}
+	if !u.Active() {
+		return refuse("this API token's user is disabled")
+	}
+	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) > apiTokenTouch {
+		if err := s.Store.TouchAPIToken(r.Context(), t.ID); err != nil {
+			s.Log.Warn("API token touch failed", "err", err)
+		}
+	}
+	return &store.Session{User: *u, APIToken: t}, true
+}
+
+// readOnlyPOST are POST endpoints that change nothing (the body is too big or structured for a query),
+// so read-only tokens may call them: a CI job checking users-file drift needs no write token.
+var readOnlyPOST = map[string]bool{"/api/v1/users/plan": true}
+
+func readOnly(r *http.Request) bool {
+	return r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodPost && readOnlyPOST[r.URL.Path]
+}
+
+// isAPIBearer: the request carries a personal API token. Other Authorization headers (basic auth or an
+// SSO proxy's bearer token forwarded by a reverse proxy) are ignored, so they don't break the UI.
+func isAPIBearer(r *http.Request) bool {
+	h := r.Header.Get("Authorization")
+	const p = "Bearer "
+	return len(h) > len(p) && strings.EqualFold(h[:len(p)], p) && strings.HasPrefix(strings.TrimSpace(h[len(p):]), auth.APITokenPrefix)
+}
+
+// tokenRefused is what an API token may never do, whatever its scope: anything about signing in
+// (passwords, sessions, sign-in settings, reset/re-invite links for existing users) and creating or
+// managing tokens — except reading who it is,
+// listing its owner's tokens and revoking itself. A read-only token (or a write token whose owner is no
+// longer an admin) only reads.
+func tokenRefused(r *http.Request, sess *store.Session) string {
+	p := r.URL.Path
+	read := readOnly(r)
+	switch {
+	case p == "/api/v1/tokens/current" && r.Method == http.MethodDelete:
+		return ""
+	case strings.HasPrefix(p, "/api/v1/auth/") && !(p == "/api/v1/auth/me" && read),
+		(p == "/api/v1/tokens" || strings.HasPrefix(p, "/api/v1/tokens/")) && !read,
+		// Sign-in links for existing accounts (password reset, a pending invite sent again) would let a
+		// leaked token take over that person's account: browser sessions only.
+		r.Method == http.MethodPost && strings.HasPrefix(p, "/api/v1/users/") && (strings.HasSuffix(p, "/reset") || strings.HasSuffix(p, "/invite")):
+		return "API tokens can't do this: use the Owl web UI"
+	case !read && !sess.CanWrite():
+		return "this API token is read-only"
+	}
+	return ""
 }
 
 // loadSession returns the valid session of the request's cookie, or nil (clearing a cookie whose
@@ -182,6 +288,10 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 		}
 		if sess.User.Role != store.RoleAdmin {
 			httpError(w, http.StatusForbidden, "admins only: ask an admin to make this change")
+			return
+		}
+		if !readOnly(r) && !sess.CanWrite() {
+			httpError(w, http.StatusForbidden, "this API token is read-only") // also checked in authn
 			return
 		}
 		next(w, r)

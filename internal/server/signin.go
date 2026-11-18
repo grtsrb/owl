@@ -31,6 +31,8 @@ func (s *Server) signinRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/users", s.requireAdmin(s.inviteUser))
 	mux.HandleFunc("PATCH /api/v1/users/{id}", s.requireAdmin(s.updateUser))
 	mux.HandleFunc("DELETE /api/v1/users/{id}", s.requireAdmin(s.deleteUser))
+	mux.HandleFunc("POST /api/v1/users/plan", s.requireAdmin(s.usersPlan))
+	mux.HandleFunc("POST /api/v1/users/apply", s.requireAdmin(s.usersApply))
 	mux.HandleFunc("POST /api/v1/users/{id}/invite", s.requireAdmin(s.reinviteUser))
 	mux.HandleFunc("POST /api/v1/users/{id}/reset", s.requireAdmin(s.resetUser))
 	mux.HandleFunc("GET /api/v1/auth/settings", s.requireAdmin(s.getAuthSettings))
@@ -72,6 +74,15 @@ type meJSON struct {
 	DigestEmail bool       `json:"digestEmail"`
 	// EmailAvailable: Owl can send email (only on /auth/me, for the Account page's digest switch).
 	EmailAvailable bool `json:"emailAvailable,omitempty"`
+	// Token: the request used a personal API token (the CLI's `owl login` / `owl whoami`). Scope is the
+	// effective one: "read" for a write token whose owner is no longer an admin.
+	Token *meTokenJSON `json:"token,omitempty"`
+}
+
+type meTokenJSON struct {
+	Name      string           `json:"name"`
+	Scope     store.TokenScope `json:"scope"`
+	ExpiresAt *time.Time       `json:"expiresAt,omitempty"`
 }
 
 func toMe(u *store.User) meJSON {
@@ -79,8 +90,16 @@ func toMe(u *store.User) meJSON {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	me := toMe(&sessionFrom(r).User)
+	sess := sessionFrom(r)
+	me := toMe(&sess.User)
 	me.EmailAvailable = s.Auth.Mail != nil
+	if t := sess.APIToken; t != nil {
+		scope := store.ScopeRead
+		if sess.CanWrite() {
+			scope = store.ScopeWrite
+		}
+		me.Token = &meTokenJSON{Name: t.Name, Scope: scope, ExpiresAt: t.ExpiresAt}
+	}
 	writeJSON(w, http.StatusOK, me)
 }
 
@@ -251,7 +270,7 @@ func (s *Server) tokenInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // acceptToken uses an invite or reset link: sets the password and signs the user in. A reset link
-// works even with password sign-in off — it's the emergency way in (`owl user reset-link`).
+// works even with password sign-in off — it's the emergency way in (`owl db user reset-link`).
 func (s *Server) acceptToken(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Token    string `json:"token"`

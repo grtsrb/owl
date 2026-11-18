@@ -2,6 +2,30 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 12 — CLI and personal API tokens
+
+- **Personal API tokens** (Account → API tokens): read-only by default, read & write for admins (only
+  while they're admins), expiring after 30/90/365 days or never, with an email a week before. Shown
+  once, stored hashed, never in backups. Writes are audited as "you (token: name)". Tokens can't
+  touch passwords, sign-in settings or other tokens. Admins see and revoke everyone's in Settings →
+  Users.
+- **The `owl` CLI** over the API: `login`/`logout`/`whoami`, `status`, `outdated` (filters, `--fail-on`
+  for CI), `component`, `clusters`, `changes`, `unrecognized`, `cluster add|rotate-token|delete`
+  (`-o secret | kubectl apply -f -`), `backup now`; `-o json` everywhere. `owl logout` revokes the
+  token on the server.
+- **Users from a file**: `owl users export|plan|apply -f users.yaml` — no state file (Owl marks
+  *managed* users), drift with `--detailed-exitcode`, `--prune` disables (never deletes), refuses to
+  lock out the person applying. One-off `owl users add|set-role|disable|enable` for teams without a
+  file. Users page: *managed by file* badge, and a warning before changing a managed user.
+- **Download the CLI** from Account (macOS/Linux, ~7 MB, SHA-256 checksums), or with `curl` and a token
+  in CI. The image grows by ~12 MB. `make cli` builds them locally.
+- The database-file commands moved to **`owl db user …` / `owl db cluster …`**, and refuse to create a
+  database that doesn't exist. `owl user …` and `owl cluster … --name` still work for one release,
+  with a warning.
+
+**Upgrading from milestone 11**: nothing required (one automatic database migration). Scripts using
+`owl user …` or `owl cluster add --name …` on the server should move to `owl db …`.
+
 ## Milestone 11 — Catalog from the UI, Settings reorganised
 
 - **Add components from the UI**: **New component** on a cluster's unrecognized image, in Settings →

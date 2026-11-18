@@ -13,6 +13,8 @@ cluster). The same image `owl:<version>` runs both.
 - [6. Optional: Claude upgrade summaries](#6-optional-claude-upgrade-summaries)
 - [7. Optional: email](#7-optional-email)
 - [8. Optional: Google sign-in](#8-optional-google-sign-in)
+- [9. Optional: Mattermost notifications](#9-optional-mattermost-notifications)
+- [10. Optional: the CLI](#10-optional-the-cli)
 - [Upgrading](#upgrading)
 - [Uninstalling an agent](#uninstalling-an-agent)
 
@@ -124,8 +126,8 @@ Owl is invite-only. Nobody can sign in until the first admin exists, so create t
 server (it works directly on the database):
 
 ```bash
-docker compose exec owl /owl user invite --admin you@example.com        # Compose
-kubectl -n owl exec owl-server-0 -- /owl user invite --admin you@example.com   # in a cluster
+docker compose exec owl /owl db user invite --admin you@example.com        # Compose
+kubectl -n owl exec owl-server-0 -- /owl db user invite --admin you@example.com   # in a cluster
 ```
 
 It prints a one-time link (valid 72 hours). Open it, choose a password (at least 12 characters), and
@@ -157,12 +159,14 @@ The first report arrives within about 30 seconds; the cluster then shows its wor
 
 ### From the command line
 
-On the server host:
+With the [CLI](cli.md) and a read & write token, from your machine — straight into the cluster:
 
 ```bash
-docker compose exec owl /owl cluster add --name it-aws-prod --stage live --tenant IT
-# prints the token once
+owl cluster add it-aws-prod --stage live --tenant IT -o secret | kubectl --context it-aws-prod apply -f -
 ```
+
+(On the server host without a token: `docker compose exec owl /owl db cluster add --name it-aws-prod
+--stage live --tenant IT` prints the token once.)
 
 Then in the cluster:
 
@@ -233,7 +237,7 @@ to be a Workspace admin to set this up, only access to a Google Cloud project:
    invited user). Optionally then **Settings → Users → Password sign-in → Turn off**, so everyone uses
    Google (and its 2-step verification).
 
-If Google sign-in ever breaks while passwords are off, `owl user reset-link <email>` on the server
+If Google sign-in ever breaks while passwords are off, `owl db user reset-link <email>` on the server
 prints a link that sets a password and signs you in — see [Troubleshooting](troubleshooting.md#locked-out).
 
 ## 9. Optional: Mattermost notifications
@@ -246,6 +250,12 @@ prints a link that sets a password and signs you in — see [Troubleshooting](tr
    you want. Everyone in the channel sees cluster and component names — pick the channel accordingly.
 
 Details: [Operations → Notifications](operations.md#notifications).
+
+## 10. Optional: the CLI
+
+Account (your name in the sidebar) → **Command-line tool**: download `owl` for your machine, create an
+API token under **API tokens**, then `owl login --server https://owl.example.com`. See [CLI](cli.md) —
+including keeping users in a `users.yaml` (`owl users plan/apply`) and failing CI on Critical findings.
 
 ## Upgrading
 

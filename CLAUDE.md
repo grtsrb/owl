@@ -15,12 +15,14 @@ or operators can notice updates the matching page in the same branch (which page
 ## Status
 Milestones 1–11 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
 redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging,
-Mattermost notifications, catalog from the UI + Settings reorganised) done; next 12 (CLI with API tokens). Plan at the bottom of `DESIGN.md`. Keep this file's commands and
+Mattermost notifications, catalog from the UI + Settings reorganised, CLI + personal API tokens + users
+from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
 ```bash
 make build test lint        # bin/owl, go test ./..., go vet + gofmt check
+make cli                    # client-only `owl` (-tags owlclient) for 4 platforms into bin/cli (the image builds the same)
 make ui                     # build web/ (React) into web/dist, embedded by the next `make build`
 make ui-dev                 # Vite dev server :5173 with /api proxied to :8080 (needs make stack-up)
 cd web && npm run typecheck # TypeScript check only
@@ -31,26 +33,32 @@ make agent-print CLUSTER=it-aws-prod   # what the agent would send, as JSON (use
 make image                  # Docker image (same image for agent and server)
 make stack-up               # server + S3Mock + Mailpit (127.0.0.1:8025) in Docker, agent in every k3d cluster
                             # first run prints the admin@owl.local invite link
-docker exec owl-server /owl cluster list         # registered clusters, last seen
-docker exec owl-server /owl user reset-link --email admin@owl.local   # lost the dev password
+docker exec owl-server /owl db cluster list         # registered clusters, last seen
+docker exec owl-server /owl db user reset-link --email admin@owl.local   # lost the dev password
 make mattermost-up          # optional throwaway Mattermost + webhook (dev/.mattermost.env); then make stack-up
 make mattermost-down
 make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # amd64+arm64
-# API reads need a session: sign in once with curl and reuse the cookie jar
-curl -s -c /tmp/owl.jar -H 'Content-Type: application/json' -d '{"email":"admin@owl.local","password":"…"}' 127.0.0.1:8080/api/v1/auth/login
-curl -s -b /tmp/owl.jar 127.0.0.1:8080/api/v1/report                      # levels + reasons + targets + drift
-curl -s -b /tmp/owl.jar 127.0.0.1:8080/api/v1/components/coredns          # + upstream lines/EOL + advisories
+# API: a personal token from Account → API tokens (or a session cookie from /api/v1/auth/login)
+./bin/owl login --server http://127.0.0.1:8080      # then: owl status / outdated / component coredns / users plan …
+curl -s -H "Authorization: Bearer $OWL_TOKEN" 127.0.0.1:8080/api/v1/report   # levels + reasons + targets + drift
 ./bin/owl upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
 set -a; . ./.env; set +a   # GITHUB_TOKEN (+ optional OWL_GOOGLE_CLIENT_ID/SECRET for local Google sign-in)
 make dev-down
 ```
 
 ## Layout / architecture
-- `cmd/owl` — single binary: `agent`, `server`, `cluster add|list|rotate-token|delete` (operator
-  fallback that works directly on the DB file; prints the agent token once — the UI does the same via
-  Settings → Clusters), `user invite|list|reset-link|delete` (DB file: first admin + emergency way in),
-  `healthcheck` (Docker HEALTHCHECK; distroless has no curl) and `upstream` (debug:
-  print upstream lines/advisories for a component, optionally for one `--version`). `cmd/owl/auth.go`
+- `cmd/owl` — single binary. `main.go` dispatches: client commands (`internal/cli`) and, in the full
+  build (`full.go`, `agent.go`, `server.go`, `auth.go` are `//go:build !owlclient`): `agent`, `server`,
+  `db cluster add|list|rotate-token|delete` and `db user invite|list|reset-link|delete` (work on the DB
+  file, refuse a missing one: first admin, emergencies), `healthcheck` (Docker HEALTHCHECK; distroless
+  has no curl), `upstream` (debug). `legacy()` keeps `owl user …` / `owl cluster … --name|--db|list`
+  working with a warning for one release. `-tags owlclient` = the downloadable client (no server,
+  agent, k8s or SQLite code — keep it that way).
+- `internal/cli` — the client (milestone 12): stdlib + sigs.k8s.io/yaml + x/term only. Config
+  `~/.config/owl/config.yaml` (0600), `OWL_SERVER`/`OWL_TOKEN` override; refuses `http://` except
+  loopback, never follows redirects, token never as an argument. Local JSON structs for API answers
+  (don't import server packages). `App` is injectable for tests (`cli_test.go` runs a real in-process
+  server). Exit codes: 1 error / `--fail-on` hit, 2 usage or `users plan --detailed-exitcode` drift. `cmd/owl/auth.go`
   parses the sign-in env (`OWL_PUBLIC_URL`, `OWL_TRUSTED_PROXIES`, Google, SMTP).
 - `internal/snapshot` — **wire contract** agent → server. Contains no cluster identity (server derives
   it from the token). Bump `SchemaVersion` on breaking changes.
@@ -104,7 +112,20 @@ make dev-down
 - Write endpoints require an admin session; JSON-only bodies + cross-origin protection. Users, sessions,
   auth_tokens and `auth*` settings are **never restored** from a backup (like the audit log); backups drop
   sessions/auth_tokens. Store guards: `ErrLastAdmin` (no demote/disable/delete of the last active admin).
-- `internal/auth` — agent tokens (SHA-256), `NewSecret` (sessions/links), argon2id `HashPassword` /
+- Personal API tokens (milestone 12): `api_tokens` table (hash, prefix, scope read|write, expiry; never
+  in backups, never restored). `authn` → `tokenSession` (Bearer `owl_pat_…`; cookie + bearer = 400;
+  failures per IP in `limits`) builds a `store.Session` with `APIToken` set; `tokenRefused` blocks
+  `/auth/*` (except GET me) and token management (except `DELETE /tokens/current`) for every token, and
+  non-reads for read scope. `Session.CanWrite()` = admin role AND (no token OR write scope) — checked in
+  `requireAdmin` too; `readOnlyPOST` lists POSTs that change nothing (`/users/plan`). Token secrets
+  only via `POST /tokens` with a browser session. Expiry emails in `RunMaintenance`.
+- Users from a file: `usersfile.go` — `planUsers` (pure) + `POST /users/plan|apply`; apply recomputes
+  the plan, compares its id (`expect`), refuses self-demote/disable, and `Store.ApplyUserChanges` does
+  everything in one tx with optimistic `Was*` checks (`ErrChanged`) and the last-admin check.
+  `users.managed` marks file-managed users (no state file).
+- CLI downloads: the image's `/cli` (`OWL_CLI_DIR`) has `owl-<os>-<arch>.gz` + `SHA256SUMS` (Dockerfile
+  stage `cli`, BUILDPLATFORM); `GET /api/v1/cli[/{os}-{arch}]` streams them decompressed.
+- `internal/auth` — agent tokens (SHA-256), API tokens (`NewAPIToken`, prefix `owl_pat_`), `NewSecret` (sessions/links), argon2id `HashPassword` /
   `VerifyPassword` (PHC string, ≤2 concurrent hashes, dummy hash for unknown users so timing doesn't
   reveal accounts). `internal/mail` — SMTP sender (TLS or STARTTLS required; `none` only loopback/Mailpit),
   header-injection-safe compose; tests use a fake `Sender`.
@@ -177,9 +198,10 @@ make dev-down
   send cluster names, namespaces, hostnames, workload names, configs or tokens to the Claude API.
 - **Priority levels are rule-based and deterministic** (see DESIGN.md "Priority"). Claude explains a
   level; it never sets one.
-- **Agent tokens, sessions and invite/reset links are stored hashed** and shown only once at creation.
-- **Every API path needs a session** unless it's in `publicAPI` (authn.go) — adding a public path is a
-  security decision. Never add an auth-bypass flag.
+- **Agent tokens, API tokens, sessions and invite/reset links are stored hashed** and shown only once at creation.
+- **Every API path needs a session** (browser cookie or personal API token) unless it's in `publicAPI`
+  (authn.go) — adding a public path is a security decision. Never add an auth-bypass flag. A token can
+  never do more than its owner, and never manage sign-in or tokens.
 - Keep the agent lightweight (small static binary, low memory) — avoid pulling heavy deps into the
   agent code path.
 - Storage goes through a repository interface so SQLite can be swapped for Postgres.

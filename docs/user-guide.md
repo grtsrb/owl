@@ -229,8 +229,12 @@ message, the last error and when the next digest is due.
 - The table shows each user's role, status (*invited*, *active*, *disabled*), how they sign in and when
   they last did. Per user: change the **role**, **Send invite again** (pending invites; the old link
   stops working), **Reset password** (a one-hour link), **Disable** (signed out at once, can't sign
-  in) / **Enable**, **Delete**. You can't change or delete yourself, and Owl always keeps at least one
-  active admin.
+  in, their API tokens are deleted) / **Enable**, **Delete**. You can't change or delete yourself, and Owl
+  always keeps at least one active admin.
+- **managed by file** — the user is listed in a users file applied with `owl users apply`
+  ([CLI → Users](cli.md#users)). You can still change them here; Owl asks first, because the change
+  shows as drift until the file is updated.
+- **API tokens** — every user's personal API tokens (scope, last use, expiry), each with **Revoke**.
 - **Sign-in & email** — turn **password sign-in** off once Google sign-in works and an admin has used
   it (everyone then signs in with Google); Google status and the redirect URI to register; email
   status and **Send me a test email**.
@@ -240,3 +244,10 @@ message, the last error and when the next digest is due.
 Your email, role and sign-in methods, **Sign out**, and **Change password** (signs out your other
 sessions). **Email me the weekly digest** — the digest by email, on the schedule an admin set in
 Settings → Notifications (needs email to be set up on the server).
+
+- **Command-line tool** — downloads of the `owl` CLI for macOS and Linux (with checksums) and how to
+  install and sign in. See [CLI](cli.md).
+- **API tokens** — **New token**: a name, the scope (*read-only*, or *read & write* for admins) and
+  the expiry (30, 90, 365 days or never). The token is shown **once**: copy it into `owl login` or a
+  CI variable. The list shows when each was created and last used and when it expires (*expired*
+  ones stay listed for 30 days); **Revoke** stops one at once.

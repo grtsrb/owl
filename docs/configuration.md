@@ -18,6 +18,7 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 |---|---|---|---|
 | `--listen` | `OWL_LISTEN` | `127.0.0.1:8080` | Listen address. Use `0.0.0.0:8080` in a container. |
 | `--db` | `OWL_DB` | `owl.db` (image: `/data/owl.db`) | SQLite database file. |
+| — | `OWL_CLI_DIR` | `/cli` | Where the downloadable CLI builds are (`owl-<os>-<arch>.gz` or plain binaries from `make cli`, + `SHA256SUMS`; the image has them). Missing = no downloads in Account. |
 | `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated extra host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1` and the `OWL_PUBLIC_URL` host. Ports are ignored. |
 | `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. |
 | `--log-dir` | `OWL_LOG_DIR` | `<db dir>/logs` | Rotated log files. `-` = stderr only. |
@@ -97,6 +98,15 @@ refuses to start with a partial configuration.
 The agent tries a push up to 4 times (waiting 2 s, 4 s, 8 s in between) on network errors, `5xx`
 and `429`; if all fail, the next interval tries again. It never retries `4xx` (bad or revoked token, incompatible schema) — those need a fix.
 
+## CLI — `owl login` and friends
+
+| Environment | Default | Meaning |
+|---|---|---|
+| `OWL_SERVER` | from the config file | Owl's URL, e.g. `https://owl.example.com`. `http://` only to localhost. |
+| `OWL_TOKEN` | from the config file | A personal API token (`owl_pat_…`). Both override `~/.config/owl/config.yaml`, which `owl login` writes (mode 0600; `$XDG_CONFIG_HOME/owl/` when set). |
+
+See [CLI](cli.md).
+
 ## Settings in the UI
 
 | Setting | Where | Default |
@@ -104,7 +114,7 @@ and `429`; if all fail, the next interval tries again. It never retries `4xx` (b
 | Stages and their order | Settings → Stages & tenants | `staging`, `prelive`, `live` |
 | Tenants | Settings → Stages & tenants | — |
 | Agent image, server URL (used in generated manifests) | Settings → Clusters → Agent settings | placeholders |
-| Users and their roles | Settings → Users | — (first admin: `owl user invite --admin`) |
+| Users and their roles | Settings → Users | — (first admin: `owl db user invite --admin`) |
 | Password sign-in on/off | Settings → Users | on |
 | Global and per-component version policy | Settings → Version policy | `lts-or-n-1` |
 | Components added to the catalog | Settings → Catalog, cluster page (New component) | — |

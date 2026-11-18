@@ -1,3 +1,5 @@
+//go:build !owlclient
+
 package main
 
 import (
@@ -19,7 +21,6 @@ import (
 	"owl/internal/mail"
 	"owl/internal/server"
 	"owl/internal/store"
-	"owl/internal/store/sqlite"
 )
 
 // publicURLFromEnv parses OWL_PUBLIC_URL: https://host[:port] (http only for localhost), no path.
@@ -99,7 +100,7 @@ func logAuthSetup(log *slog.Logger, st store.Store, c server.AuthConfig) {
 		log.Warn("password sign-in is turned off but Google sign-in isn't configured: passwords are back on until it is (set OWL_GOOGLE_CLIENT_ID/SECRET)")
 	}
 	if us, err := st.ListUsers(context.Background()); err == nil && len(us) == 0 {
-		log.Warn("no users yet: create the first admin with `owl user invite --admin <email>` and open the link it prints")
+		log.Warn("no users yet: create the first admin with `owl db user invite --admin <email>` and open the link it prints")
 	}
 }
 
@@ -108,7 +109,7 @@ func logAuthSetup(log *slog.Logger, st store.Store, c server.AuthConfig) {
 // `docker exec` into the server container.
 func runUser(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: owl user <invite|list|reset-link|delete> [flags]")
+		return errors.New("usage: owl db user <invite|list|reset-link|delete> [flags]")
 	}
 	fs := flag.NewFlagSet("user "+args[0], flag.ExitOnError)
 	dbPath := fs.String("db", defaultDB(), "SQLite database path (env OWL_DB)")
@@ -116,7 +117,7 @@ func runUser(args []string) error {
 	admin := fs.Bool("admin", false, "invite as admin (default: viewer)")
 	_ = fs.Parse(args[1:])
 	if fs.NArg() > 0 && *email == "" {
-		// `owl user invite you@example.com --admin`: the flag package stops at the first non-flag,
+		// `owl db user invite you@example.com --admin`: the flag package stops at the first non-flag,
 		// so parse what follows the address too.
 		*email = fs.Arg(0)
 		_ = fs.Parse(fs.Args()[1:])
@@ -128,7 +129,7 @@ func runUser(args []string) error {
 	if err != nil {
 		return err
 	}
-	db, err := sqlite.Open(*dbPath)
+	db, err := openExistingDB(*dbPath)
 	if err != nil {
 		return err
 	}
@@ -165,7 +166,7 @@ func runUser(args []string) error {
 		}
 		u, err := db.CreateUser(ctx, e, role)
 		if errors.Is(err, store.ErrExists) {
-			return fmt.Errorf("%s already exists: use `owl user reset-link` (or Settings → Users)", e)
+			return fmt.Errorf("%s already exists: use `owl db user reset-link` (or Settings → Users)", e)
 		} else if err != nil {
 			return err
 		}

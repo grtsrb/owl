@@ -8,7 +8,7 @@ What Owl can see, what it stores and sends, and how to run it safely.
   (`/api/v1/agent/manifest`, contains no secrets) and the sign-in endpoints themselves.
 - **Invite-only.** An admin invites an email address with a role; the person opens a one-time link
   (72 hours) and sets a password, or signs in with Google. There's no self sign-up. The first admin is
-  created on the server with `owl user invite --admin`.
+  created on the server with `owl db user invite --admin`.
 - **Roles**: *viewer* reads everything; *admin* can also change clusters, policies, settings, backups
   and users. Owl never lets the last active admin be demoted, disabled or deleted, and admins can't
   change or delete themselves.
@@ -27,7 +27,7 @@ What Owl can see, what it stores and sends, and how to run it safely.
 - **Password sign-in can be turned off** once Google works and an admin has signed in with Google.
   While it's off, the last active admin who signs in with Google can't be demoted, disabled or
   deleted; if the Google settings disappear from the environment, passwords come back on by
-  themselves. The emergency way back in is `owl user reset-link <email>` on the server (needs shell
+  themselves. The emergency way back in is `owl db user reset-link <email>` on the server (needs shell
   access to it).
 - **Sessions**: a random 256-bit cookie, stored only as a SHA-256 hash. `HttpOnly`, `Secure`,
   `SameSite=Lax`, and the `__Host-` prefix (no subdomain can set or overwrite it); only on
@@ -40,9 +40,14 @@ What Owl can see, what it stores and sends, and how to run it safely.
   never travels unencrypted.
 - **Audit log**: every admin action, plus accepted invites, password resets and changes and Google
   account links, with the user's email and client IP.
-- **Restores never change who can sign in**: users, sessions, links and the password sign-in setting
-  are kept as they are; backups contain users (email, role, Google link) but **no password hashes**,
-  sessions or links.
+- **Restores never change who can sign in**: users, sessions, links, API tokens and the password
+  sign-in setting are kept as they are; backups contain users (email, role, Google link) but **no
+  password hashes**, sessions, links or API tokens.
+- **Users from a file** (`owl users apply`) go through the same rules: the person applying can't
+  disable or demote themselves, the last active admin stays, and every change is audited.
+- **The CLI** refuses `http://` except to localhost, never accepts a token as a command-line argument
+  and never follows redirects with it. The downloadable CLI is built into the server image; its
+  SHA-256 checksums are shown next to the downloads (the binaries aren't code-signed).
 
 ## The agent
 
@@ -65,6 +70,7 @@ What Owl can see, what it stores and sends, and how to run it safely.
 |---|---|---|
 | Agent token (per cluster) | the cluster's `owl-agent` Secret | Random, shown once, stored as a SHA-256 hash. Revocations are permanent, even across restores. |
 | Session cookie | the browser (`HttpOnly`, not readable by scripts) | Random, stored as a SHA-256 hash. See above. |
+| Personal API token (`owl_pat_…`) | your `~/.config/owl/config.yaml` (0600) or a CI variable | Random 256-bit, shown once, stored as a SHA-256 hash; never in backups and never restored. Read-only unless an admin chose read & write, and never more than its owner can do (a demoted admin's token only reads; disabling a user deletes their tokens). Can't change passwords, sign-in settings, create tokens or get reset/invite links for existing users. Expires after 30/90/365 days or never (owner's choice; email a week before). Revocable by its owner, any admin, or itself (`owl logout`). Writes are audited as "you (token: name)". |
 | Invite / reset link | an email or a message | Random, stored as a SHA-256 hash, works once, 72 h / 1 h. |
 | Google client secret, SMTP password | server environment | Never in a flag, the UI, the database or logs. |
 | GitHub token | server environment | Needs **no scopes** (public data only). Sent only to `api.github.com`. |

@@ -204,9 +204,52 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   - **Changes**; **Settings** (policies, stages, tenants, clusters + agent install, catalog overrides, backups, audit
     log, users & sign-in, own account).
   - v2: trend charts (needs score history).
-- CLI (`owl scan`, `owl outdated`, …) over the HTTP API with **personal API tokens** per user (milestone 12),
-  so the audit log always names a person.
+- CLI over the HTTP API with **personal API tokens** per user (milestone 12, see "CLI & API tokens"), so the
+  audit log always names a person.
 - v2: MCP server to query the inventory from Claude.
+
+## CLI & API tokens (agreed 2026-11-18, milestone 12)
+- **Personal API tokens**, created by each user in **Account → API tokens**: a name ("laptop", "gitlab-ci"),
+  shown once (`owl_pat_…`), stored as SHA-256 (like agent tokens). List shows created / last used / expires.
+  Admins see and revoke every user's tokens on the Users page. Disabling or deleting a user deletes their
+  tokens (re-enabling doesn't revive them). A token can never create tokens, change passwords, manage sign-in or
+  get reset/re-invite links for existing users; it may revoke itself. Only `Bearer owl_pat_…` counts as a token
+  (other Authorization headers from proxies are ignored); valid tokens work even when an IP is over the failure limit.
+- **Scope**: read-only by default; "read & write" only for admins. Effective rights = min(scope, owner's
+  current role) — a demoted admin's write tokens become read-only.
+- **Expiry** chosen at creation: 30 / 90 (default) / 365 days or none. Email to the owner 7 days before
+  (if mail is configured); no Mattermost alert.
+- **Transport**: `Authorization: Bearer owl_pat_…`, `/api/v1/*` only (never UI pages). Bearer requests skip
+  cross-origin protection (no cookie). Cookie + bearer together = 400. Failed attempts count in the per-IP
+  limiter; "last used" updated at most once a minute. Chosen over CLI password sign-in: works for Google
+  users, can be scoped, no CSRF surface.
+- **Audit**: writes logged as "nikola (token: gitlab-ci)". Tokens are dropped from backups and never restored
+  (like sessions): a restore keeps the running server's users and tokens.
+- **CLI** (same `owl` binary): `owl login --server URL` asks for the token (no echo), checks `/auth/me`, saves
+  `~/.config/owl/config.yaml` (0600); `OWL_SERVER` / `OWL_TOKEN` override for CI. `owl logout` revokes the
+  token on the server and removes it locally (`--keep-token`: local only). No browser login flow — a new
+  token comes from the UI. `http://` refused except loopback.
+- **Commands**: read — `status`, `outdated` (filter cluster/tenant/level), `component <id>`, `clusters`,
+  `changes`, `unrecognized`; write — `cluster add|rotate-token|delete`, `backup now`. Tables by default,
+  `-o json`; `outdated --fail-on critical|high` exits 1 for CI gating. Everything else stays in the UI.
+- The DB-file operator commands move to **`owl db …`** (`owl db cluster add`, `owl db user reset-link`); the
+  old names print "moved to `owl db …`" for one release.
+- **Users from a file** (`users.yaml`: `users: [{email, role}]` — no names: users are identified by email only; emails case-insensitive; duplicates
+  and unknown fields rejected before anything is sent). Access and role only — digest opt-in stays personal.
+  **No state file**: the server marks users applied from the file as *managed*.
+  `owl users plan -f` (drift: add / change / not in file; `--detailed-exitcode` 0/2/1), `owl users apply -f`
+  (shows the plan, confirms unless `--yes`), `owl users export` (current users in file format; first apply
+  marks them managed), `owl users list`. Users not in the file are drift; `apply --prune` **disables** them
+  (never deletes). New users get the normal invite (email, or the link printed once without mail).
+- The file is **optional**: `owl users add|set-role|disable|enable` work on any user; on a managed user they
+  warn "managed by users.yaml; will show as drift". Users created this way aren't managed. The UI shows a
+  "Managed by users.yaml" badge and still allows changes (break-glass) with the same drift warning.
+- Safety: user changes need an admin token with write scope; refuses to disable/demote/prune the token's own
+  user and keeps the last-admin guard; audit entries say "via users.yaml" for apply.
+- **Download**: a client-only build (remote commands only; no server/agent/`db`) for darwin arm64/amd64 and
+  linux amd64/arm64, embedded in the image and served at `GET /api/v1/cli/{os}-{arch}` (signed in), with
+  SHA-256 shown in Account. Budget ≈ +20 MB image; if much larger, drop darwin/amd64 first.
+- v2: stages, tenants and version policies as further sections of the same file format.
 
 ## Catalog from the UI (agreed 2026-11-17, milestone 11)
 - **New component** form, opened from a cluster's Unrecognized images card, Settings → Catalog, or the link in
@@ -380,4 +423,6 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 9. **Sign-in, packaging, logo** (designed 2026-11-17, see "Sign-in" and "Packaging").
 10. **Notifications** (designed 2026-11-17, see "Notifications"): Mattermost digest + alerts, digest email.
 11. **Catalog from the UI and Settings reorganised** (designed 2026-11-17, see "Catalog from the UI").
-12. **CLI** with personal API tokens.
+12. **CLI & API tokens** (designed 2026-11-18, see "CLI & API tokens"): personal tokens, remote CLI, users from a file,
+    CLI download. Built: plan/apply run on the server (one transaction, plan id checked); a read-only token may
+    `users plan`; the old database commands keep working for one release with a warning.

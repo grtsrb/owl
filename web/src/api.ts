@@ -268,6 +268,12 @@ export const api = {
   deleteUser: (id: number) => request("DELETE", `/api/v1/users/${id}`),
   reinviteUser: (id: number) => request<LinkResult>("POST", `/api/v1/users/${id}/invite`),
   resetUser: (id: number) => request<LinkResult>("POST", `/api/v1/users/${id}/reset`),
+  apiTokens: () => request<ApiToken[]>("GET", "/api/v1/tokens"),
+  allApiTokens: () => request<ApiToken[]>("GET", "/api/v1/tokens/all"),
+  createApiToken: (name: string, scope: TokenScope, expiresDays: number) =>
+    request<CreatedApiToken>("POST", "/api/v1/tokens", { name, scope, expiresDays }),
+  revokeApiToken: (id: number) => request("DELETE", `/api/v1/tokens/${id}`),
+  cliDownloads: () => request<CliDownloads>("GET", "/api/v1/cli"),
   authSettings: () => request<AuthSettings>("GET", "/api/v1/auth/settings"),
   saveAuthSettings: (passwordLogin: boolean) => request<AuthSettings>("PUT", "/api/v1/auth/settings", { passwordLogin }),
   testMail: () => request<{ to: string }>("POST", "/api/v1/mail/test"),
@@ -295,13 +301,27 @@ async function rawPost<T>(path: string, body: BodyInit, contentType: string): Pr
 }
 
 export type Role = "admin" | "viewer";
-export interface Me { email: string; role: Role; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean; emailAvailable?: boolean }
+export interface Me {
+  email: string; role: Role; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean; emailAvailable?: boolean;
+  /** Only when the request used a personal API token; scope is the effective one. */
+  token?: { name: string; scope: TokenScope; expiresAt?: string };
+}
 export interface AuthConfig { password: boolean; google: boolean; forgot: boolean }
 export interface TokenInfo { email: string; kind: "invite" | "reset"; password: boolean; google: boolean }
 export interface User {
   id: number; email: string; role: Role; createdAt: string; activatedAt?: string; lastLoginAt?: string;
   disabledAt?: string; hasPassword: boolean; hasGoogle: boolean; digestEmail: boolean;
+  /** Listed in a users file (`owl users apply`). */
+  managed: boolean;
 }
+export type TokenScope = "read" | "write";
+/** A personal API token (milestone 12). The secret is only in CreatedApiToken, once. */
+export interface ApiToken {
+  id: number; userId: number; userEmail: string; name: string; prefix: string; scope: TokenScope;
+  createdAt: string; expiresAt?: string; lastUsedAt?: string;
+}
+export interface CliDownloads { version: string; files: { os: string; arch: string; sha256: string; size: number }[] }
+export interface CreatedApiToken { token: ApiToken; secret: string }
 export interface LinkResult { user: User; link: string; emailed: boolean; emailError?: string }
 export interface AuthSettings {
   passwordLogin: boolean;

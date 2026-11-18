@@ -3,7 +3,7 @@
 #
 #   cp owl.env.example .env && chmod 600 .env   # then edit
 #   docker compose up -d
-#   docker compose exec owl /owl user invite --admin you@example.com
+#   docker compose exec owl /owl db user invite --admin you@example.com
 name: owl
 
 services:

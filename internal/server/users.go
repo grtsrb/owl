@@ -71,6 +71,9 @@ func (s *Server) sendLink(r *http.Request, u *store.User, kind store.AuthTokenKi
 			out.Emailed = true
 		}
 	}
+	if out.Emailed && sessionFrom(r).APIToken != nil {
+		out.Link = "" // emailed: a script (`owl users add/apply`) doesn't need the secret too
+	}
 	return out, nil
 }
 
@@ -137,7 +140,7 @@ func (s *Server) resetUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	} else if !on {
-		httpError(w, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl user reset-link` on the server.")
+		httpError(w, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl db user reset-link` on the server.")
 		return
 	}
 	u, err := s.Store.GetUser(r.Context(), id)
