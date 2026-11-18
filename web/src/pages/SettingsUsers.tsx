@@ -2,6 +2,7 @@ import { useState } from "react";
 import { absoluteLink, api, session, useIsAdmin, useMe, type AuthSettings, type LinkResult, type Role, type User } from "../api";
 import { Icon } from "../icons";
 import { ago, Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
+import { ApiTokensCard, AllTokensCard, CliDownloadCard } from "./ApiTokens";
 import { Dialog, useWrite } from "./Settings";
 
 function status(u: User): { text: string; tone: string } {
@@ -24,6 +25,7 @@ function UsersTabInner() {
   const w = useWrite();
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<{ title: string; r: LinkResult } | null>(null);
+  const [changes, setChanges] = useState(0); // user changes can stop tokens: reload that list too
 
   if (users.error) return <ErrorBox error={users.error} retry={users.reload} />;
   if (!users.data || !auth.data) return auth.error ? <ErrorBox error={auth.error} retry={auth.reload} /> : <Loading />;
@@ -31,7 +33,7 @@ function UsersTabInner() {
 
   async function act<T>(fn: () => Promise<T>, ok?: string) {
     const r = await w.run(fn, ok);
-    users.reload(); auth.reload();
+    users.reload(); auth.reload(); setChanges((n) => n + 1);
     return r;
   }
   async function showLink(title: string, fn: () => Promise<LinkResult>) {
@@ -47,7 +49,7 @@ function UsersTabInner() {
         {users.data.length === 0 ? <Empty>No users.</Empty> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Signs in with</th><th>Last sign-in</th><th></th></tr></thead>
+              <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
               <tbody>
                 {users.data.map((u) => {
                   const self = u.email === me?.email;
@@ -55,17 +57,21 @@ function UsersTabInner() {
                   const methods = [u.hasPassword && "password", u.hasGoogle && "Google"].filter(Boolean).join(" + ") || "—";
                   return (
                     <tr key={u.id}>
-                      <td><b>{u.email}</b>{self && <span className="muted"> (you)</span>}</td>
+                      <td><b>{u.email}</b>{self && <span className="muted"> (you)</span>}
+                        {u.managed && <> <Tag title="Listed in a users file (owl users apply). Changes here work, but show as drift until the file is updated.">managed by file</Tag></>}</td>
                       <td>
                         {self ? u.role : (
                           <select className="select" value={u.role} disabled={w.busy} aria-label={`Role of ${u.email}`}
-                            onChange={(e) => void act(() => api.updateUser(u.id, e.target.value as Role, !!u.disabledAt), `${u.email} is now ${e.target.value}.`)}>
+                            onChange={(e) => {
+                              const role = e.target.value as Role;
+                              if (!fileOK(u)) { e.target.value = u.role; return; }
+                              void act(() => api.updateUser(u.id, role, !!u.disabledAt), `${u.email} is now ${role}.`);
+                            }}>
                             <option value="viewer">viewer</option><option value="admin">admin</option>
                           </select>
                         )}
                       </td>
-                      <td><Tag tone={st.tone}>{st.text}</Tag></td>
-                      <td>{methods}</td>
+                      <td><Tag tone={st.tone}>{st.text}</Tag>{methods !== "—" && <div className="subtle">{methods}</div>}</td>
                       <td>{u.lastLoginAt ? ago(u.lastLoginAt) : "never"}</td>
                       <td>
                         {!self && (
@@ -74,11 +80,12 @@ function UsersTabInner() {
                             {st.text === "active" && passwordLogin && <button className="btn small" disabled={w.busy} onClick={() => void showLink(`Password reset for ${u.email}`, () => api.resetUser(u.id))}>Reset password</button>}
                             <button className="btn small" disabled={w.busy} onClick={() => {
                               const disable = !u.disabledAt;
-                              if (disable && !confirm(`Disable ${u.email}? They're signed out at once and can't sign in until enabled again.`)) return;
+                              if (disable && !confirm(`Disable ${u.email}? They're signed out at once, their API tokens are deleted, and they can't sign in until enabled again.`)) return;
+                              if (!fileOK(u)) return;
                               void act(() => api.updateUser(u.id, u.role, disable), `${u.email} ${disable ? "disabled" : "enabled"}.`);
                             }}>{u.disabledAt ? "Enable" : "Disable"}</button>
                             <button className="btn small danger" disabled={w.busy} onClick={() => {
-                              if (confirm(`Delete ${u.email}? The audit log keeps what they did.`)) void act(() => api.deleteUser(u.id), `${u.email} deleted.`);
+                              if (confirm(`Delete ${u.email}? The audit log keeps what they did.`) && fileOK(u)) void act(() => api.deleteUser(u.id), `${u.email} deleted.`);
                             }}>Delete</button>
                           </div>
                         )}
@@ -93,12 +100,19 @@ function UsersTabInner() {
         <Msg msg={w.msg} />
       </Card>
 
+      <AllTokensCard users={users.data} reloadKey={changes} />
+
       <SignInSettings a={auth.data} reload={auth.reload} />
 
       {inviting && <InviteDialog onClose={() => setInviting(false)} onInvited={(r) => { setInviting(false); users.reload(); setLink({ title: `Invite for ${r.user.email}`, r }); }} />}
       {link && <LinkDialog title={link.title} r={link.r} onClose={() => setLink(null)} />}
     </>
   );
+}
+
+/** Changes to a user listed in a users file work, but the next `owl users plan` reports them. */
+function fileOK(u: User): boolean {
+  return !u.managed || confirm(`${u.email} is managed by a users file (owl users apply). This change works, but shows as drift until the file is updated. Continue?`);
 }
 
 function InviteDialog({ onClose, onInvited }: { onClose: () => void; onInvited: (r: LinkResult) => void }) {
@@ -166,7 +180,7 @@ function SignInSettings({ a, reload }: { a: AuthSettings; reload: () => void }) 
           <Tag tone={a.passwordLogin ? "ok" : "neutral"}>{a.passwordLogin ? "on" : "off"}</Tag>
           <button className="btn small" disabled={w.busy || (a.passwordLogin && !canTurnOff)} onClick={async () => {
             const off = a.passwordLogin;
-            if (off && !confirm("Turn password sign-in off? Everyone must then sign in with Google. In an emergency, `owl user reset-link` on the server still works.")) return;
+            if (off && !confirm("Turn password sign-in off? Everyone must then sign in with Google. In an emergency, `owl db user reset-link` on the server still works.")) return;
             if (await w.run(() => api.saveAuthSettings(!off), `Password sign-in turned ${off ? "off" : "on"}.`)) reload();
           }}>{a.passwordLogin ? "Turn off" : "Turn on"}</button>
         </div>
@@ -221,6 +235,8 @@ export function AccountTab() {
         <div className="row"><button className="btn" onClick={() => void signOut()}>Sign out</button></div>
       </Card>
       <DigestEmailCard />
+      <CliDownloadCard />
+      <ApiTokensCard />
       {me.hasPassword && cfg.data?.password && (
         <Card title="Change password">
           <form className="stack" style={{ maxWidth: 420 }} onSubmit={async (e) => {

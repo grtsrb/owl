@@ -4,22 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"owl/internal/store"
 )
 
-const userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at, digest_email"
+const userCols = "id, email, role, password_hash, coalesce(google_sub, ''), created_at, activated_at, last_login_at, disabled_at, digest_email, managed"
 
 // userColsU is userCols for a query that joins users as "u".
-const userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at, u.digest_email"
+const userColsU = "u.id, u.email, u.role, u.password_hash, coalesce(u.google_sub, ''), u.created_at, u.activated_at, u.last_login_at, u.disabled_at, u.digest_email, u.managed"
 
 func scanUser(row interface{ Scan(...any) error }) (*store.User, error) {
 	var u store.User
 	var created string
 	var activated, lastLogin, disabled sql.NullString
-	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled, &u.DigestEmail); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Role, &u.PasswordHash, &u.GoogleSub, &created, &activated, &lastLogin, &disabled, &u.DigestEmail, &u.Managed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -129,11 +130,84 @@ func (d *DB) UpdateUser(ctx context.Context, id int64, role store.Role, disabled
 		if _, err := tx.ExecContext(ctx, "DELETE FROM auth_tokens WHERE user_id = ?", id); err != nil {
 			return nil, err
 		}
+		// API tokens go too: enabling the user later must not bring back a token that leaked meanwhile.
+		if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", id); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return d.GetUser(ctx, id)
+}
+
+func (d *DB) ApplyUserChanges(ctx context.Context, changes []store.UserChange) ([]store.User, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	at := now().Format(ts)
+	var invited []int64
+	for _, c := range changes {
+		if !c.Role.Valid() {
+			return nil, store.ErrInvalid
+		}
+		if c.Invite {
+			res, err := tx.ExecContext(ctx, "INSERT INTO users(email, role, created_at, managed) VALUES (?,?,?,1)", normEmail(c.Email), string(c.Role), at)
+			if isUnique(err) {
+				return nil, fmt.Errorf("%s: %w", c.Email, store.ErrChanged)
+			} else if err != nil {
+				return nil, err
+			}
+			id, _ := res.LastInsertId()
+			invited = append(invited, id)
+			continue
+		}
+		u, err := scanUser(tx.QueryRowContext(ctx, "SELECT "+userCols+" FROM users WHERE id = ?", c.UserID))
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("%s: %w", c.Email, store.ErrChanged)
+		} else if err != nil {
+			return nil, err
+		}
+		if u.Role != c.WasRole || (u.DisabledAt != nil) != c.WasDisabled || u.Managed != c.WasManaged {
+			return nil, fmt.Errorf("%s: %w", u.Email, store.ErrChanged)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET role = ?, managed = ?,
+			disabled_at = CASE WHEN ? THEN coalesce(disabled_at, ?) ELSE NULL END WHERE id = ?`, string(c.Role), c.Managed, c.Disabled, at, c.UserID); err != nil {
+			return nil, err
+		}
+		if c.Disabled && !c.WasDisabled {
+			if err := endSessions(ctx, tx, c.UserID, ""); err != nil {
+				return nil, err
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM auth_tokens WHERE user_id = ?", c.UserID); err != nil {
+				return nil, err
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", c.UserID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	var admins int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM users WHERE "+activeAdmin).Scan(&admins); err != nil {
+		return nil, err
+	}
+	if admins == 0 {
+		return nil, store.ErrLastAdmin
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	out := []store.User{}
+	for _, id := range invited {
+		u, err := d.GetUser(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	return out, nil
 }
 
 func (d *DB) DeleteUser(ctx context.Context, id int64) error {
@@ -272,7 +346,11 @@ func (d *DB) PruneSessions(ctx context.Context, idleBefore time.Time) error {
 	if _, err := d.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at <= ? OR last_seen_at < ?", n, idleBefore.UTC().Format(ts)); err != nil {
 		return err
 	}
-	_, err := d.db.ExecContext(ctx, "DELETE FROM auth_tokens WHERE expires_at <= ?", n)
+	if _, err := d.db.ExecContext(ctx, "DELETE FROM auth_tokens WHERE expires_at <= ?", n); err != nil {
+		return err
+	}
+	// Expired API tokens stay listed for 30 days ("expired" in the UI), then go.
+	_, err := d.db.ExecContext(ctx, "DELETE FROM api_tokens WHERE expires_at <= ?", now().Add(-30*24*time.Hour).Format(ts))
 	return err
 }
 

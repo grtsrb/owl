@@ -340,6 +340,7 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 		if err := s.Store.PruneSessions(ctx, time.Now().Add(-sessionIdle)); err != nil && ctx.Err() == nil {
 			s.Log.Error("session prune failed", "err", err)
 		}
+		s.warnExpiringTokens(ctx)
 		select {
 		case <-ctx.Done():
 			return

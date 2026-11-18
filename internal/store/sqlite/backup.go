@@ -64,12 +64,12 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	}
 	defer cp.Close()
 	cp.SetMaxOpenConns(1)
-	// Sessions and one-time links are live secrets (hashed, but still), and password hashes would be
+	// Sessions, one-time links and API tokens are live secrets (hashed, but still), and password hashes would be
 	// crackable offline by anyone who can read the bucket: a backup carries none of them. Users (email,
 	// role, Google link) stay, so a backup used as the database file after losing the server keeps
-	// everyone's access — password users then need a reset link (`owl user reset-link`).
+	// everyone's access — password users then need a reset link (`owl db user reset-link`).
 	for _, q := range []string{"DELETE FROM upstream_cache", "DELETE FROM sessions", "DELETE FROM auth_tokens",
-		"UPDATE users SET password_hash = ''", "VACUUM"} {
+		"DELETE FROM api_tokens", "UPDATE users SET password_hash = ''", "VACUUM"} {
 		if _, err := cp.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("trim backup: %w", err)
 		}
@@ -78,7 +78,7 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 }
 
 // tables restored from a backup; audit_log, revoked_tokens, upstream_cache, summaries and everything
-// about sign-in (users, sessions, auth_tokens) stay as they are.
+// about sign-in (users, sessions, auth_tokens, api_tokens) stay as they are.
 var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "current_images", "changes",
 	"policies", "catalog_overrides", "settings", "custom_components"}
 

@@ -21,6 +21,8 @@ var (
 	ErrInvalid       = errors.New("invalid input")
 	// ErrLastAdmin: the change would leave no active admin (nobody could manage Owl any more).
 	ErrLastAdmin = errors.New("Owl needs at least one active admin")
+	// ErrChanged: a user changed between computing a users-file plan and applying it.
+	ErrChanged = errors.New("changed since the plan was made")
 )
 
 // Names end up in kubectl contexts, file names, HTTP headers and YAML, so every entry point (API and
@@ -177,6 +179,9 @@ type User struct {
 	HasGoogle   bool       `json:"hasGoogle"`
 	// DigestEmail: the user opted in to the weekly digest by email (milestone 10).
 	DigestEmail bool `json:"digestEmail"`
+	// Managed: the user is listed in a users file (`owl users apply`, milestone 12). Changes in the UI
+	// still work but show as drift until the file is updated.
+	Managed bool `json:"managed"`
 	// PasswordHash (argon2id, PHC string) and GoogleSub never leave the server.
 	PasswordHash string `json:"-"`
 	GoogleSub    string `json:"-"`
@@ -185,6 +190,21 @@ type User struct {
 // Active: accepted the invite and not disabled.
 func (u *User) Active() bool { return u.ActivatedAt != nil && u.DisabledAt == nil }
 
+// UserChange is one step of applying a users file (milestone 12). Invite creates a managed user;
+// Update sets role, disabled and managed of UserID — only if the user still has the Was* values (else
+// ErrChanged), so an apply does exactly what its plan showed.
+type UserChange struct {
+	Invite      bool
+	Email       string
+	UserID      int64
+	Role        Role
+	Disabled    bool
+	Managed     bool
+	WasRole     Role
+	WasDisabled bool
+	WasManaged  bool
+}
+
 // Session is a signed-in browser. Only the SHA-256 of the cookie value is stored.
 type Session struct {
 	TokenHash  string
@@ -192,6 +212,43 @@ type Session struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time // absolute limit; the idle limit is checked against LastSeenAt
+	// APIToken is set when the request was authenticated with a personal API token instead of a
+	// browser session (milestone 12); TokenHash/LastSeenAt/ExpiresAt are then unused.
+	APIToken *APIToken
+}
+
+// CanWrite: browser sessions follow the user's role; API tokens also need the write scope, and a write
+// token whose owner is no longer an admin is read-only.
+func (s *Session) CanWrite() bool {
+	if s.User.Role != RoleAdmin {
+		return false
+	}
+	return s.APIToken == nil || s.APIToken.Scope == ScopeWrite
+}
+
+// TokenScope is what a personal API token may do.
+type TokenScope string
+
+const (
+	ScopeRead  TokenScope = "read"
+	ScopeWrite TokenScope = "write" // admins only; effective only while the owner is an admin
+)
+
+func (s TokenScope) Valid() bool { return s == ScopeRead || s == ScopeWrite }
+
+// APIToken is a personal API token (milestone 12) for the CLI. Only the SHA-256 is stored; Prefix is
+// a short non-secret part for display. ExpiresAt nil = never expires.
+type APIToken struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"userId"`
+	UserEmail  string     `json:"userEmail"`
+	Name       string     `json:"name"`
+	Prefix     string     `json:"prefix"`
+	Scope      TokenScope `json:"scope"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	WarnedAt   *time.Time `json:"-"`
 }
 
 // AuthTokenKind is what a one-time link does.
@@ -399,7 +456,8 @@ type Store interface {
 
 	// Users (milestone 9). Users, sessions and one-time tokens are kept across restores: a restore
 	// never changes who can sign in. Emails are compared lowercase. UpdateUser and DeleteUser return
-	// ErrLastAdmin when no active admin would be left; disabling or deleting a user ends their sessions.
+	// ErrLastAdmin when no active admin would be left; disabling or deleting a user ends their sessions
+	// and deletes their API tokens.
 	CreateUser(ctx context.Context, email string, role Role) (*User, error)
 	GetUser(ctx context.Context, id int64) (*User, error)
 	UserByEmail(ctx context.Context, email string) (*User, error)
@@ -413,6 +471,10 @@ type Store interface {
 	// LinkGoogle stores the account's Google subject and activates an invited user.
 	LinkGoogle(ctx context.Context, id int64, sub string) error
 	RecordLogin(ctx context.Context, id int64) error
+	// ApplyUserChanges applies a users-file plan in one transaction: ErrChanged when a user no longer
+	// matches the plan (or an invited email exists by now), ErrLastAdmin when no active admin would be
+	// left. Disabling ends sessions and one-time links. Returns the invited users.
+	ApplyUserChanges(ctx context.Context, changes []UserChange) ([]User, error)
 
 	// Sessions: CreateSession stores a session (hash of the cookie value); SessionByHash returns it
 	// with its user, or ErrNotFound; TouchSession updates last-seen.
@@ -431,6 +493,19 @@ type Store interface {
 	CreateAuthToken(ctx context.Context, hash string, userID int64, kind AuthTokenKind, expires time.Time) error
 	PeekAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
 	ConsumeAuthToken(ctx context.Context, hash string) (*User, AuthTokenKind, error)
+
+	// Personal API tokens (milestone 12). Never in backups, never restored (like sessions).
+	// CreateAPIToken returns ErrExists when the user already has a token with that name.
+	// ListAPITokens: userID 0 = every user's. APITokenByHash returns the token with its user (expired
+	// ones too: the caller decides), or ErrNotFound. DeleteAPIToken: userID 0 = any owner; ErrNotFound
+	// when there's no such token (of that user). ExpiringAPITokens: not yet warned, expiring before t.
+	CreateAPIToken(ctx context.Context, t APIToken, hash string) (*APIToken, error)
+	ListAPITokens(ctx context.Context, userID int64) ([]APIToken, error)
+	APITokenByHash(ctx context.Context, hash string) (*APIToken, *User, error)
+	TouchAPIToken(ctx context.Context, id int64) error
+	DeleteAPIToken(ctx context.Context, id, userID int64) (*APIToken, error)
+	ExpiringAPITokens(ctx context.Context, before time.Time) ([]APIToken, error)
+	MarkAPITokenWarned(ctx context.Context, id int64) error
 
 	// Notifications (milestone 10). Kept across restores. ListResolved returns pairs that left Critical
 	// at or after since, oldest first; PruneResolved deletes older ones. SetDigestEmail is the user's

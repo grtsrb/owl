@@ -39,7 +39,7 @@ writes its URL to `dev/.mattermost.env` (gitignored), which `make stack-up` pass
   any credentials, so the "no delete" permission can only be tested on real S3) and `owl-mailpit`
   (catches every email; inbox at <http://127.0.0.1:8025>),
 - on the first run (no users yet) invites `admin@owl.local` (or `$OWL_DEV_ADMIN`) as admin and prints
-  the link — open it and set a password. Lost it? `docker exec owl-server /owl user reset-link --email
+  the link — open it and set a password. Lost it? `docker exec owl-server /owl db user reset-link --email
   admin@owl.local`,
 - passes `OWL_GOOGLE_CLIENT_ID/SECRET/DOMAIN` from `.env` if set (a Google client with redirect URI
   `http://127.0.0.1:8080/auth/google/callback` works locally — Google allows http for loopback),
@@ -65,7 +65,7 @@ Useful while developing:
 
 ```bash
 set -a; . ./.env; set +a
-docker exec owl-server /owl cluster list
+docker exec owl-server /owl db cluster list
 curl -s 127.0.0.1:8080/api/v1/report | jq '.summary'
 ./bin/owl upstream --component redis --version 7.2.4
 docker logs -f owl-server

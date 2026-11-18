@@ -180,6 +180,23 @@ var migrations = []string{
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// Personal API tokens (milestone 12). Not restored from backups and dropped from them (live
+	// secrets, like sessions); deleting a user deletes their tokens.
+	`CREATE TABLE api_tokens (
+		id           INTEGER PRIMARY KEY,
+		user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		name         TEXT NOT NULL,
+		token_hash   TEXT NOT NULL UNIQUE,
+		prefix       TEXT NOT NULL,
+		scope        TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+		created_at   TEXT NOT NULL,
+		expires_at   TEXT,
+		last_used_at TEXT,
+		warned_at    TEXT,
+		UNIQUE (user_id, name)
+	);`,
+	// Users listed in a users file (`owl users apply`, milestone 12).
+	`ALTER TABLE users ADD COLUMN managed INTEGER NOT NULL DEFAULT 0;`,
 }
 
 type DB struct{ db *sql.DB }

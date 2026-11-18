@@ -42,9 +42,9 @@ docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-
 until curl -sf 127.0.0.1:8080/healthz >/dev/null; do sleep 1; done
 echo "server: http://127.0.0.1:8080   mail: http://127.0.0.1:8025"
 [[ -z ${OWL_MATTERMOST_WEBHOOK_URL:-} ]] || echo "notifications: Mattermost at http://127.0.0.1:8065 (Settings → Notifications to switch them on)"
-if [[ -z $(docker exec owl-server /owl user list | awk 'NR>1') ]]; then
+if [[ -z $(docker exec owl-server /owl db user list | awk 'NR>1') ]]; then
   echo "first admin ($ADMIN_EMAIL) — open this link to set a password:"
-  docker exec -e OWL_PUBLIC_URL=http://127.0.0.1:8080 owl-server /owl user invite --admin "$ADMIN_EMAIL" 2>/dev/null
+  docker exec -e OWL_PUBLIC_URL=http://127.0.0.1:8080 owl-server /owl db user invite --admin "$ADMIN_EMAIL" 2>/dev/null
 fi
 
 for entry in $clusters; do
@@ -52,10 +52,10 @@ for entry in $clusters; do
   docker network connect "k3d-$name" owl-server
   ip=$(docker inspect -f "{{(index .NetworkSettings.Networks \"k3d-$name\").IPAddress}}" owl-server)
 
-  if docker exec owl-server /owl cluster list | awk 'NR>1{print $1}' | grep -qx "$name"; then
-    token=$(docker exec owl-server /owl cluster rotate-token --name "$name" 2>/dev/null)
+  if docker exec owl-server /owl db cluster list | awk 'NR>1{print $1}' | grep -qx "$name"; then
+    token=$(docker exec owl-server /owl db cluster rotate-token --name "$name" 2>/dev/null)
   else
-    token=$(docker exec owl-server /owl cluster add --name "$name" --stage "$stage" --tenant IT 2>/dev/null)
+    token=$(docker exec owl-server /owl db cluster add --name "$name" --stage "$stage" --tenant IT 2>/dev/null)
   fi
 
   k3d image import "$IMAGE" -c "$name" >/dev/null 2>&1
@@ -70,4 +70,4 @@ for entry in $clusters; do
   kubectl --context "$ctx" -n owl rollout restart deploy/owl-agent >/dev/null
   echo "agent: $name ($stage) -> http://$ip:8080"
 done
-echo "first snapshots arrive within ~30s:  docker exec owl-server /owl cluster list"
+echo "first snapshots arrive within ~30s:  docker exec owl-server /owl db cluster list"

@@ -66,6 +66,9 @@ func (s *Server) audit(r *http.Request, action string, args ...any) {
 	actor := ""
 	if sess := sessionFrom(r); sess != nil {
 		actor = sess.User.Email
+		if sess.APIToken != nil {
+			actor += " (token: " + sess.APIToken.Name + ")"
+		}
 	}
 	remote := s.clientIP(r)
 	s.Log.Info("audit: "+action, append(args, "by", actor, "remote", remote, "req", requestID(r))...)

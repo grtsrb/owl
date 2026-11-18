@@ -1,3 +1,5 @@
+//go:build !owlclient
+
 package main
 
 import (
@@ -94,7 +96,7 @@ func runServer(args []string) error {
 		return err
 	}
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		Auth: authCfg, UI: web.Dist(), LogLevel: level}
+		Auth: authCfg, UI: web.Dist(), LogLevel: level, Version: version, CLIDir: envOr("OWL_CLI_DIR", "/cli")}
 	if logFile != nil {
 		app.LogFile = logFile
 	}
@@ -172,7 +174,7 @@ func runServer(args []string) error {
 // the server host (or `docker exec` into the server container); Settings → Clusters does the same.
 func runCluster(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: owl cluster <add|list|rotate-token|delete> [flags]")
+		return errors.New("usage: owl db cluster <add|list|rotate-token|delete> --name <cluster> [flags]")
 	}
 	fs := flag.NewFlagSet("cluster "+args[0], flag.ExitOnError)
 	dbPath := fs.String("db", defaultDB(), "SQLite database path (env OWL_DB)")
@@ -181,7 +183,7 @@ func runCluster(args []string) error {
 	tenant := fs.String("tenant", "", "tenant using the cluster, e.g. IT or DS")
 	_ = fs.Parse(args[1:])
 
-	db, err := sqlite.Open(*dbPath)
+	db, err := openExistingDB(*dbPath)
 	if err != nil {
 		return err
 	}
@@ -238,6 +240,15 @@ func runCluster(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown cluster command %q", args[0])
+}
+
+// openExistingDB opens the server's database for `owl db …`, refusing to create one: run by mistake on a
+// laptop, it would otherwise create an empty owl.db and report "no clusters".
+func openExistingDB(path string) (*sqlite.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("no Owl database at %s: `owl db …` runs on the server host (or `docker exec` into the server container), with --db or OWL_DB pointing at the database; from your machine, use the client commands (`owl clusters`, `owl users`)", path)
+	}
+	return sqlite.Open(path)
 }
 
 func printToken(c *store.Cluster, token string) error {

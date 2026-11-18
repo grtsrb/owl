@@ -4,7 +4,7 @@
 #   kubectl apply -f server.yaml
 #   kubectl -n owl create secret generic owl-server --from-env-file=owl.env   # see docs/install.md
 #   kubectl apply -f ingress.example.yaml   # after editing host and TLS
-#   kubectl -n owl exec owl-server-0 -- /owl user invite --admin you@example.com
+#   kubectl -n owl exec owl-server-0 -- /owl db user invite --admin you@example.com
 #
 # Note: a server in a cluster also watches that cluster's outages from the inside — if the cluster
 # is down, so is Owl. Prefer a separate host (deploy/compose) for the production instance.

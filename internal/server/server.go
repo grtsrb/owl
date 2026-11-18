@@ -68,7 +68,12 @@ type Server struct {
 	// Registry reads OCI labels from public registries for "New component" suggestions (nil = off).
 	Registry *registry.Client
 	// Notify posts the digest and alerts (milestone 10); nil in tests that don't need it.
-	Notify   *notify.Notifier
+	Notify *notify.Notifier
+	// CLIDir holds the downloadable client builds (owl-<os>-<arch>.gz + SHA256SUMS); "" or missing =
+	// no downloads. Version is the server's version (shown with them).
+	CLIDir   string
+	Version  string
+	cliFiles cliFiles
 	LogLevel *slog.LevelVar
 	LogFile  interface{ SetRetentionDays(int) }
 
@@ -121,6 +126,9 @@ func (s *Server) Handler() http.Handler {
 	s.notifyRoutes(mux)
 	s.catalogRoutes(mux)
 	s.signinRoutes(mux)
+	s.tokenRoutes(mux)
+	mux.HandleFunc("GET /api/v1/cli", s.listCLI)
+	mux.HandleFunc("GET /api/v1/cli/{platform}", s.downloadCLI)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else
 	return logRequests(s.Log, s.clientIP, securityHeaders(s.checkHost(s.authn(mux))))
 }
