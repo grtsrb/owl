@@ -30,8 +30,8 @@ Linux, with SHA-256 checksums.
 
 ```bash
 chmod +x owl && sudo mv owl /usr/local/bin/
-# macOS, downloaded with a browser: the binary isn't signed, so remove the quarantine flag first
-xattr -d com.apple.quarantine owl
+# macOS: only if it refuses to open ("Apple cannot check it") — the binary isn't signed
+xattr -d com.apple.quarantine /usr/local/bin/owl
 ```
 
 In CI, download it with the token you use anyway:

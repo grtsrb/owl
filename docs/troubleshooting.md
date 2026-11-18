@@ -176,6 +176,7 @@ Tokens only travel over HTTPS, except to `localhost`/`127.0.0.1`.
 
 **macOS: "owl can't be opened because Apple cannot check it".**
 Downloaded with a browser, the unsigned binary is quarantined: `xattr -d com.apple.quarantine owl`.
+(`No such xattr` means it isn't quarantined — nothing to do.)
 
 **`owl users apply`: users changed since the plan was shown.**
 Someone changed users between the plan and the apply. Nothing was changed — run it again.

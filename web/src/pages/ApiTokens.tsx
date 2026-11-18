@@ -34,7 +34,7 @@ export function CliDownloadCard() {
             })}
           </div>
           <pre className="code" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>{[
-            "chmod +x owl && sudo mv owl /usr/local/bin/   # macOS: xattr -d com.apple.quarantine owl first",
+            "chmod +x owl && sudo mv owl /usr/local/bin/   # macOS, only if it refuses to open: xattr -d com.apple.quarantine owl",
             `owl login --server ${origin}`,
             "owl status",
             "",
