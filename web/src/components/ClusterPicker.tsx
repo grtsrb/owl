@@ -5,8 +5,9 @@ import { useClusterSelection } from "../model";
 
 const SEARCH_FROM = 9; // clusters: show the filter box from this many
 
-/** Which clusters Overview and Changes show: stage tabs for the common case, a popover for single
- *  clusters and tenants. `clusters` come in stage order. The selection lives in ?clusters=. */
+/** Which clusters Overview and Changes show: one button (right of the top bar) that sums up the selection
+ *  and opens a popover — All / per stage / per tenant shortcuts and the clusters grouped by stage.
+ *  `clusters` come in stage order. The selection lives in ?clusters=. */
 export function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
   const sel = useClusterSelection(clusters);
   const [open, setOpen] = useState(false);
@@ -31,9 +32,9 @@ export function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
   const n = sel.selected.length;
   const label = sel.isAll ? `${clusters.length} cluster${clusters.length === 1 ? "" : "s"}`
     : n === 1 ? sel.selected[0]
+    : activeStage ? `${activeStage[0].toUpperCase()}${activeStage.slice(1)} · ${n} clusters`
     : activeTenant ? `Tenant ${activeTenant} · ${n}`
-    : custom ? `${n} of ${clusters.length} clusters`
-    : `${n} clusters`;
+    : `${n} of ${clusters.length} clusters`;
 
   // Close on a click outside or Escape.
   useEffect(() => {
@@ -50,23 +51,11 @@ export function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
 
   return (
     <div className="topbar picker" role="group" aria-label="Clusters shown">
-      {stages.length > 1 && (
-        <div className="seg" role="tablist" aria-label="Stage">
-          <button role="tab" aria-selected={sel.isAll} className={sel.isAll ? "on" : ""} onClick={() => sel.set([])}>All</button>
-          {stages.map((s) => (
-            <button key={s.stage} role="tab" aria-selected={activeStage === s.stage} className={activeStage === s.stage ? "on" : ""}
-              onClick={() => sel.set(s.names)} title={s.names.join(", ")}>
-              {s.stage}<span className="seg-n">{s.names.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
       <div className="pick" ref={box}>
         <button className={`pick-btn${custom ? " custom" : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}
           aria-label={`Clusters: ${label}`} title={sel.selected.join(", ")}>
           <Icon.clusters />
           <span className="pick-label">{label}</span>
-          <span className="pick-n" aria-hidden>{n}</span>
           <Icon.chevron />
         </button>
         {open && (
@@ -76,6 +65,15 @@ export function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
                 <Icon.search />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter clusters…" aria-label="Filter clusters" autoFocus />
               </label>
+            )}
+            {stages.length > 1 && (
+              <div className="pick-quick" role="group" aria-label="Shortcuts">
+                <button className={`chip small${sel.isAll ? " on" : ""}`} aria-pressed={sel.isAll} onClick={() => sel.set([])}>All</button>
+                {stages.map((s) => (
+                  <button key={s.stage} className={`chip small cap${activeStage === s.stage ? " on" : ""}`} aria-pressed={activeStage === s.stage}
+                    onClick={() => sel.set(s.names)}>{s.stage}</button>
+                ))}
+              </div>
             )}
             {tenants.length > 1 && (
               <div className="pick-tenants">

@@ -4,9 +4,9 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
 
 ## Cluster picker redesign
 
-- Overview and Changes: stage tabs (All / each stage) plus one clusters button with a popover —
-  clusters grouped by stage with checkboxes, tenant shortcuts, a filter once there are many. One line
-  on phones too; replaces the row of chips and preset links.
+- Overview and Changes: one clusters button (top right) with a popover — All / stage / tenant
+  shortcuts and the clusters grouped by stage with checkboxes, a filter once there are many. Replaces
+  the row of chips and preset links.
 
 ## Milestone 13 — bigger built-in catalog (plumbing)
 

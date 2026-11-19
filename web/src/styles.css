@@ -73,14 +73,7 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .topbar-r { margin-left: auto; font-size: 12px; color: var(--muted); }
 .sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
 /* Cluster picker (Overview, Changes): stage tabs + a popover for single clusters and tenants. */
-.picker { flex-wrap: nowrap; gap: 10px; }
-.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
-  min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.seg button { border: 0; background: none; font: inherit; font-size: 13px; color: var(--muted); padding: 5px 12px; min-height: 30px;
-  border-radius: 7px; cursor: pointer; white-space: nowrap; text-transform: capitalize; display: inline-flex; align-items: center; gap: 6px; }
-.seg button:hover { color: var(--text); }
-.seg button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 1px var(--border); }
-.seg-n { font-size: 11px; color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
+.picker { flex-wrap: nowrap; justify-content: flex-end; }
 .pick { position: relative; margin-left: auto; flex: none; }
 .pick-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; color: var(--text-2); background: var(--panel);
   border: 1px solid var(--border); border-radius: 10px; padding: 5px 10px 5px 12px; min-height: 38px; cursor: pointer; max-width: 240px; }
@@ -94,6 +87,8 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
   padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .pick-search { display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); }
 .pick-search input { border: 0; background: none; font: inherit; color: var(--text); padding: 8px 0; flex: 1; min-width: 0; outline: none; }
+.pick-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 4px 8px; border-bottom: 1px solid var(--border-2); }
+.chip.cap { text-transform: capitalize; }
 .pick-tenants { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px 6px; border-bottom: 1px solid var(--border-2); }
 .chip.small { min-height: 28px; padding: 2px 10px; font-size: 12.5px; }
 .pick-h { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
@@ -107,13 +102,8 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .pick-tenant { font-size: 11.5px; color: var(--muted); }
 .pick-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 4px 0 8px;
   border-top: 1px solid var(--border-2); font-size: 12.5px; }
-.pick-n { display: none; font-variant-numeric: tabular-nums; font-weight: 600; }
 @media (max-width: 760px) {
-  .picker { gap: 8px; }
-  .seg button { padding: 5px 10px; }
-  .seg-n, .pick-label { display: none; }
-  .pick-n { display: inline; }
-  .pick-btn { padding: 5px 8px 5px 10px; gap: 6px; }
+  .pick-btn { max-width: 100%; }
   .pick-pop { position: fixed; left: 16px; right: 16px; top: auto; width: auto; margin-top: 6px; }
 }
 .content { padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px; max-width: 1440px; width: 100%; }
