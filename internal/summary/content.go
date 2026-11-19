@@ -164,7 +164,29 @@ func parseContent(raw string, sources []upstream.Note) (Content, error) {
 }
 
 // clean removes control characters (newlines become spaces), collapses whitespace and caps the length.
-var reURL = regexp.MustCompile(`(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+`)
+// Links: a scheme ("https://", "mailto:"), "//host", "www.", or a bare host whose last label is
+// letters ("evil.example/x") — Mattermost and mail clients auto-link all of these. File names in
+// notes ("values.yaml") are kept; versions ("1.2.3") never match.
+var (
+	reURL      = regexp.MustCompile(`(?i)(?:\b[a-z][a-z0-9+.-]*:(?://)?|(?:^|[\s(\[<"'])//)\S+|\b[\w-]+(?:\.[\w-]+)*\.([a-z]{2,63})\b(?:[/:?#]\S*)?`)
+	fileSuffix = map[string]bool{"yaml": true, "yml": true, "json": true, "toml": true, "conf": true, "cfg": true,
+		"ini": true, "txt": true, "xml": true, "log": true, "lock": true, "proto": true, "tpl": true, "pem": true,
+		"crt": true, "js": true}
+)
+
+func stripLinks(s string) string {
+	return reURL.ReplaceAllStringFunc(s, func(m string) string {
+		sm := reURL.FindStringSubmatch(m)
+		if sm[1] != "" && !strings.ContainsAny(m, "/:?#@") && fileSuffix[strings.ToLower(sm[1])] {
+			return m // a file name, not a host
+		}
+		lead := ""
+		if m != "" && strings.ContainsRune(" ([<\"'", rune(m[0])) {
+			lead = m[:1]
+		}
+		return lead + "[link removed]"
+	})
+}
 
 func clean(s string, max int) string {
 	s = strings.Map(func(r rune) rune {
@@ -176,7 +198,7 @@ func clean(s string, max int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	// Links in a summary come only from Owl's own release-note sources. A URL in Claude's text (an
 	// injection in upstream notes could plant one) would be auto-linked by Mattermost and mail clients.
-	s = reURL.ReplaceAllString(s, "[link removed]")
+	s = stripLinks(s)
 	if r := []rune(s); len(r) > max {
 		s = strings.TrimSpace(string(r[:max-1])) + "…"
 	}
