@@ -2,6 +2,12 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Cluster picker redesign
+
+- Overview and Changes: one clusters button (top right) with a popover — All / stage / tenant
+  shortcuts and the clusters grouped by stage with checkboxes, a filter once there are many. Replaces
+  the row of chips and preset links.
+
 ## Milestone 13 — bigger built-in catalog (plumbing)
 
 Groundwork for a much longer built-in catalog; the new entries follow in batches.

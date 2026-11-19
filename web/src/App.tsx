@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, session, useMe, type Cluster, type StageInfo } from "./api";
 import { Icon } from "./icons";
-import { orderClusters, useClusterSelection } from "./model";
+import { orderClusters } from "./model";
+import { ClusterPicker } from "./components/ClusterPicker";
 import { useApi } from "./ui";
 import Overview from "./pages/Overview";
 import ComponentPage from "./pages/Component";
@@ -106,35 +107,6 @@ function Shell() {
 
 function NavItem({ to, end, icon, children }: { to: string; end?: boolean; icon: ReactNode; children: ReactNode }) {
   return <NavLink to={to} end={end} className={({ isActive }) => `nav${isActive ? " active" : ""}`}>{icon}{children}</NavLink>;
-}
-
-/** Multi-select of clusters, with presets per tenant and per stage. Shared by Overview and Changes. */
-function ClusterPicker({ clusters }: { clusters: Cluster[] }) {
-  const sel = useClusterSelection(clusters);
-  const tenants = [...new Set(clusters.map((c) => c.tenant))].sort();
-  const stages = [...new Set(clusters.map((c) => c.stage))];
-  return (
-    <div className="topbar" role="group" aria-label="Clusters shown">
-      <span className="topbar-l">Clusters</span>
-      {clusters.map((c) => {
-        const on = sel.selected.includes(c.name);
-        return (
-          <button key={c.name} className={`chip${on ? " on" : ""}`} aria-pressed={on} onClick={() => sel.toggle(c.name)}>
-            <span className="st">{c.stage}</span><span>{c.name}</span>
-          </button>
-        );
-      })}
-      <span className="sep" aria-hidden />
-      <button className="link-btn" onClick={() => sel.set([])}>All</button>
-      {tenants.length > 1 && tenants.map((t) => (
-        <button key={t} className="link-btn" onClick={() => sel.set(clusters.filter((c) => c.tenant === t).map((c) => c.name))}>Tenant {t}</button>
-      ))}
-      {stages.length > 1 && stages.map((s) => (
-        <button key={s} className="link-btn" onClick={() => sel.set(clusters.filter((c) => c.stage === s).map((c) => c.name))}>Stage {s}</button>
-      ))}
-      <span className="topbar-r">{sel.selected.length} of {clusters.length} clusters</span>
-    </div>
-  );
 }
 
 /** Your own account (password, digest email, sign out): under your name in the sidebar, not in Settings. */
