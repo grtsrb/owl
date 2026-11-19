@@ -158,3 +158,371 @@ components:
       rancher/hardened-k8s-metrics-server: rke2
     github: kubernetes-sigs/metrics-server
     releaseTagPrefix: "v"
+
+  # ---------------------------------------------------------------------------------------------
+  # Milestone 13, batch 1 (verified 2026-11-19 against the registries, GitHub, endoflife.date, OSV).
+  # ---------------------------------------------------------------------------------------------
+
+  # Elastic (ECK and the stack it deploys). Stack images share the Elasticsearch version.
+  - id: eck-operator
+    name: Elastic Cloud on Kubernetes (ECK) operator
+    images: [docker.elastic.co/eck/eck-operator, docker.elastic.co/eck/eck-operator-ubi, docker.elastic.co/eck/eck-operator-fips]
+    github: elastic/cloud-on-k8s
+
+  - id: elasticsearch
+    name: Elasticsearch
+    images:
+      - docker.elastic.co/elasticsearch/elasticsearch
+      - docker.elastic.co/elasticsearch/elasticsearch-wolfi
+      - docker.elastic.co/elasticsearch/elasticsearch-ubi
+      - elasticsearch
+      - bitnami/elasticsearch
+      - bitnamilegacy/elasticsearch
+    github: elastic/elasticsearch
+    eol: elasticsearch
+    osv: {ecosystem: Maven, name: "org.elasticsearch:elasticsearch"}   # Maven versions = release versions
+
+  - id: kibana
+    name: Kibana
+    images:
+      - docker.elastic.co/kibana/kibana
+      - docker.elastic.co/kibana/kibana-wolfi
+      - docker.elastic.co/kibana/kibana-ubi
+      - kibana
+      - bitnami/kibana
+      - bitnamilegacy/kibana
+    github: elastic/kibana
+    eol: kibana
+
+  - id: logstash
+    name: Logstash
+    images: [docker.elastic.co/logstash/logstash, docker.elastic.co/logstash/logstash-wolfi, docker.elastic.co/logstash/logstash-ubi,
+      logstash, bitnamilegacy/logstash]
+    github: elastic/logstash
+    eol: logstash
+
+  - id: elastic-beats
+    name: Elastic Beats
+    images:
+      - docker.elastic.co/beats/filebeat
+      - docker.elastic.co/beats/metricbeat
+      - docker.elastic.co/beats/heartbeat
+      - docker.elastic.co/beats/auditbeat
+      - docker.elastic.co/beats/packetbeat
+      - docker.elastic.co/beats/filebeat-wolfi
+    github: elastic/beats
+
+  - id: elastic-agent
+    name: Elastic Agent
+    images: [docker.elastic.co/elastic-agent/elastic-agent, docker.elastic.co/elastic-agent/elastic-agent-wolfi,
+      docker.elastic.co/beats/elastic-agent]
+    github: elastic/elastic-agent
+
+  - id: elastalert2
+    name: ElastAlert 2
+    images: [jertel/elastalert2]
+    github: jertel/elastalert2          # also tags elastalert2-x.y.z; those don't parse and are skipped
+
+  # Ingress / networking
+  - id: traefik
+    name: Traefik
+    images:
+      - traefik
+      - rancher/mirrored-library-traefik
+      - rancher/hardened-traefik
+    bundledWith:
+      rancher/mirrored-library-traefik: k3s
+      rancher/hardened-traefik: rke2
+    github: traefik/traefik             # repo advisories cover v2 and v3 (OSV splits them per Go module)
+    eol: traefik
+
+  - id: cilium
+    name: Cilium
+    images:
+      - quay.io/cilium/cilium
+      - quay.io/cilium/operator
+      - quay.io/cilium/operator-generic
+      - quay.io/cilium/operator-aws
+      - quay.io/cilium/operator-azure
+      - quay.io/cilium/operator-alibabacloud
+      - quay.io/cilium/hubble-relay
+      - quay.io/cilium/clustermesh-apiserver
+      - rancher/mirrored-cilium-cilium
+      - rancher/mirrored-cilium-operator-generic
+      - rancher/mirrored-cilium-operator-aws
+      - rancher/mirrored-cilium-hubble-relay
+      - rancher/mirrored-cilium-clustermesh-apiserver
+    bundledWith:
+      rancher/mirrored-cilium-cilium: rke2
+      rancher/mirrored-cilium-operator-generic: rke2
+      rancher/mirrored-cilium-operator-aws: rke2
+      rancher/mirrored-cilium-hubble-relay: rke2
+      rancher/mirrored-cilium-clustermesh-apiserver: rke2
+    github: cilium/cilium
+    eol: cilium
+    osv: {ecosystem: Go, name: github.com/cilium/cilium}
+
+  - id: hubble-ui
+    name: Hubble UI
+    images:
+      - quay.io/cilium/hubble-ui
+      - quay.io/cilium/hubble-ui-backend
+      - rancher/mirrored-cilium-hubble-ui
+      - rancher/mirrored-cilium-hubble-ui-backend
+    bundledWith:
+      rancher/mirrored-cilium-hubble-ui: rke2
+      rancher/mirrored-cilium-hubble-ui-backend: rke2
+    github: cilium/hubble-ui
+
+  - id: cilium-certgen
+    name: Cilium certgen
+    images: [quay.io/cilium/certgen, rancher/mirrored-cilium-certgen]
+    bundledWith:
+      rancher/mirrored-cilium-certgen: rke2
+    github: cilium/certgen
+
+  - id: envoy
+    name: Envoy
+    images:
+      - envoyproxy/envoy
+      - quay.io/cilium/cilium-envoy               # Cilium's Envoy build: v1.36.4-<timestamp>-<sha> = Envoy 1.36.4
+      - rancher/mirrored-cilium-cilium-envoy
+    bundledWith:
+      quay.io/cilium/cilium-envoy: cilium        # pinned by the Cilium release: upgrade Cilium, not Envoy
+      rancher/mirrored-cilium-cilium-envoy: rke2
+    github: envoyproxy/envoy
+    eol: envoy
+
+  - id: calico
+    name: Calico
+    images:
+      - calico/node
+      - calico/cni
+      - calico/kube-controllers
+      - calico/typha
+      - calico/apiserver
+      - calico/csi
+      - calico/pod2daemon-flexvol
+      - calico/node-driver-registrar
+      - calico/goldmane
+      - calico/whisker
+      - calico/whisker-backend
+      - quay.io/calico/node
+      - quay.io/calico/cni
+      - quay.io/calico/kube-controllers
+      - quay.io/calico/typha
+      - quay.io/calico/apiserver
+      - quay.io/calico/csi
+      - quay.io/calico/pod2daemon-flexvol
+      - quay.io/calico/node-driver-registrar
+      - rancher/hardened-calico                   # RKE2 calico and canal
+    bundledWith:
+      rancher/hardened-calico: rke2
+    github: projectcalico/calico
+    eol: calico
+    osv: {ecosystem: Go, name: github.com/projectcalico/calico}
+
+  - id: tigera-operator
+    name: Tigera operator (Calico)
+    images: [quay.io/tigera/operator]
+    github: tigera/operator
+
+  - id: flannel
+    name: flannel
+    images:
+      - flannel/flannel
+      - rancher/hardened-flannel                  # RKE2 canal
+      - rancher/mirrored-flannelcni-flannel
+    bundledWith:
+      rancher/hardened-flannel: rke2
+    github: flannel-io/flannel
+    osv: {ecosystem: Go, name: github.com/flannel-io/flannel}
+
+  - id: flannel-cni-plugin
+    name: flannel CNI plugin
+    images: [flannel/flannel-cni-plugin, rancher/mirrored-flannelcni-flannel-cni-plugin]
+    github: flannel-io/cni-plugin        # v1.9.1-flannel3 = 1.9.1
+
+  - id: metallb
+    name: MetalLB
+    images:
+      - quay.io/metallb/controller
+      - quay.io/metallb/speaker
+      - bitnami/metallb-controller
+      - bitnami/metallb-speaker
+      - bitnamilegacy/metallb-controller
+      - bitnamilegacy/metallb-speaker
+    github: metallb/metallb
+    releaseTagPrefix: "v"                # not metallb-chart-x.y.z
+    eol: metallb
+
+  - id: frr
+    name: FRRouting (FRR)
+    images: [quay.io/frrouting/frr]      # MetalLB's FRR mode
+    github: FRRouting/frr
+    releaseTagPrefix: "frr-"
+
+  - id: external-dns
+    name: ExternalDNS
+    images: [registry.k8s.io/external-dns/external-dns, bitnami/external-dns, bitnamilegacy/external-dns]
+    github: kubernetes-sigs/external-dns
+    releaseTagPrefix: "v"                # not external-dns-helm-chart-x.y.z
+    # endoflife.date external-dns lists only the newest line: release lines come from GitHub instead.
+
+  # Certificates and secrets
+  - id: cert-manager
+    name: cert-manager
+    images:
+      - quay.io/jetstack/cert-manager-controller
+      - quay.io/jetstack/cert-manager-webhook
+      - quay.io/jetstack/cert-manager-cainjector
+      - quay.io/jetstack/cert-manager-acmesolver
+      - quay.io/jetstack/cert-manager-startupapicheck
+      - bitnami/cert-manager
+      - bitnami/cert-manager-webhook
+      - bitnami/cainjector
+      - bitnami/acmesolver
+      - bitnamilegacy/cert-manager
+      - bitnamilegacy/cert-manager-webhook
+      - bitnamilegacy/cainjector
+      - bitnamilegacy/acmesolver
+    github: cert-manager/cert-manager
+    eol: cert-manager
+    osv: {ecosystem: Go, name: github.com/cert-manager/cert-manager}
+
+  - id: external-secrets
+    name: External Secrets Operator
+    images: [ghcr.io/external-secrets/external-secrets, oci.external-secrets.io/external-secrets/external-secrets]
+    github: external-secrets/external-secrets
+    releaseTagPrefix: "v"                # not helm-chart-x.y.z
+    osv: {ecosystem: Go, name: github.com/external-secrets/external-secrets}
+
+  - id: sealed-secrets
+    name: Sealed Secrets
+    images: [bitnami/sealed-secrets-controller, bitnamilegacy/sealed-secrets-controller]
+    github: bitnami-labs/sealed-secrets
+    releaseTagPrefix: "v"                # not helm-vx.y.z
+    osv: {ecosystem: Go, name: github.com/bitnami-labs/sealed-secrets}
+
+  # Monitoring and logging
+  - id: prometheus
+    name: Prometheus
+    images:
+      - quay.io/prometheus/prometheus
+      - prom/prometheus
+      - bitnami/prometheus
+      - bitnamilegacy/prometheus
+      - rancher/mirrored-prometheus-prometheus
+    github: prometheus/prometheus
+    eol: prometheus
+    osv: {ecosystem: Go, name: github.com/prometheus/prometheus}
+
+  - id: alertmanager
+    name: Alertmanager
+    images:
+      - quay.io/prometheus/alertmanager
+      - prom/alertmanager
+      - bitnami/alertmanager
+      - bitnamilegacy/alertmanager
+      - rancher/mirrored-prometheus-alertmanager
+    github: prometheus/alertmanager
+    osv: {ecosystem: Go, name: github.com/prometheus/alertmanager}
+
+  - id: prometheus-operator
+    name: Prometheus Operator
+    images:
+      - quay.io/prometheus-operator/prometheus-operator
+      - quay.io/prometheus-operator/prometheus-config-reloader
+      - quay.io/prometheus-operator/admission-webhook
+      - bitnami/prometheus-operator
+      - bitnamilegacy/prometheus-operator
+      - rancher/mirrored-prometheus-operator-prometheus-operator
+      - rancher/mirrored-prometheus-operator-prometheus-config-reloader
+    github: prometheus-operator/prometheus-operator
+
+  - id: node-exporter
+    name: Prometheus node exporter
+    images:
+      - quay.io/prometheus/node-exporter
+      - prom/node-exporter
+      - bitnami/node-exporter
+      - bitnamilegacy/node-exporter
+      - rancher/mirrored-prometheus-node-exporter
+    github: prometheus/node_exporter
+
+  - id: kube-state-metrics
+    name: kube-state-metrics
+    images:
+      - registry.k8s.io/kube-state-metrics/kube-state-metrics
+      - bitnami/kube-state-metrics
+      - bitnamilegacy/kube-state-metrics
+      - rancher/mirrored-kube-state-metrics-kube-state-metrics
+    github: kubernetes/kube-state-metrics
+
+  - id: loki
+    name: Grafana Loki
+    images:
+      - grafana/loki
+      - grafana/loki-canary
+      - grafana/promtail                   # released with Loki, same version
+      - bitnami/grafana-loki
+      - bitnamilegacy/grafana-loki
+    github: grafana/loki
+    eol: grafana-loki
+    osv: {ecosystem: Go, name: github.com/grafana/loki/v3}   # 3.x; the repo publishes no advisories, 2.x is EOL
+
+  - id: alloy
+    name: Grafana Alloy
+    images: [grafana/alloy]
+    github: grafana/alloy
+    osv: {ecosystem: Go, name: github.com/grafana/alloy}
+
+  - id: tempo
+    name: Grafana Tempo
+    images: [grafana/tempo, grafana/tempo-query, bitnami/grafana-tempo, bitnamilegacy/grafana-tempo]
+    github: grafana/tempo
+    osv: {ecosystem: Go, name: github.com/grafana/tempo}
+
+  - id: mimir
+    name: Grafana Mimir
+    images: [grafana/mimir]
+    github: grafana/mimir
+    releaseTagPrefix: "mimir-"
+
+  - id: rollout-operator
+    name: Grafana rollout-operator
+    images: [grafana/rollout-operator]      # deployed by the Mimir and Loki charts
+    github: grafana/rollout-operator
+
+  - id: thanos
+    name: Thanos
+    images: [quay.io/thanos/thanos, thanosio/thanos, bitnami/thanos, bitnamilegacy/thanos]
+    github: thanos-io/thanos
+
+  - id: opentelemetry-collector
+    name: OpenTelemetry Collector
+    images:
+      - otel/opentelemetry-collector
+      - otel/opentelemetry-collector-contrib
+      - otel/opentelemetry-collector-k8s
+      - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector
+      - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
+    github: open-telemetry/opentelemetry-collector-releases
+    releaseTagPrefix: "v"                  # not cmd/builder/vx.y.z
+    notes: A new 0.x minor about every two weeks, so "2 release lines behind" is a month — consider an n-2 or pin policy.
+
+  - id: opentelemetry-operator
+    name: OpenTelemetry Operator
+    images:
+      - ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
+      - ghcr.io/open-telemetry/opentelemetry-operator/target-allocator
+    github: open-telemetry/opentelemetry-operator
+    notes: Follows the Collector's 0.x minors (about every two weeks) — consider an n-2 or pin policy.
+
+  - id: fluent-bit
+    name: Fluent Bit
+    images: [fluent/fluent-bit, cr.fluentbit.io/fluent/fluent-bit, bitnami/fluent-bit, bitnamilegacy/fluent-bit]
+    github: fluent/fluent-bit
+    releaseTagPrefix: "v"                  # not wasm-browser-…
+    eol: fluent-bit

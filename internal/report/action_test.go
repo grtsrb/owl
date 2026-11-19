@@ -173,3 +173,33 @@ func TestActionBundled(t *testing.T) {
 		t.Errorf("component, mixed: %+v", a)
 	}
 }
+
+// Far behind on a line upstream still supports (Medium): patch within the line first, plan the move; a
+// line marked not maintained isn't "supported" even with a future end date.
+func TestActionSupportedLine(t *testing.T) {
+	yes, no := true, false
+	info := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "9.5", Latest: "9.5.6", Maintained: &yes},
+		{Name: "9.4", Latest: "9.4.9", Maintained: &yes},
+		{Name: "9.3", Latest: "9.3.8", EOL: true, EOLDate: day("2026-08-04")},
+		{Name: "8.19", Latest: "8.19.25", EOLDate: day("2027-07-15"), Maintained: &yes},
+		{Name: "8.18", Latest: "8.18.8", EOLDate: day("2027-09-01"), Maintained: &no},
+	}}
+	sp, _ := policy.Parse("lts-or-n-1")
+	tg, _ := policy.Resolve(sp, info.Lines, now)
+	act := func(v string) (Score, Action) {
+		in := inventory.Instance{Version: v, Status: "identified", Image: "img:" + v}
+		sc := ScoreInstance(in, info, &tg, nil, now)
+		return sc, ActionFor(in, sc, &tg, info)
+	}
+	if sc, a := act("8.19.20"); sc.Level != LevelMedium || a.Kind != ActionPatch || a.Text != "Patch to 8.19.25" ||
+		!strings.Contains(a.Why, "8.19 supported until 2027-07-15") || !strings.Contains(a.Why, "plan the move to 9.4.9") {
+		t.Errorf("older patch: %s %+v", sc.Level, a)
+	}
+	if sc, a := act("8.19.25"); sc.Level != LevelMedium || a.Text != "Plan the move to 9.4.9" {
+		t.Errorf("latest patch: %s %+v", sc.Level, a)
+	}
+	if sc, _ := act("8.18.8"); sc.Level != LevelHigh || sc.Supported != "" {
+		t.Errorf("not maintained, future end date: %s %q", sc.Level, sc.Supported)
+	}
+}

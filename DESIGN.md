@@ -111,7 +111,10 @@ cluster (each)                               server (Docker locally, later one E
 ## Priority (rule-based; Claude explains, never decides)
 - 🔴 Critical — affected by a high/critical advisory *with a fix*, past EOL, or upstream retired
 - 🟠 High — EOL within 90 days, or ≥ 2 release lines behind target
-- 🟡 Medium — 1 release line behind target, unpinned, or a moderate/unknown-severity advisory
+- 🟡 Medium — 1 release line behind target, unpinned, or a moderate/unknown-severity advisory; also ≥ 2 lines
+  behind when lifecycle data says the line is still supported (end date > 90 days away, or maintained) —
+  agreed 2026-11-19: "far behind" is High because it usually means unsupported, which Elasticsearch 8.19
+  (supported to 2027-07) isn't. GitHub-derived lines have no lifecycle data → stay High.
 - 🟢 Low — only patch updates available (or a low-severity advisory)
 - ✅ OK — at/above target and on the latest patch of its line
 - ❔ Unknown — no upstream release data (never shown as OK)
@@ -270,7 +273,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   free images there in 2025) and `docker.io/bitnami/*`.
 - **Two versions in one tag** (`quay.io/strimzi/kafka:0.45.0-kafka-3.9.0`): built-in entries may use
   `versionPattern` (until now custom-only) to read the *app* version; the operator is tracked via its own image.
-- **`bundledWith: rke2|k3s`** on images the distribution ships and upgrades itself (`rancher/hardened-*`,
+- **`bundledWith: rke2|k3s|<component>`** (a component since batch 1: Cilium pins its Envoy build) on images the distribution ships and upgrades itself (`rancher/hardened-*`,
   `rancher/mirrored-*`: CoreDNS, metrics-server, ingress-nginx, Canal/Calico/Flannel, Cilium,
   snapshot-controller…). Levels unchanged (an advisory is an advisory); `ActionFor` says "Comes with RKE2 —
   upgrade RKE2 to a newer release" instead of "Upgrade X to Y"; the UI shows an "RKE2-managed" tag. Which RKE2

@@ -163,13 +163,16 @@ level). The component's level is its worst instance.
 | Level | When |
 |---|---|
 | 🔴 **Critical** | affected by a high/critical advisory that has a fix · past end of life · upstream retired |
-| 🟠 **High** | end of life within 90 days · 2 or more release lines behind the target |
-| 🟡 **Medium** | 1 release line behind the target · unpinned tag · a moderate or unknown-severity advisory |
+| 🟠 **High** | end of life within 90 days · 2 or more release lines behind the target (unless that line is still supported, below) |
+| 🟡 **Medium** | 1 release line behind the target · 2 or more behind on a line upstream still supports (endoflife.date: end date more than 90 days away, or maintained) · unpinned tag · a moderate or unknown-severity advisory |
 | 🟢 **Low** | only patch updates available · a low-severity advisory |
 | ✅ **OK** | at or above the target and on the latest patch of its line |
 | ❔ **Unknown** | no upstream release data — never shown as OK |
 
-Every level comes with its reasons, e.g. "release line 1.33 is EOL since 2026-06-28".
+Every level comes with its reasons, e.g. "release line 1.33 is EOL since 2026-06-28", or "5 release lines
+behind target 9.4.9 (lts-or-n-1); 8.19 supported until 2027-07-15" for Elasticsearch 8.19 while 9.x moves on.
+Without lifecycle data (release lines from GitHub tags) Owl can't tell a supported line from an abandoned
+one, so 2+ lines behind stays High.
 
 ## Notes
 

@@ -17,7 +17,8 @@ Milestones 1–11 (agent, server core, catalog, upstream data, policy/scoring/dr
 redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging,
 Mattermost notifications, catalog from the UI + Settings reorganised, CLI + personal API tokens + users
 from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Milestone 13 (bigger built-in
-catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing done, catalog batches next. Keep this file's commands and
+catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (Elastic, networking, certs,
+monitoring — 52 built-ins) done; batches 2 (GitOps/CI/storage) and 3 (data/policy/ops) next. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -92,8 +93,8 @@ make dev-down
   `ParseVersion` strips vendor suffixes (`-hardened3`, `-build…`, `-debian-12-r20`) but keeps real
   pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
   "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
-  version, not images. `bundledWith` (image → rke2|k3s, built-in only) sets `Instance.BundledWith` only in
-  a cluster of that distribution; `ActionFor` then says "Comes with RKE2 — upgrade RKE2…" (level
+  version, not images. `bundledWith` (image → rke2|k3s|component id, built-in only) sets `Instance.BundledWith`
+  (+ `BundledName`) — a distribution only in a cluster of it, a component (cilium-envoy → cilium) always; `ActionFor` then says "Comes with RKE2 — upgrade RKE2…" (level
   unchanged). Built-in entries may use `versionPattern` and OSV packages of any ecosystem.
 - Custom catalog components (milestone 11): `catalog.ValidateCustom` / `Merge` (built-in always wins;
   `CustomState` says why one isn't in effect); stored as JSON in `custom_components` (**restored** with

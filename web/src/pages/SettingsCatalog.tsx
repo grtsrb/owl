@@ -130,7 +130,7 @@ function BuiltinCard() {
                       </span>
                     </td>
                     <td className="mono small" style={{ overflowWrap: "anywhere", minWidth: 220 }}>{c.source === "cluster" ? "from the cluster's nodes" : (c.images ?? []).map((img) => (
-                      <div key={img}>{img}{c.bundledWith?.[img] && <span className="subtle"> ({distroName(c.bundledWith[img])})</span>}</div>
+                      <div key={img}>{img}{c.bundledWith?.[img] && <span className="subtle"> ({builtin.find((b) => b.id === c.bundledWith![img])?.name ?? distroName(c.bundledWith[img])})</span>}</div>
                     ))}</td>
                     <td className="small" style={{ minWidth: 150 }}>
                       {c.github && <div><a href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer noopener">GitHub</a>
@@ -147,8 +147,8 @@ function BuiltinCard() {
           </div>
         )}
         <p className="subtle">Built-in components ship with Owl (catalog.yaml) and can't be edited here. Owl fetches releases, EOL dates and
-          advisories only for components running in at least one cluster (and every component of yours above). In brackets: images
-          RKE2 or k3s ship and upgrade themselves.</p>
+          advisories only for components running in at least one cluster (and every component of yours above). In brackets: what
+          ships and upgrades that image itself (RKE2, k3s, or a component such as Cilium).</p>
       </details>
     </Card>
   );

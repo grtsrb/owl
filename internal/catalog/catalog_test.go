@@ -98,6 +98,10 @@ func TestParseVersion(t *testing.T) {
 		{"v1.34.13-rc3+rke2r1", "1.34.13-rc3+rke2r1", true},
 		{"v1.12.0-rc.1", "1.12.0-rc.1", true},
 		{"3.0.0-beta2", "3.0.0-beta2", true},
+		{"8.17.7-SNAPSHOT", "8.17.7-snapshot", true},
+		{"0.166.0-nightly.c02ef6a", "0.166.0-nightly", true},
+		{"v0.95.2-arm64-distroless", "0.95.2", true},
+		{"v1.9.1-flannel3", "1.9.1", true},
 		{"latest", "", false},
 		{"20240305", "", false},
 		{"1.2.3a", "", false},
@@ -183,5 +187,119 @@ func TestBuiltinVersionPattern(t *testing.T) {
 	id := cat.Identify("quay.io/strimzi/kafka:0.45.0-kafka-3.9.0")
 	if id.Status != StatusIdentified || id.Version == nil || id.Version.String() != "3.9.0" {
 		t.Errorf("got %s %v (%s)", id.Status, id.Version, id.Reason)
+	}
+}
+
+// Batch 1 (milestone 13): real image references, as published (checked against the registries 2026-11-19),
+// to component, version and bundling. A floating or non-version tag must not read as a version.
+func TestBatch1Images(t *testing.T) {
+	cat, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ image, comp, version, bundled string }{
+		{"docker.elastic.co/eck/eck-operator:3.5.0", "eck-operator", "3.5.0", ""},
+		{"docker.elastic.co/eck/eck-operator-ubi:3.4.1", "eck-operator", "3.4.1", ""},
+		{"docker.elastic.co/elasticsearch/elasticsearch:8.19.25", "elasticsearch", "8.19.25", ""},
+		{"docker.elastic.co/elasticsearch/elasticsearch:8.17.7-SNAPSHOT", "elasticsearch", "8.17.7-snapshot", ""},
+		{"elasticsearch:9.5.5", "elasticsearch", "9.5.5", ""},
+		{"bitnamilegacy/elasticsearch:9.1.2-debian-12-r0", "elasticsearch", "9.1.2", ""},
+		{"docker.elastic.co/kibana/kibana:9.5.5", "kibana", "9.5.5", ""},
+		{"docker.elastic.co/kibana/kibana-ubi:9.5.5", "kibana", "9.5.5", ""},
+		{"docker.elastic.co/logstash/logstash-wolfi:9.5.5", "logstash", "9.5.5", ""},
+		{"docker.elastic.co/eck/eck-operator-fips:3.5.0", "eck-operator", "3.5.0", ""},
+		{"docker.elastic.co/logstash/logstash:8.19.25", "logstash", "8.19.25", ""},
+		{"docker.elastic.co/beats/filebeat:8.19.25", "elastic-beats", "8.19.25", ""},
+		{"docker.elastic.co/elastic-agent/elastic-agent:9.5.5", "elastic-agent", "9.5.5", ""},
+		{"jertel/elastalert2:2.32.0", "elastalert2", "2.32.0", ""},
+		{"traefik:v3.7.19", "traefik", "3.7.19", ""},
+		{"traefik:3.8.0-rc.3", "traefik", "3.8.0-rc.3", ""},
+		{"rancher/mirrored-library-traefik:3.7.19", "traefik", "3.7.19", "k3s"},
+		{"rancher/hardened-traefik:v3.7.19-build20261118", "traefik", "3.7.19", "rke2"},
+		{"quay.io/cilium/cilium:v1.20.5", "cilium", "1.20.5", ""},
+		{"quay.io/cilium/operator-generic:v1.19.11", "cilium", "1.19.11", ""},
+		{"rancher/mirrored-cilium-cilium:v1.20.5", "cilium", "1.20.5", "rke2"},
+		{"quay.io/cilium/hubble-ui-backend:v0.13.6", "hubble-ui", "0.13.6", ""},
+		{"quay.io/cilium/certgen:v0.4.14", "cilium-certgen", "0.4.14", ""},
+		{"quay.io/cilium/cilium-envoy:v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc", "envoy", "1.36.9", "cilium"},
+		{"rancher/mirrored-cilium-cilium-envoy:v1.39.6-1794557904-dee711ff0e84b106edd0abcdd71961af1b870359", "envoy", "1.39.6", "rke2"},
+		{"envoyproxy/envoy:v1.36.4", "envoy", "1.36.4", ""},
+		{"calico/node:v3.32.4", "calico", "3.32.4", ""},
+		{"quay.io/calico/typha:v3.33.1", "calico", "3.33.1", ""},
+		{"rancher/hardened-calico:v3.33.1-build20261118", "calico", "3.33.1", "rke2"},
+		{"quay.io/tigera/operator:v1.40.17", "tigera-operator", "1.40.17", ""},
+		{"flannel/flannel:v0.28.10", "flannel", "0.28.10", ""},
+		{"rancher/hardened-flannel:v0.28.10-build20261119", "flannel", "0.28.10", "rke2"},
+		{"flannel/flannel-cni-plugin:v1.9.1-flannel3", "flannel-cni-plugin", "1.9.1", ""},
+		{"quay.io/metallb/speaker:v0.16.2", "metallb", "0.16.2", ""},
+		{"bitnamilegacy/metallb-controller:0.15.2-debian-12-r7", "metallb", "0.15.2", ""},
+		{"quay.io/frrouting/frr:10.4.5", "frr", "10.4.5", ""},
+		{"registry.k8s.io/external-dns/external-dns:v0.18.0", "external-dns", "0.18.0", ""},
+		{"quay.io/jetstack/cert-manager-cainjector:v1.20.5", "cert-manager", "1.20.5", ""},
+		{"bitnamilegacy/acmesolver:1.18.2-debian-12-r5", "cert-manager", "1.18.2", ""},
+		{"ghcr.io/external-secrets/external-secrets:v2.15.0", "external-secrets", "2.15.0", ""},
+		{"oci.external-secrets.io/external-secrets/external-secrets:v2.14.0", "external-secrets", "2.14.0", ""},
+		{"bitnami/sealed-secrets-controller:0.41.2", "sealed-secrets", "0.41.2", ""},
+		{"quay.io/prometheus/prometheus:v3.16.0-distroless", "prometheus", "3.16.0", ""},
+		{"prom/prometheus:v3.16.0", "prometheus", "3.16.0", ""},
+		{"rancher/mirrored-prometheus-prometheus:v3.8.1", "prometheus", "3.8.1", ""},
+		{"quay.io/prometheus/alertmanager:v0.35.0", "alertmanager", "0.35.0", ""},
+		{"quay.io/prometheus-operator/prometheus-config-reloader:v0.95.2", "prometheus-operator", "0.95.2", ""},
+		{"quay.io/prometheus/node-exporter:v1.13.1", "node-exporter", "1.13.1", ""},
+		{"registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.18.0", "kube-state-metrics", "2.18.0", ""},
+		{"grafana/loki:3.6.22", "loki", "3.6.22", ""},
+		{"grafana/promtail:3.6.11", "loki", "3.6.11", ""},
+		{"grafana/alloy:v1.22.0-boringcrypto", "alloy", "1.22.0", ""},
+		{"grafana/tempo:2.10.10", "tempo", "2.10.10", ""},
+		{"grafana/mimir:3.2.6", "mimir", "3.2.6", ""},
+		{"grafana/rollout-operator:v0.42.1", "rollout-operator", "0.42.1", ""},
+		{"quay.io/thanos/thanos:v0.42.5", "thanos", "0.42.5", ""},
+		{"otel/opentelemetry-collector-contrib:0.165.0", "opentelemetry-collector", "0.165.0", ""},
+		{"otel/opentelemetry-collector-contrib:0.166.0-nightly.c02ef6a", "opentelemetry-collector", "0.166.0-nightly", ""},
+		{"ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator:0.160.0", "opentelemetry-operator", "0.160.0", ""},
+		{"fluent/fluent-bit:5.1.5", "fluent-bit", "5.1.5", ""},
+		{"cr.fluentbit.io/fluent/fluent-bit:5.1.5-debug", "fluent-bit", "5.1.5", ""},
+	} {
+		id := cat.Identify(c.image)
+		got := ""
+		if id.Version != nil {
+			got = id.Version.String()
+		}
+		if id.Component == nil || id.Component.ID != c.comp || id.Status != StatusIdentified || got != c.version || id.BundledWith != c.bundled {
+			t.Errorf("%s: %v %s %q bundled %q (%s), want %s %s %q", c.image, id.Component, id.Status, got, id.BundledWith, id.Reason, c.comp, c.version, c.bundled)
+		}
+	}
+	for _, img := range []string{"traefik:v3.7", "jertel/elastalert2:2", "quay.io/metallb/speaker:v0.16", "prom/prometheus:v3"} {
+		if id := cat.Identify(img); id.Status != StatusUnpinned {
+			t.Errorf("%s: floating tag must be unpinned, got %s", img, id.Status)
+		}
+	}
+}
+
+// No image is claimed by two components (the first would silently win).
+func TestBuiltinImagesUnique(t *testing.T) {
+	cat, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := map[string]string{}
+	for _, c := range cat.Components {
+		for _, r := range c.refs {
+			if o, ok := owner[r.Name()]; ok {
+				t.Errorf("%s is in %s and %s", r.Name(), o, c.ID)
+			}
+			owner[r.Name()] = c.ID
+		}
+	}
+}
+
+// Vendor registries are public: a longer path there is someone else's image, not a mirror.
+func TestVendorRegistriesArePublic(t *testing.T) {
+	cat, _ := Builtin()
+	for _, img := range []string{"docker.elastic.co/team/elasticsearch/elasticsearch:8.19.25", "cr.fluentbit.io/acme/fluent/fluent-bit:5.1.5",
+		"oci.external-secrets.io/fork/external-secrets/external-secrets:v2.15.0"} {
+		if id := cat.Identify(img); id.Status != StatusUnrecognized {
+			t.Errorf("%s: %s (%v)", img, id.Status, id.Component)
+		}
 	}
 }

@@ -2,9 +2,11 @@ package upstream
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -255,5 +257,59 @@ func TestPatchedListMajorLines(t *testing.T) {
 		if got := len(ms) == 1 && ms[0].Certain; got != tc.affected {
 			t.Errorf("lines %v, %s: affected=%v, want %v (%+v)", tc.lines, tc.version, got, tc.affected, ms)
 		}
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// GitHub times out (504) building 100 releases with very large notes: the same releases are read 30 per
+// page, each once.
+func TestGitHubReleasesSmallerPagesOnTimeout(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var sizes []string
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		size := r.URL.Query().Get("per_page")
+		sizes = append(sizes, size)
+		if size == "100" {
+			return &http.Response{StatusCode: 504, Body: http.NoBody, Header: http.Header{}, Request: r}, nil
+		}
+		body := `[{"tag_name":"v0.165.0","published_at":"2026-11-10T00:00:00Z"},{"tag_name":"cmd/builder/v0.165.0"},{"tag_name":"v0.164.0","published_at":"2026-10-20T00:00:00Z"}]`
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}, Request: r}, nil
+	})
+	c := &Client{F: &Fetcher{HTTP: &http.Client{Transport: rt}, Cache: db, TTL: time.Hour, now: time.Now}}
+	comp := &catalog.Component{ID: "otel", GitHub: "open-telemetry/opentelemetry-collector-releases", ReleaseTagPrefix: "v"}
+	var tags []string
+	if _, err := c.githubReleases(context.Background(), comp, func(r ghRelease, tag string) { tags = append(tags, tag) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || tags[0] != "0.165.0" || len(sizes) != 2 || sizes[0] != "100" || sizes[1] != "30" {
+		t.Errorf("tags %v, page sizes %v", tags, sizes)
+	}
+	// Known to need small pages: straight there, no 100-per-page request first.
+	sizes, tags = nil, nil
+	if _, err := c.githubReleases(context.Background(), comp, func(r ghRelease, tag string) { tags = append(tags, tag) }); err != nil || len(tags) != 2 {
+		t.Fatal(err, tags)
+	}
+	if len(sizes) != 0 && (len(sizes) != 1 || sizes[0] != "30") {
+		t.Errorf("second read asked for page sizes %v", sizes)
+	}
+
+	// A 100-per-page entry cached from when it worked, now timing out: served stale, so 30 per page is
+	// tried too (otherwise the old page would be served forever).
+	db2, _ := sqlite.Open(filepath.Join(t.TempDir(), "d.db"))
+	defer db2.Close()
+	old := `[{"tag_name":"v0.150.0","published_at":"2026-01-01T00:00:00Z"}]`
+	_ = db2.PutCache(context.Background(), store.CacheEntry{Key: releasePageKey(comp.GitHub, 100, 1), FetchedAt: time.Now().Add(-48 * time.Hour), Body: []byte(old)})
+	c2 := &Client{F: &Fetcher{HTTP: &http.Client{Transport: rt}, Cache: db2, TTL: time.Hour, now: time.Now}}
+	sizes, tags = nil, nil
+	stale, err := c2.githubReleases(context.Background(), comp, func(r ghRelease, tag string) { tags = append(tags, tag) })
+	if err != nil || stale || len(tags) != 3 || sizes[len(sizes)-1] != "30" {
+		t.Errorf("stale 100 page: stale=%v err=%v tags %v sizes %v", stale, err, tags, sizes)
 	}
 }

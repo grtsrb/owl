@@ -22,14 +22,16 @@ export interface Score {
   level: Level; reasons: Reason[]; notes?: string[]; line?: string; linesBehind: number;
   latestInLine?: string; advisories?: Match[];
   eol?: { line: string; since?: string }; review?: number; eolSoon?: string;
+  /** 2+ lines behind on a line upstream still supports ("8.19 supported until 2027-07-15"): why it's Medium. */
+  supported?: string;
 }
 
 export interface Instance {
   cluster: string; stage: string; tenant: string; namespace?: string; kind?: string; workload?: string;
   container?: string; image: string; version?: string; status: string; reason?: string;
   repository?: string; override?: "map" | "inhouse" | "ignore";
-  /** The cluster's distribution ships and upgrades this image itself. */
-  bundledWith?: "rke2" | "k3s";
+  /** What ships and upgrades this image itself: the cluster's distribution or a component (cilium). */
+  bundledWith?: string; bundledName?: string;
   desiredReplicas: number; running?: RunningImage[];
 }
 export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update";
@@ -100,7 +102,7 @@ export interface ServerSettings { serverURL: string; agentImage: string }
 export interface CatalogComponent {
   id: string; name: string; source?: string; images?: string[]; github?: string; eol?: string;
   versionParts?: number; tagPrefix?: string; releaseTagPrefix?: string; versionPattern?: string; custom?: boolean;
-  osv?: { ecosystem: string; name: string }; notes?: string; bundledWith?: Record<string, "rke2" | "k3s">;
+  osv?: { ecosystem: string; name: string }; notes?: string; bundledWith?: Record<string, string>;
 }
 /** A component as entered in the New component form (milestone 11). */
 export interface CustomInput {

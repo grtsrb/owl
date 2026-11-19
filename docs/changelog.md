@@ -2,6 +2,28 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 13, batch 1 — 36 more built-in components
+
+- **Elastic**: ECK operator, Elasticsearch (OSV advisories via Maven), Kibana, Logstash, Beats, Elastic
+  Agent, ElastAlert 2.
+- **Networking**: Traefik (incl. k3s/RKE2 builds), Cilium + Hubble UI + certgen, Envoy (incl. Cilium's
+  build), Calico + Tigera operator, flannel + its CNI plugin, MetalLB + FRR, ExternalDNS.
+- **Certificates & secrets**: cert-manager, External Secrets Operator, Sealed Secrets.
+- **Monitoring & logging**: Prometheus, Alertmanager, Prometheus Operator, node exporter,
+  kube-state-metrics (incl. Rancher monitoring mirrors), Grafana Loki (+ Promtail), Alloy, Tempo, Mimir,
+  rollout-operator, Thanos, OpenTelemetry Collector and Operator, Fluent Bit.
+- Elastic `-SNAPSHOT` and OpenTelemetry `-nightly` tags read as pre-releases, not as the release.
+- GitHub releases are read 30 per page when GitHub times out on 100 (very large release notes); a repo
+  that needed it goes there directly next time.
+- `bundledWith` can name a component: Cilium's Envoy build says "Comes with Cilium — upgrade Cilium …".
+- Medium on a supported line: the action is the newest patch of that line, then "plan the move".
+- docker.elastic.co, cr.fluentbit.io and oci.external-secrets.io are public registries (no mirror
+  matching there); Elastic `-ubi`/`-wolfi`/`-fips` image variants are recognized.
+- After the upgrade, already running ones are announced once ("Owl now recognizes N more components").
+- **Priority**: 2+ release lines behind is **Medium**, not High, when endoflife.date says the line is still
+  supported and doesn't end within 90 days (Elasticsearch/Kibana 8.19, a supported Kubernetes minor).
+  The reason says so: "…; 8.19 supported until 2027-07-15".
+
 ## Cluster picker redesign
 
 - Overview and Changes: one clusters button (top right) with a popover — All / stage / tenant

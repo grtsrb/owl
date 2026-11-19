@@ -29,8 +29,10 @@ type Instance struct {
 	Repository string `json:"repository,omitempty"`
 	// Override is set when a catalog override decided this instance (map, inhouse, ignore).
 	Override string `json:"override,omitempty"`
-	// BundledWith: the cluster's distribution ships and upgrades this image itself ("rke2" | "k3s").
+	// BundledWith: what ships and upgrades this image itself — the cluster's distribution ("rke2" | "k3s")
+	// or a component ("cilium" for Cilium's Envoy build). BundledName is its display name ("RKE2", "Cilium").
 	BundledWith string `json:"bundledWith,omitempty"`
+	BundledName string `json:"bundledName,omitempty"`
 	// Replicas / running pods, so scaled-to-0 and half-done rollouts are visible.
 	DesiredReplicas int32                   `json:"desiredReplicas"`
 	Running         []snapshot.RunningImage `json:"running,omitempty"`
@@ -149,8 +151,12 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 			in.Namespace, in.Kind, in.Workload, in.Container = r.Namespace, r.Kind, r.Workload, r.Container
 			in.Image, in.DesiredReplicas, in.Running = r.Image, r.DesiredReplicas, r.Running
 			id, override := identify(r.Image)
-			if id.BundledWith != "" && id.BundledWith == distro {
-				in.BundledWith = distro
+			if by := id.BundledWith; by != "" && (by == distro || !slices.Contains(catalog.Distributions, by)) {
+				in.BundledWith = by
+				in.BundledName = by
+				if c := cat.ByID(by); c != nil {
+					in.BundledName = c.Name
+				}
 			}
 			add(id, override, in)
 		}
