@@ -200,4 +200,3 @@ func levelOn(rep *report.Report, component, cluster string) report.Level {
 	}
 	return lvl
 }
-

@@ -10,7 +10,9 @@ import (
 	"owl/internal/store"
 )
 
-func userID(w http.ResponseWriter, r *http.Request) (int64, bool) { return pathID(w, r, "user not found") }
+func userID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	return pathID(w, r, "user not found")
+}
 
 // pathID reads a positive {id}; anything else is a 404 with notFound.
 func pathID(w http.ResponseWriter, r *http.Request, notFound string) (int64, bool) {
