@@ -4,6 +4,7 @@ import { api, useIsAdmin, writeErrorText, type CatalogComponent, type CustomImpa
 import { Icon } from "../icons";
 import { Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
 import { Dialog, useWrite } from "./Settings";
+import { distroName } from "./Component";
 
 /** Settings → Catalog: components added in the UI (milestone 11) and the built-in list. Overrides follow below (Settings). */
 export default function CatalogComponents() {
@@ -78,27 +79,76 @@ function CustomRow({ v, admin, copied, onEdit, onDelete, onCopy }: {
   );
 }
 
+type RunFilter = "all" | "running" | "not";
+
+/** Every built-in component, with where it runs: green = running in some cluster, grey = not running
+ *  (Owl fetches upstream data only for running components). */
 function BuiltinCard() {
   const cat = useApi(api.catalog);
+  const inv = useApi(api.inventory);
+  const [q, setQ] = useState("");
+  const [only, setOnly] = useState<RunFilter>("all");
   if (cat.error) return <ErrorBox error={cat.error} retry={cat.reload} />;
   const builtin = (cat.data?.components ?? []).filter((c) => !c.custom);
+  const where = new Map<string, string[]>();
+  // From the instances, not versionsByCluster: an unpinned tag (redis:latest) has no version but runs.
+  for (const cv of inv.data?.components ?? []) where.set(cv.id, [...new Set(cv.instances.map((i) => i.cluster))].sort());
+  const running = builtin.filter((c) => (where.get(c.id)?.length ?? 0) > 0).length;
+  const needle = q.trim().toLowerCase();
+  const rows = builtin.filter((c) => {
+    const on = (where.get(c.id)?.length ?? 0) > 0;
+    if (only === "running" && !on) return false;
+    if (only === "not" && on) return false;
+    return !needle || [c.id, c.name, c.github ?? "", ...(c.images ?? [])].some((s) => s.toLowerCase().includes(needle));
+  });
+  const filters: [RunFilter, string][] = [["all", `All (${builtin.length})`], ["running", `Running (${running})`], ["not", `Not running (${builtin.length - running})`]];
   return (
     <Card title={`Built-in components (${builtin.length})`}>
       <details>
-        <summary className="link-btn" style={{ cursor: "pointer" }}>Show the list</summary>
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table>
-            <thead><tr><th>Component</th><th>Images</th><th>Release data</th></tr></thead>
-            <tbody>{builtin.map((c) => (
-              <tr key={c.id}>
-                <td><b>{c.name}</b><div className="subtle mono">{c.id}</div></td>
-                <td className="mono small">{c.source === "cluster" ? "from the cluster's nodes" : (c.images ?? []).join(", ")}</td>
-                <td className="small">{[c.github && `GitHub ${c.github}`, c.eol && `endoflife.date ${c.eol}`].filter(Boolean).join(" · ")}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+        <summary className="link-btn" style={{ cursor: "pointer" }}>Show the list{inv.data ? ` — ${running} running in your clusters` : ""}</summary>
+        <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+          <input className="input" type="search" placeholder="Search name, image or repository" value={q} onChange={(e) => setQ(e.target.value)}
+            aria-label="Search built-in components" style={{ flex: "1 1 220px" }} />
+          {filters.map(([k, label]) => (
+            <button key={k} type="button" className={`chip${only === k ? " on" : ""}`} aria-pressed={only === k} onClick={() => setOnly(k)}>{label}</button>
+          ))}
         </div>
-        <p className="subtle">Built-in components ship with Owl (catalog.yaml) and can't be edited here.</p>
+        {rows.length === 0 ? <Empty>No built-in component matches.</Empty> : (
+          <div className="table-wrap" style={{ marginTop: 10 }}>
+            <table>
+              <thead><tr><th>Component</th><th>Where</th><th>Images</th><th>Release data</th></tr></thead>
+              <tbody>{rows.map((c) => {
+                const cl = where.get(c.id) ?? [];
+                return (
+                  <tr key={c.id}>
+                    <td>{cl.length > 0 ? <Link to={`/components/${encodeURIComponent(c.id)}`}><b>{c.name}</b></Link> : <b>{c.name}</b>}
+                      <div className="subtle mono">{c.id}</div></td>
+                    <td className="small" style={{ whiteSpace: "nowrap" }}>
+                      <span className="row" style={{ gap: 6, flexWrap: "nowrap" }} title={cl.length > 0 ? cl.join("\n") : "Not running in any cluster — no upstream data is fetched for it"}>
+                        <span className={`dot${cl.length > 0 ? " lvl-ok" : ""}`} aria-hidden />
+                        {cl.length > 0 ? `running in ${cl.length === 1 ? "1 cluster" : `${cl.length} clusters`}` : <span className="muted">not running</span>}
+                      </span>
+                    </td>
+                    <td className="mono small" style={{ overflowWrap: "anywhere", minWidth: 220 }}>{c.source === "cluster" ? "from the cluster's nodes" : (c.images ?? []).map((img) => (
+                      <div key={img}>{img}{c.bundledWith?.[img] && <span className="subtle"> ({distroName(c.bundledWith[img])})</span>}</div>
+                    ))}</td>
+                    <td className="small" style={{ minWidth: 150 }}>
+                      {c.github && <div><a href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer noopener">GitHub</a>
+                        <div className="subtle mono" style={{ margin: 0, overflowWrap: "anywhere" }}>{c.github}</div></div>}
+                      {c.eol && <div><a href={`https://endoflife.date/${encodeURIComponent(c.eol)}`} target="_blank" rel="noreferrer noopener">endoflife.date</a>
+                        <span className="subtle mono"> {c.eol}</span></div>}
+                      {c.osv && <div><a href={`https://osv.dev/list?ecosystem=${encodeURIComponent(c.osv.ecosystem)}&q=${encodeURIComponent(c.osv.name)}`}
+                        target="_blank" rel="noreferrer noopener" title={`${c.osv.ecosystem} ${c.osv.name}`}>OSV</a><span className="subtle"> {c.osv.ecosystem}</span></div>}
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        )}
+        <p className="subtle">Built-in components ship with Owl (catalog.yaml) and can't be edited here. Owl fetches releases, EOL dates and
+          advisories only for components running in at least one cluster (and every component of yours above). In brackets: images
+          RKE2 or k3s ship and upgrade themselves.</p>
       </details>
     </Card>
   );

@@ -130,15 +130,15 @@ All under `/api/v1/auth/` except the two Google redirects.
 | `GET /clusters` | `[{name, stage, tenant, kubernetesVersion, agentVersion, lastSeenAt}]` |
 | `GET /clusters/{name}/images` | Current workloads/containers of one cluster (intended image, running images, replicas) |
 | `GET /changes?cluster=&limit=` | Change history, newest first. `cluster` optional; `limit` default 200, max 1000 |
-| `GET /inventory` | Components × clusters with instances, plus `unpinned`, `inHouse`, `unrecognized`, `ignored` lists |
+| `GET /inventory` | Components × clusters with instances, plus `unpinned`, `inHouse`, `unrecognized`, `ignored` lists. An instance has `bundledWith: rke2 \| k3s` when the cluster's distribution ships that image itself. |
 | `GET /report` | The scored report: `summary` (components per level), `components[]` with `level`, `target`, `upstream`, `instances[]` (each with `score` + reasons and `action`), `drift[]`, `action`; plus `policies`, `stages`, counts |
 | `GET /components/{id}` | `component` (catalog entry), `inventory` (where it runs), `upstream` (lines, EOL, archived, …), `advisoriesByVersion[]` |
-| `GET /upstream` | Upstream info for every component (release lines, latest stable, archived/retired, advisory source, fetch time, `stale`, errors) |
+| `GET /upstream` | Upstream info for every component running in a cluster, and every custom one (release lines, latest stable, archived/retired, advisory source, fetch time, `stale`, errors) |
 | `GET /catalog` | The built-in catalog |
 | `GET /policies` | `{global, overrides: {componentId: policy}, presets}` |
 | `GET /stages` | `[{name, position, clusters}]` in stage order |
 | `GET /tenants` | `[{name, clusters}]` |
-| `GET /catalog/overrides` | `[{repository, kind, component, updatedAt}]` |
+| `GET /catalog/overrides` | `[{repository, kind, component, updatedAt, recognizedAs}]` — `recognizedAs`: the component the catalog itself now recognizes the repository as (a `map` then no longer applies; `inhouse`/`ignore` still do) |
 | `GET /settings` | `{serverURL, agentImage}` |
 | `GET /agent/manifest` | `agent.yaml` (YAML, download) with the configured agent image. Contains no secrets. |
 

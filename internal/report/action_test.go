@@ -145,3 +145,31 @@ func TestActionEOLSoonAndAheadOfTarget(t *testing.T) {
 		t.Errorf("one instance needs the target: %+v", a)
 	}
 }
+
+// An image the distribution ships: the step is upgrading the distribution; the level doesn't change.
+// A component with only some instances bundled keeps the plain version step.
+func TestActionBundled(t *testing.T) {
+	sp, _ := policy.Parse("lts-or-n-1")
+	tg, _ := policy.Resolve(sp, k8sInfo().Lines, now)
+	mk := func(cluster, v, bundled string) ScoredInstance {
+		in := inventory.Instance{Cluster: cluster, Version: v, Status: "identified", Image: "img:" + v, BundledWith: bundled}
+		sc := ScoreInstance(in, k8sInfo(), &tg, nil, now)
+		return ScoredInstance{Instance: in, Score: sc, Action: ActionFor(in, sc, &tg, k8sInfo())}
+	}
+	plain, rke := mk("a", "1.35.0", ""), mk("b", "1.35.0", "rke2")
+	if plain.Score.Level != rke.Score.Level {
+		t.Errorf("bundled must not change the level: %s vs %s", plain.Score.Level, rke.Score.Level)
+	}
+	if want := "Comes with RKE2 — upgrade RKE2 to a release that ships 1.36.6 or newer"; rke.Action.Text != want || rke.Action.Kind != ActionUpgrade {
+		t.Errorf("instance: %+v", rke.Action)
+	}
+	if a := mk("c", "1.36.4", "k3s").Action; a.Text != "Comes with k3s — upgrade k3s to a release that ships 1.36.6 or newer" || a.Kind != ActionPatch {
+		t.Errorf("patch: %+v", a)
+	}
+	if a := ComponentAction([]ScoredInstance{rke, mk("d", "1.33.6", "rke2")}, &tg); a.Text != "Comes with RKE2 — upgrade RKE2 to a release that ships 1.36.6 or newer" {
+		t.Errorf("component, all bundled: %+v", a)
+	}
+	if a := ComponentAction([]ScoredInstance{rke, plain}, &tg); a.Text != "Update to 1.36.6" {
+		t.Errorf("component, mixed: %+v", a)
+	}
+}

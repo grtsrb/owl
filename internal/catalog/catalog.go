@@ -34,10 +34,15 @@ type Component struct {
 	// VersionPattern (custom components): a regexp whose groups, joined with ".", are the version in an
 	// image tag — for tags ParseVersion can't read, like 9.7_p1-r4-ls163.
 	VersionPattern string `json:"versionPattern,omitempty"`
+	// BundledWith (built-in only): image name -> distribution ("rke2" | "k3s") that ships and upgrades
+	// that image itself, e.g. rancher/hardened-coredns -> rke2. In a cluster of that distribution the
+	// recommended action is "upgrade RKE2", not "upgrade CoreDNS"; levels are unchanged.
+	BundledWith map[string]string `json:"bundledWith,omitempty"`
 	// Custom: added in the UI (stored in the database), not part of the built-in catalog.
 	Custom bool `json:"custom,omitempty"`
 
-	refs      []Ref // parsed Images, built once in prepare()
+	refs      []Ref             // parsed Images, built once in prepare()
+	bundled   map[string]string // BundledWith keyed by normalized image name
 	versionRe *regexp.Regexp
 }
 
@@ -85,6 +90,11 @@ func Builtin() (*Catalog, error) {
 		if comp.Custom {
 			return nil, fmt.Errorf("builtin catalog: %s: custom is only for components added in the UI", comp.ID)
 		}
+		for img, d := range comp.BundledWith {
+			if !slices.Contains(Distributions, d) || !slices.Contains(comp.Images, img) {
+				return nil, fmt.Errorf("builtin catalog: %s: bundledWith %s: %s must be one of its images and rke2 or k3s", comp.ID, img, d)
+			}
+		}
 		if err := comp.prepare(); err != nil {
 			return nil, fmt.Errorf("builtin catalog: %s: %w", comp.ID, err)
 		}
@@ -109,7 +119,13 @@ type Identification struct {
 	Status    Status
 	Version   *Version // parsed upstream version; nil if unpinned/unknown
 	Reason    string   // why unpinned/unrecognized, human readable
+	// BundledWith: the distribution that ships this image ("rke2" | "k3s"), from the catalog entry that
+	// matched. Whether it applies depends on the cluster (the inventory checks).
+	BundledWith string
 }
+
+// Distributions are the Kubernetes distributions Owl reads from node versions (source: cluster).
+var Distributions = []string{"rke2", "k3s"}
 
 func (c *Catalog) Identify(image string) Identification {
 	ref := ParseRef(image)
@@ -123,11 +139,12 @@ func (c *Catalog) Identify(image string) Identification {
 			return id
 		}
 	}
-	comp := c.match(ref)
+	comp, pat := c.match(ref)
 	if comp == nil {
 		id.Status, id.Reason = StatusUnrecognized, "image not in catalog"
 		return id
 	}
+	id.BundledWith = comp.bundled[pat.Name()]
 	return identifyAs(id, comp)
 }
 
@@ -170,29 +187,30 @@ func identifyAs(id Identification, comp *Component) Identification {
 	return id
 }
 
-func (c *Catalog) match(ref Ref) *Component {
+// match returns the component that claims ref and the image pattern that matched.
+func (c *Catalog) match(ref Ref) (*Component, Ref) {
 	// Exact name match wins over a mirror-suffix match, so e.g. bitnami/redis is never claimed by a
 	// shorter pattern of another component.
 	for i := range c.Components {
 		for _, p := range c.Components[i].refs {
 			if p.Registry == ref.Registry && p.Repository == ref.Repository {
-				return &c.Components[i]
+				return &c.Components[i], p
 			}
 		}
 	}
 	if publicRegistries[ref.Registry] {
 		// On public registries a longer path is someone else's image (ghcr.io/myorg/bitnami/redis is a
 		// fork), not a mirror. Mirrors/pull-through caches live on private registries.
-		return nil
+		return nil, Ref{}
 	}
 	for i := range c.Components {
 		for _, p := range c.Components[i].refs {
 			if ref.mirrorOf(p) {
-				return &c.Components[i]
+				return &c.Components[i], p
 			}
 		}
 	}
-	return nil
+	return nil, Ref{}
 }
 
 // ClusterVersions identifies the Kubernetes version and distribution from a version string like
@@ -213,7 +231,7 @@ func (c *Catalog) ClusterVersions(gitVersion string) []Identification {
 		}
 		out = append(out, id)
 	}
-	for _, distro := range []string{"rke2", "k3s"} {
+	for _, distro := range Distributions {
 		if i := strings.Index(gitVersion, "+"+distro); i >= 0 {
 			if d := byID(distro); d != nil && ok {
 				dv := v

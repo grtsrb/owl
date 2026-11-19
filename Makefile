@@ -6,7 +6,7 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: ui ui-dev build cli test lint image image-push dev-up dev-down seed agent-print agent-deploy stack-up stack-down mattermost-up mattermost-down
+.PHONY: ui ui-dev build cli test lint image image-push dev-up dev-down seed agent-print catalog-check agent-deploy stack-up stack-down mattermost-up mattermost-down
 
 ## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
 ui:
@@ -59,6 +59,11 @@ dev-down:
 
 seed:
 	dev/seed/seed.sh
+
+## Verify built-in catalog entries against GitHub / endoflife.date / OSV (manual, needs GITHUB_TOKEN in .env):
+## make catalog-check [COMPONENTS=traefik,cert-manager]
+catalog-check: build
+	set -a; [ -f .env ] && . ./.env; set +a; ./bin/owl catalog-check $(if $(COMPONENTS),--component $(COMPONENTS))
 
 ## Print what the agent would send for one cluster: make agent-print CLUSTER=it-aws-prod
 CLUSTER ?= it-hetzner

@@ -4,6 +4,7 @@ package inventory
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	"owl/internal/catalog"
@@ -28,6 +29,8 @@ type Instance struct {
 	Repository string `json:"repository,omitempty"`
 	// Override is set when a catalog override decided this instance (map, inhouse, ignore).
 	Override string `json:"override,omitempty"`
+	// BundledWith: the cluster's distribution ships and upgrades this image itself ("rke2" | "k3s").
+	BundledWith string `json:"bundledWith,omitempty"`
 	// Replicas / running pods, so scaled-to-0 and half-done rollouts are visible.
 	DesiredReplicas int32                   `json:"desiredReplicas"`
 	Running         []snapshot.RunningImage `json:"running,omitempty"`
@@ -126,8 +129,12 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 
 	for _, cl := range clusters {
 		base := Instance{Cluster: cl.Name, Stage: string(cl.Stage), Tenant: cl.Tenant}
+		distro := ""
 		if cl.KubernetesVersion != "" {
 			for _, id := range cat.ClusterVersions(cl.KubernetesVersion) {
+				if slices.Contains(catalog.Distributions, id.Component.ID) {
+					distro = id.Component.ID
+				}
 				in := base
 				in.Image = cl.KubernetesVersion
 				add(id, "", in)
@@ -142,6 +149,9 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 			in.Namespace, in.Kind, in.Workload, in.Container = r.Namespace, r.Kind, r.Workload, r.Container
 			in.Image, in.DesiredReplicas, in.Running = r.Image, r.DesiredReplicas, r.Running
 			id, override := identify(r.Image)
+			if id.BundledWith != "" && id.BundledWith == distro {
+				in.BundledWith = distro
+			}
 			add(id, override, in)
 		}
 	}
@@ -184,9 +194,12 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-// Identifier identifies images like the inventory does: the catalog first, then a catalog override —
-// but only for images the catalog doesn't recognize itself (once the catalog learns an image, its own
-// verified mapping wins). The second result is the override kind applied, if any.
+// Identifier identifies images like the inventory does. `ignore` and `inhouse` overrides are explicit
+// choices about a repository and win over the built-in catalog — a catalog upgrade that learns the image
+// must not undo them. A custom component claiming the repository wins over them: adding it was the
+// later, more specific choice.
+// A `map` override only applies to images the catalog doesn't recognize (once the catalog learns an
+// image, its own verified mapping wins). The second result is the override kind applied, if any.
 func Identifier(cat *catalog.Catalog, ovList []store.CatalogOverride) func(image string) (catalog.Identification, string) {
 	overrides := map[string]store.CatalogOverride{}
 	for _, o := range ovList {
@@ -194,12 +207,13 @@ func Identifier(cat *catalog.Catalog, ovList []store.CatalogOverride) func(image
 	}
 	return func(image string) (catalog.Identification, string) {
 		id := cat.Identify(image)
-		if id.Status != catalog.StatusUnrecognized {
+		o, ok := overrides[id.Ref.Name()]
+		if !ok || o.Kind == store.OverrideMap && id.Status != catalog.StatusUnrecognized || id.Component != nil && id.Component.Custom {
 			return id, ""
 		}
-		o, ok := overrides[id.Ref.Name()]
-		if !ok {
-			return id, ""
+		if id.Status != catalog.StatusUnrecognized && id.Status != catalog.StatusInHouse {
+			// Recognized by the catalog, but the user decided about this repository: start from scratch.
+			id = catalog.Identification{Ref: id.Ref}
 		}
 		switch o.Kind {
 		case store.OverrideMap:

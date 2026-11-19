@@ -3,6 +3,8 @@ package inventory
 import (
 	"context"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 
 	"owl/internal/catalog"
@@ -53,8 +55,9 @@ func TestBuild(t *testing.T) {
 	}
 }
 
-// Overrides decide unrecognized images only: map uses the component's version rules, in-house and
-// ignore move the image out of the unrecognized list, and a catalog-recognized image is never overridden.
+// Overrides: map decides unrecognized images only (with the component's version rules) and never
+// re-maps one the catalog recognizes; in-house and ignore are choices about a repository and win even
+// over the catalog, so a catalog that learns an image later doesn't undo them.
 func TestOverrides(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "t.db"))
@@ -65,7 +68,7 @@ func TestOverrides(t *testing.T) {
 	cat, _ := catalog.Builtin()
 	c, _ := db.CreateCluster(ctx, "prod", store.StageLive, "IT")
 	snap := &snapshot.Snapshot{SchemaVersion: 1}
-	for _, img := range []string{"ghcr.io/acme/redis-fork:7.2.4", "ghcr.io/acme/tool:0.4.0", "ghcr.io/acme/noise:1", "nginx:1.25.4"} {
+	for _, img := range []string{"ghcr.io/acme/redis-fork:7.2.4", "ghcr.io/acme/tool:0.4.0", "ghcr.io/acme/noise:1", "nginx:1.25.4", "bitnami/redis:7.2.5", "grafana/grafana:11.1.0"} {
 		snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "ns", Name: img,
 			Containers: []snapshot.Container{{Name: "c", Image: img}}})
 	}
@@ -76,7 +79,9 @@ func TestOverrides(t *testing.T) {
 		{Repository: "ghcr.io/acme/redis-fork", Kind: store.OverrideMap, Component: "redis"},
 		{Repository: "ghcr.io/acme/tool", Kind: store.OverrideInHouse},
 		{Repository: "ghcr.io/acme/noise", Kind: store.OverrideIgnore},
-		{Repository: "docker.io/library/nginx", Kind: store.OverrideIgnore}, // recognized: must not apply
+		{Repository: "docker.io/library/nginx", Kind: store.OverrideIgnore},                    // recognized: ignore still applies
+		{Repository: "docker.io/bitnami/redis", Kind: store.OverrideInHouse},                   // recognized: in-house still applies
+		{Repository: "docker.io/grafana/grafana", Kind: store.OverrideMap, Component: "nginx"}, // recognized: map doesn't
 	} {
 		if err := db.SetOverride(ctx, o); err != nil {
 			t.Fatal(err)
@@ -93,16 +98,86 @@ func TestOverrides(t *testing.T) {
 	if r := byID["redis"]; len(r.Instances) != 1 || r.Instances[0].Version != "7.2.4" || r.Instances[0].Override != "map" {
 		t.Errorf("mapped redis: %+v", r.Instances)
 	}
-	if len(byID["nginx"].Instances) != 1 {
-		t.Error("an override must not hide a recognized image")
+	if g := byID["grafana"]; len(g.Instances) != 1 || g.Instances[0].Override != "" || len(byID["nginx"].Instances) != 0 {
+		t.Errorf("a map override must not re-map a recognized image: grafana %+v nginx %+v", g.Instances, byID["nginx"].Instances)
 	}
-	if len(inv.InHouse) != 1 || inv.InHouse[0].Repository != "ghcr.io/acme/tool" || inv.InHouse[0].Override != "inhouse" {
-		t.Errorf("in-house: %+v", inv.InHouse)
+	repos := func(l []Instance) (out []string) {
+		for _, in := range l {
+			out = append(out, in.Repository+"/"+in.Override)
+		}
+		sort.Strings(out)
+		return out
 	}
-	if len(inv.Ignored) != 1 || inv.Ignored[0].Repository != "ghcr.io/acme/noise" {
-		t.Errorf("ignored: %+v", inv.Ignored)
+	if got := repos(inv.InHouse); !slices.Equal(got, []string{"docker.io/bitnami/redis/inhouse", "ghcr.io/acme/tool/inhouse"}) {
+		t.Errorf("in-house: %v", got)
+	}
+	if got := repos(inv.Ignored); !slices.Equal(got, []string{"docker.io/library/nginx/ignore", "ghcr.io/acme/noise/ignore"}) {
+		t.Errorf("ignored: %v", got)
+	}
+	for _, in := range inv.InHouse {
+		if in.Repository == "docker.io/bitnami/redis" && in.Version != "7.2.5" {
+			t.Errorf("in-house over a recognized image keeps the tag's version: %q", in.Version)
+		}
 	}
 	if len(inv.Unrecognized) != 0 {
 		t.Errorf("nothing should stay unrecognized: %+v", inv.Unrecognized)
+	}
+}
+
+// A bundled image is marked only in a cluster of the distribution that ships it.
+func TestBundledWith(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cat, _ := catalog.Builtin()
+	for _, cl := range []struct{ name, version string }{{"rke", "v1.30.4+rke2r1"}, {"k3", "v1.31.2+k3s1"}, {"eks", "v1.31.2-eks-7f9249a"}} {
+		c, _ := db.CreateCluster(ctx, cl.name, store.StageLive, "IT")
+		snap := &snapshot.Snapshot{SchemaVersion: 1, Cluster: snapshot.Cluster{KubernetesVersion: cl.version}}
+		for _, img := range []string{"rancher/hardened-coredns:v1.11.1-build20240305", "coredns/coredns:1.11.3"} {
+			snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "kube-system", Name: img,
+				Containers: []snapshot.Container{{Name: "c", Image: img}}})
+		}
+		if _, err := db.Ingest(ctx, c.ID, snap); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, err := Build(ctx, db, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, cv := range inv.Components {
+		if cv.ID != "coredns" {
+			continue
+		}
+		for _, in := range cv.Instances {
+			if in.BundledWith != "" {
+				got = append(got, in.Cluster+"/"+in.Image+"/"+in.BundledWith)
+			}
+		}
+	}
+	if want := []string{"rke/rancher/hardened-coredns:v1.11.1-build20240305/rke2"}; !slices.Equal(got, want) {
+		t.Errorf("bundled instances: %v, want %v", got, want)
+	}
+}
+
+// A custom component claiming a repository beats an in-house/ignore override on it: adding the component
+// was the later, more specific choice (the New component preview shows its tags as identified).
+func TestCustomBeatsOverride(t *testing.T) {
+	builtin, _ := catalog.Builtin()
+	cat, _ := catalog.Merge(builtin, []catalog.Component{{ID: "tool", Name: "Tool", Images: []string{"ghcr.io/acme/tool"}, GitHub: "acme/tool"}})
+	ovs := []store.CatalogOverride{
+		{Repository: "ghcr.io/acme/tool", Kind: store.OverrideInHouse},
+		{Repository: "docker.io/library/nginx", Kind: store.OverrideIgnore},
+	}
+	identify := Identifier(cat, ovs)
+	if id, ov := identify("ghcr.io/acme/tool:1.2.3"); id.Component == nil || id.Component.ID != "tool" || ov != "" {
+		t.Errorf("custom component must win over in-house: %+v %q", id, ov)
+	}
+	if id, ov := identify("nginx:1.27.4"); id.Status != catalog.StatusIgnored || ov != "ignore" {
+		t.Errorf("ignore must still win over a built-in: %+v %q", id, ov)
 	}
 }

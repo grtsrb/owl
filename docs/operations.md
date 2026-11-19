@@ -184,6 +184,11 @@ What and when: [User guide → Notifications](user-guide.md#notifications). How 
   last digest went out — is in the database and **kept across restores** (like the audit log). After a
   restore, Owl records the restored state without posting anything. The switches and the schedule are
   ordinary settings and come back with the backup.
+- **After an upgrade** whose catalog recognizes images that were already running (unrecognized until
+  then), Owl doesn't alert per component: once their upstream data is in and complete (at most 24 hours
+  later if an upstream keeps failing), it posts one message —
+  "Owl now recognizes N more components; M Critical" — if the Critical or unrecognized-image alert is on.
+  Components deployed after the upgrade alert as usual.
 - **Delivery**: each message is tried 3 times (network errors, `429`, `5xx`; 2 s and 8 s apart). A failed
   alert is dropped — the digest covers it — and shown in Settings → Notifications and the log. The
   digest is retried hourly. A digest missed while the server was down is sent once when it's back, if
@@ -269,7 +274,7 @@ backups but survives a restore unchanged.
 
 | Job | When |
 |---|---|
-| Upstream refresh (GitHub, endoflife.date, OSV) | at startup and every 6 hours |
+| Upstream refresh (GitHub, endoflife.date, OSV) for components running in a cluster and custom ones | at startup and every 6 hours; a component that starts running is fetched right after that agent report |
 | Scheduled backup | daily at the configured time (checked every minute) |
 | Retry pending uploads | every 10 minutes while some are pending |
 | Audit log pruning, expired sessions and links, API tokens expired 30+ days ago; email to owners of API tokens that expire within 7 days (once per token) | at startup and every 24 hours |

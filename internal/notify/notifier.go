@@ -30,7 +30,18 @@ const (
 	metaDigestMail    = "digestMailSlot" // … and by email
 	metaDigestTry     = "digestTriedAt"  // last attempt (retry hourly)
 	metaDigestEnabled = "digestEnabledAt"
+	metaCatalog       = "catalogBuiltins" // built-in component ids the last check knew (comma separated)
+	metaLearning      = "catalogLearning" // id@RFC3339 since: running components a catalog upgrade taught Owl, upstream data pending
 )
+
+// learnFor bounds how long a newly recognized component waits quietly for complete upstream data (an
+// upstream that keeps failing must not silence it forever).
+const learnFor = 24 * time.Hour
+
+// builtinsBeforeM13 is the built-in catalog of the releases that didn't record metaCatalog yet: an
+// upgrade from one of them learns everything else quietly too.
+var builtinsBeforeM13 = []string{"kubernetes", "rke2", "k3s", "ingress-nginx", "nginx", "haproxy", "haproxy-kubernetes-ingress",
+	"haproxy-ingress", "grafana", "coredns", "longhorn", "redis", "valkey", "postgresql", "redpanda", "metrics-server"}
 
 // Notifier checks for changes worth an alert after every agent push and upstream refresh (Kick), and
 // sends the weekly digest on schedule (Run). Without a webhook it still keeps its state current, so
@@ -48,11 +59,15 @@ type Notifier struct {
 	// Its levels may be lower than they really are, so its Critical pairs aren't counted as resolved
 	// until a complete refresh — otherwise they'd be announced as "newly Critical" once it recovers.
 	Incomplete func(componentID string) bool
-	Webhook    *Webhook    // nil = OWL_MATTERMOST_WEBHOOK_URL not set
-	Mail       mail.Sender // nil = no SMTP: no digest email
-	PublicURL  *url.URL    // links; nil = messages without links
-	Log        *slog.Logger
-	Now        func() time.Time
+	// Fetched reports whether upstream data for a component has loaded. Components a catalog upgrade
+	// taught Owl stay quiet until it has, completely (see Incomplete), or for learnFor at most
+	// (nil = always loaded).
+	Fetched   func(componentID string) bool
+	Webhook   *Webhook    // nil = OWL_MATTERMOST_WEBHOOK_URL not set
+	Mail      mail.Sender // nil = no SMTP: no digest email
+	PublicURL *url.URL    // links; nil = messages without links
+	Log       *slog.Logger
+	Now       func() time.Time
 
 	mu       sync.Mutex // one check at a time (and a restore with its quiet check)
 	digestMu sync.Mutex // one digest at a time
@@ -174,6 +189,12 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Which components have complete upstream data — decided before the report is built, so a fetch that
+	// lands in between can't mark a component learned against a report without its data.
+	complete := map[string]bool{}
+	for _, c := range n.cat().Components {
+		complete[c.ID] = (n.Fetched == nil || n.Fetched(c.ID)) && (n.Incomplete == nil || !n.Incomplete(c.ID))
+	}
 	rep, err := n.Report(ctx)
 	if err != nil {
 		return nil, err
@@ -214,6 +235,13 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 	}
 	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Name < fresh[j].Name })
 
+	// Components a newer catalog recognizes that already ran (unrecognized before): recorded quietly
+	// once their upstream data is in, then one summary instead of an alert per component.
+	learning, learned, err := n.catalogLearned(ctx, st, inv, complete, &delta)
+	if err != nil {
+		return nil, err
+	}
+
 	// Critical pairs: new ones alert, ones that left are recorded for the digest, pairs of deleted
 	// clusters are forgotten silently.
 	crit := criticalPairs(rep)
@@ -222,7 +250,9 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 		k := pair{m.Component, m.Cluster}
 		known[k] = true
 		switch {
-		case !exists[m.Cluster]:
+		case !exists[m.Cluster] || n.cat().ByID(m.Component) == nil:
+			// cluster deleted, or the component left the catalog (a custom one deleted or replaced by a
+			// built-in, which takes over its pairs): not "no longer Critical"
 			delta.Dropped = append(delta.Dropped, m)
 		case crit[k] != nil || n.Incomplete != nil && n.Incomplete(m.Component):
 			// still Critical, or can't tell (incomplete upstream data): keep it
@@ -233,8 +263,16 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 		}
 	}
 	var newCrit []*critical
+	learnedCrit := map[string]bool{}
 	for _, c := range sortedCriticals(crit, func(k pair) bool { return !known[k] }) {
-		newCrit = append(newCrit, c)
+		switch {
+		case learning[c.Component]:
+			continue // no upstream data yet: not recorded, so it's decided once the data is in
+		case learned[c.Component]:
+			learnedCrit[c.Component] = true // recorded, announced in the summary
+		default:
+			newCrit = append(newCrit, c)
+		}
 		delta.AddCritical = append(delta.AddCritical, store.CriticalMark{Component: c.Component, Cluster: c.Cluster, Since: now})
 	}
 
@@ -276,6 +314,9 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 			msgs = append(msgs, message{"critical alert", n.criticalDoc(list).Markdown()})
 		}
 	}
+	if len(learned) > 0 && (set.Critical || set.Unrecognized) {
+		msgs = append(msgs, message{"catalog update", n.learnedDoc(learned, learnedCrit).Markdown()})
+	}
 	if set.Unrecognized {
 		var list []string
 		for _, repo := range newRepos {
@@ -291,6 +332,122 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 		}
 	}
 	return msgs, nil
+}
+
+// catalogLearned compares the built-in catalog with the one the last check knew. Components that are new
+// in it and already run somewhere were unrecognized images until now: they're "learning" until their
+// upstream data is complete (or for learnFor), then "learned" in exactly one check. Components deployed
+// after the upgrade aren't affected (they weren't running when the catalog changed), and neither is a
+// built-in that replaces a custom component of the same id (Owl tracked it already). Updates delta's meta.
+func (n *Notifier) catalogLearned(ctx context.Context, st *store.NotifyState, inv *inventory.Inventory, complete map[string]bool,
+	delta *store.NotifyDelta) (learning, learned map[string]bool, err error) {
+	cat := n.cat()
+	var builtins []string
+	for _, c := range cat.Components {
+		if !c.Custom {
+			builtins = append(builtins, c.ID)
+		}
+	}
+	sort.Strings(builtins)
+	knew := map[string]bool{}
+	switch {
+	case st.Meta[metaCatalog] != "":
+		for _, id := range strings.Split(st.Meta[metaCatalog], ",") {
+			knew[id] = true
+		}
+	case st.Meta[metaInitialized] == "": // first check ever: quiet anyway, nothing to learn
+		for _, id := range builtins {
+			knew[id] = true
+		}
+	default:
+		for _, id := range builtinsBeforeM13 {
+			knew[id] = true
+		}
+	}
+	custom, err := n.Store.ListCustomComponents(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, c := range custom {
+		knew[c.ID] = true
+	}
+	running := map[string]bool{}
+	for _, cv := range inv.Components {
+		running[cv.ID] = true
+	}
+	now := n.now()
+	since := map[string]time.Time{}
+	if st.Meta[metaLearning] != "" {
+		for _, e := range strings.Split(st.Meta[metaLearning], ",") {
+			id, at, _ := strings.Cut(e, "@")
+			t, err := time.Parse(time.RFC3339, at)
+			if err != nil {
+				t = now
+			}
+			since[id] = t
+		}
+	}
+	for _, id := range builtins {
+		if _, ok := since[id]; !ok && !knew[id] && running[id] {
+			since[id] = now
+		}
+	}
+	learning, learned = map[string]bool{}, map[string]bool{}
+	var still []string
+	for id, t := range since {
+		switch {
+		case !running[id] || cat.ByID(id) == nil:
+			// removed meanwhile: nothing to announce
+		case complete[id] || now.Sub(t) >= learnFor:
+			learned[id] = true
+		default:
+			learning[id] = true
+			still = append(still, id+"@"+t.Format(time.RFC3339))
+		}
+	}
+	sort.Strings(still)
+	delta.Meta[metaCatalog] = strings.Join(builtins, ",")
+	delta.Meta[metaLearning] = strings.Join(still, ",")
+	return learning, learned, nil
+}
+
+// learnedDoc: "Owl now recognizes 3 more components" after a catalog upgrade, with the Critical ones.
+func (n *Notifier) learnedDoc(learned, critical map[string]bool) Doc {
+	cat := n.cat()
+	name := func(id string) string {
+		if c := cat.ByID(id); c != nil {
+			return c.Name
+		}
+		return id
+	}
+	ids := make([]string, 0, len(learned))
+	for id := range learned {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if critical[ids[i]] != critical[ids[j]] {
+			return critical[ids[i]]
+		}
+		return name(ids[i]) < name(ids[j])
+	})
+	title := "Owl now recognizes " + report.Plural(len(ids), "more component")
+	if len(critical) > 0 {
+		title += "; " + strconv.Itoa(len(critical)) + " Critical"
+	}
+	b := Block{Title: "Recognized after the catalog update"}
+	shown, more := capLines(len(ids), 15)
+	for _, id := range ids[:shown] {
+		l := Ln(B(name(id)))
+		if critical[id] {
+			l = append(l, T(" — "), B("Critical"))
+		}
+		if link := n.link("/components/" + url.PathEscape(id)); link != "" {
+			l = append(l, T(" · "), L("details", link))
+		}
+		b.Items = append(b.Items, l)
+	}
+	b.More, b.MoreLink = more, n.link("/")
+	return Doc{Title: "🦉 " + title, Sections: []Section{{Blocks: []Block{b}}}, Footer: n.footer("Open the Overview", "/")}
 }
 
 // unrecognizedByRepo: repository -> clusters running it (sorted).

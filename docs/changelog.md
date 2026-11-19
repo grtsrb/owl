@@ -2,6 +2,29 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 13 — bigger built-in catalog (plumbing)
+
+Groundwork for a much longer built-in catalog; the new entries follow in batches.
+
+- **Upstream data only for what runs**: the 6-hourly refresh covers components running in at least one
+  cluster plus your custom ones. A component that starts running is fetched right after that agent
+  report, not at the next refresh.
+- **Upgrades never undo your choices**: in-house and ignore overrides apply even when the built-in
+  catalog learns the image (a component you add for that repository still wins). A map override a
+  component now covers says "Now covered by … — remove?"; removing an override fetches the component's
+  upstream data at once.
+- **No alert flood after an upgrade**: components a newer catalog recognizes among images already
+  running are recorded quietly, with one "Owl now recognizes N more components; M Critical" message.
+- **RKE2-/k3s-managed images** (`bundledWith` in the catalog): CoreDNS, metrics-server and the
+  ingress-nginx controller shipped by RKE2/k3s are tagged *RKE2-managed* and say "Comes with RKE2 —
+  upgrade RKE2 …"; their level is unchanged.
+- **Settings → Catalog** lists built-in components with search, links, and a green (running, in N
+  clusters) or grey (not running) dot, filterable.
+- Built-in entries can read the app version from two-version tags (`versionPattern`) and use OSV
+  packages from any ecosystem.
+- `make catalog-check` verifies catalog entries against GitHub, endoflife.date and OSV (manual).
+- Pairs of a component that left the catalog are forgotten, not reported as "no longer Critical".
+
 ## Fixes after milestone 12
 
 - Argo Rollouts and other ReplicaSet-based controllers: after a rollback the intended image is the

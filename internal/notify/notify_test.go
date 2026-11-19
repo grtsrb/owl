@@ -629,3 +629,93 @@ func TestCriticalTitleCountsComponentsAndClusters(t *testing.T) {
 		t.Errorf("%q / %q", one, two)
 	}
 }
+
+// A catalog upgrade that recognizes images already running doesn't alert per component: they're recorded
+// once their upstream data is in, with one summary. A component deployed after the upgrade alerts as usual.
+func TestCatalogUpgradeIsQuiet(t *testing.T) {
+	e := newEnv(t)
+	e.set(KeyCritical, "on", KeyUnrecognized, "on")
+	e.cluster("prod", "IT", "redis:7.2.4", "example.org/foo/foo:1.0", "example.org/baz/baz:1.0")
+	// baz was tracked already, as a custom component of the same id the new built-in replaces.
+	if err := e.db.CreateCustomComponent(context.Background(), "baz", []byte(`{"name":"Baz","images":["example.org/baz/baz"],"github":"baz/baz"}`)); err != nil {
+		t.Fatal(err)
+	}
+	e.check() // first check: quiet
+	// Simulate a server from before milestone 13 (no catalog recorded): the old built-ins are the baseline.
+	if err := e.db.SetNotifyMeta(context.Background(), metaCatalog, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upgrade: the built-in catalog learns foo (running) and bar (not running anywhere yet).
+	up, _ := catalog.Merge(e.cat, []catalog.Component{
+		{ID: "foo", Name: "Foo Server", Images: []string{"example.org/foo/foo"}, GitHub: "foo/foo"},
+		{ID: "bar", Name: "Bar", Images: []string{"example.org/bar/bar"}, GitHub: "bar/bar"},
+		{ID: "baz", Name: "Baz", Images: []string{"example.org/baz/baz"}, GitHub: "baz/baz"},
+	})
+	for i := range up.Components {
+		up.Components[i].Custom = false // built-in in this test
+	}
+	e.n.Catalog = up
+	fetched, incomplete := false, true
+	e.n.Fetched = func(id string) bool { return id != "foo" || fetched }
+	e.n.Incomplete = func(id string) bool { return id == "foo" && incomplete }
+	e.crit("foo@prod", "baz@prod")
+	e.check()
+	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "Baz became Critical") || strings.Contains(got[0], "Foo") {
+		t.Fatalf("before foo's upstream data loaded (baz is no news, only its level): %q", got)
+	}
+	e.mm.reset()
+	fetched = true // loaded, but with errors (rate limit): still learning
+	e.check()
+	if got := e.mm.texts(); len(got) != 0 {
+		t.Fatalf("incomplete upstream data: %q", got)
+	}
+	incomplete = false
+	e.check()
+	got := e.mm.texts()
+	if len(got) != 1 || !strings.Contains(got[0], "Owl now recognizes 1 more component; 1 Critical") ||
+		!strings.Contains(got[0], "**Foo Server** — **Critical**") || strings.Contains(got[0], "became Critical") {
+		t.Fatalf("summary: %q", got)
+	}
+	e.mm.reset()
+	e.check()
+	if got := e.mm.texts(); len(got) != 0 {
+		t.Fatalf("summary repeated: %q", got)
+	}
+
+	// bar was in the catalog before it ran: a normal deployment, a normal alert.
+	e.cluster("prod", "IT", "redis:7.2.4", "example.org/foo/foo:1.0", "example.org/bar/bar:1.0.0")
+	e.crit("foo@prod", "bar@prod", "baz@prod")
+	e.check()
+	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "Bar became Critical") {
+		t.Fatalf("new deployment after the upgrade: %q", got)
+	}
+
+	// An upstream that keeps failing doesn't silence a learning component for more than learnFor.
+	e.mm.reset()
+	up2, _ := catalog.Merge(e.cat, []catalog.Component{{ID: "qux", Name: "Qux", Images: []string{"example.org/qux/qux"}, GitHub: "qux/qux"}})
+	for i := range up2.Components {
+		up2.Components[i].Custom = false
+	}
+	e.n.Catalog = up2
+	e.n.Incomplete = func(id string) bool { return id == "qux" }
+	e.cluster("prod", "IT", "redis:7.2.4", "example.org/qux/qux:1.0")
+	e.crit("qux@prod")
+	e.check()
+	if got := e.mm.texts(); len(got) != 0 {
+		t.Fatalf("qux learning: %q", got)
+	}
+	e.now = e.now.Add(learnFor)
+	e.check()
+	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "Owl now recognizes 1 more component; 1 Critical") {
+		t.Fatalf("after learnFor: %q", got)
+	}
+
+	// Components that leave the catalog (a custom one deleted) are forgotten, not "no longer Critical".
+	e.n.Catalog = e.cat
+	e.crit()
+	e.check()
+	if res, _ := e.db.ListResolved(context.Background(), time.Time{}); len(res) != 0 {
+		t.Errorf("pairs of components gone from the catalog must not read as resolved: %+v", res)
+	}
+}

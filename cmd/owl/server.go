@@ -372,8 +372,8 @@ func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, lo
 // switching them on later starts from the present.
 func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authCfg server.AuthConfig, log *slog.Logger) error {
 	n := &notify.Notifier{Store: db, Catalog: cat, CatalogFn: app.CurrentCatalog, Report: app.BuildReport, Ready: app.UpstreamLoaded,
-		Incomplete: app.UpstreamIncomplete,
-		Mail:       authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log}
+		Incomplete: app.UpstreamIncomplete, Fetched: func(id string) bool { return app.UpstreamInfo(id) != nil },
+		Mail: authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log}
 	if raw := os.Getenv("OWL_MATTERMOST_WEBHOOK_URL"); raw != "" {
 		if err := notify.ValidateWebhookURL(raw); err != nil {
 			return fmt.Errorf("OWL_MATTERMOST_WEBHOOK_URL: %w", err)

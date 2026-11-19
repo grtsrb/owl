@@ -76,7 +76,9 @@ cluster (each)                               server (Docker locally, later one E
 - Unknown images → "unrecognized" list. Per image repository, across all clusters, the UI can map it to an
   existing component, mark it in-house, or ignore it — stored in the DB as catalog overrides over
   `catalog.yaml`, listed with undo in Settings. New components can be added from the UI (milestone 11, see
-  "Catalog from the UI"); `catalog.yaml` stays the home of verified built-in ones.
+  "Catalog from the UI"); `catalog.yaml` stays the home of verified built-in ones. `ignore` and `inhouse`
+  overrides are applied **before** the catalog (they always win); `map` only to images the catalog doesn't
+  recognize (milestone 13, see "Bigger built-in catalog").
 
 ## Versions & policy
 - Three targets per component: latest patch (current line), latest minor, latest major. Stable only.
@@ -103,7 +105,8 @@ cluster (each)                               server (Docker locally, later one E
 - **Retired** = GitHub repo archived *and* no release for 90 days (ingress-nginx). Archived but still
   releasing (Redpanda) = "archived — check where development moved", not Critical.
 - Upstream data refreshes every 6 h, cached in SQLite with ETags; on upstream failure the last good
-  copy is served (marked stale).
+  copy is served (marked stale). Only components **running in at least one cluster** (plus custom ones) are
+  refreshed; one that appears in a push without upstream data is fetched at once (milestone 13).
 
 ## Priority (rule-based; Claude explains, never decides)
 - 🔴 Critical — affected by a high/critical advisory *with a fix*, past EOL, or upstream retired
@@ -252,6 +255,52 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   linux amd64/arm64, embedded in the image and served at `GET /api/v1/cli/{os}-{arch}` (signed in), with
   SHA-256 shown in Account. Budget ≈ +20 MB image; if much larger, drop darwin/amd64 first.
 - v2: stages, tenants and version policies as further sections of the same file format.
+
+## Bigger built-in catalog (agreed 2026-11-19, milestone 13)
+- Goal: a standard install of common infrastructure tools shows **no unrecognized images** without anyone
+  mapping them by hand. The catalog stays **embedded** in the binary (no remote catalog: no new outbound
+  dependency, no trust/signing problem); custom components cover what can't wait for a release.
+- **Eligible**: runs as a container image in the cluster, has a public GitHub repo with tagged releases, and its
+  image names and tag format were verified against real published images. Otherwise: a custom component.
+- **Per entry**: `github` required. `eol` only when verified to be the same project. `osv` from any ecosystem
+  (Go, PyPI, Maven, npm…) only when verified to be the same project **and** its versions match the image tags.
+- **All images of a tool**: helper images that share the parent's version map to the parent (cert-manager
+  cainjector/webhook, prometheus-config-reloader → prometheus-operator); helpers with their own release cycle
+  (CSI sidecars) are their own component. Bitnami entries list `bitnami/*`, `bitnamilegacy/*` (Bitnami moved
+  free images there in 2025) and `docker.io/bitnami/*`.
+- **Two versions in one tag** (`quay.io/strimzi/kafka:0.45.0-kafka-3.9.0`): built-in entries may use
+  `versionPattern` (until now custom-only) to read the *app* version; the operator is tracked via its own image.
+- **`bundledWith: rke2|k3s`** on images the distribution ships and upgrades itself (`rancher/hardened-*`,
+  `rancher/mirrored-*`: CoreDNS, metrics-server, ingress-nginx, Canal/Calico/Flannel, Cilium,
+  snapshot-controller…). Levels unchanged (an advisory is an advisory); `ActionFor` says "Comes with RKE2 —
+  upgrade RKE2 to a newer release" instead of "Upgrade X to Y"; the UI shows an "RKE2-managed" tag. Which RKE2
+  release ships which version: later.
+- **Refresh only what runs**: `RefreshUpstream` covers components present in at least one cluster's current
+  snapshot plus all custom components. A push that brings a component without upstream data triggers a
+  background fetch of it. A component no longer running anywhere stops being refreshed and leaves the
+  in-memory map; its cache rows stay (one ETag revalidation if it comes back).
+- **Upgrades never undo a choice**: `ignore`/`inhouse` overrides are checked before the built-in catalog (a
+  custom component claiming the repository still beats them — the later, more specific choice). A `map`
+  override or custom component whose images a new built-in now claims: built-in wins (unchanged rule), shown
+  as "Now covered by X — remove?" in Settings → Catalog.
+- **No notification flood after an upgrade**: components that become recognized because the *catalog* changed
+  (not because they were deployed) are recorded quietly once their upstream data is complete (at most 24 h);
+  one post instead: "Owl now recognizes N more components; M are Critical". A built-in replacing a custom
+  component of the same id isn't news. Newly deployed components afterwards notify as usual.
+- **Settings → Catalog** lists every built-in (searchable; GitHub / endoflife.date / OSV links) with a green dot
+  + "running in N clusters" (names on hover) or a grey dot + "not running" (grey, not red: not a problem), and
+  an All / Running / Not running filter. No upstream fetch for components not running, except the New
+  component preview.
+- **Verification**: an offline table test per entry (real image refs → component + parsed version), and
+  `make catalog-check` (manual, needs `GITHUB_TOKEN`, not CI): repo exists and not archived, release tags parse
+  with the prefix, `eol` slug exists and its latest agrees with GitHub, `osv` package exists.
+- **Order**: plumbing first (all of the above but the entries), then batches, each its own branch → review → merge,
+  list confirmed when the batch starts. Batch 1: elastalert2 + Elasticsearch/OpenSearch first (run by the
+  user — verifiable against a real cluster), Traefik, Cilium, Calico/Canal, Flannel, MetalLB, external-dns,
+  cert-manager, external-secrets, sealed-secrets, Prometheus, Alertmanager, prometheus-operator,
+  node-exporter, kube-state-metrics, Loki, Alloy/Promtail, Tempo, Mimir, Thanos, OpenTelemetry Collector,
+  Fluent Bit. Later batches: GitOps/CI/storage, then data/policy/ops. Tools the user names later go into the
+  next open batch (or a small branch of their own) with the same checks.
 
 ## Catalog from the UI (agreed 2026-11-17, milestone 11)
 - **New component** form, opened from a cluster's Unrecognized images card, Settings → Catalog, or the link in
@@ -428,3 +477,5 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 12. **CLI & API tokens** (designed 2026-11-18, see "CLI & API tokens"): personal tokens, remote CLI, users from a file,
     CLI download. Built: plan/apply run on the server (one transaction, plan id checked); a read-only token may
     `users plan`; the old database commands keep working for one release with a warning.
+13. **Bigger built-in catalog** (designed 2026-11-19, see "Bigger built-in catalog"): refresh only running
+    components, overrides that survive upgrades, quiet recognition, `bundledWith`, then catalog batches.

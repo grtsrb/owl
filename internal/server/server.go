@@ -77,6 +77,9 @@ type Server struct {
 	LogLevel *slog.LevelVar
 	LogFile  interface{ SetRetentionDays(int) }
 
+	fetchKick chan struct{} // kickFetch → RunUpstreamRefresher
+	fetchOnce sync.Once
+
 	live    atomic.Pointer[liveCatalog]
 	reloadM sync.Mutex // one catalog reload at a time
 
@@ -281,6 +284,7 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	s.Log.Info("snapshot ingested", "cluster", cluster.Name, "workloads", len(snap.Workloads),
 		"changes", len(res.Changes), "first", res.First, "agent", snap.AgentVersion)
 	if len(res.Changes) > 0 || res.First {
+		s.kickFetch()     // a component that just started running gets its upstream data now
 		s.kickSummaries() // running versions changed: the upgrades needed may have too
 		s.kickNotify()
 	}
@@ -432,8 +436,30 @@ func logRequests(log *slog.Logger, clientIP func(*http.Request) string, next htt
 	})
 }
 
-// RefreshUpstream fetches upstream info for every catalog component (cached responses make this
-// cheap; only expired entries hit the network).
+// runningComponents: the components upstream data is kept for — every one running in at least one
+// cluster (identified or unpinned, through the catalog or a map override, and the cluster-sourced ones)
+// plus every custom component (someone added it on purpose). A large built-in catalog costs nothing
+// until a cluster runs a component of it.
+func (s *Server) runningComponents(ctx context.Context, cat *catalog.Catalog) (map[string]bool, error) {
+	inv, err := inventory.Build(ctx, s.Store, cat)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, cv := range inv.Components {
+		out[cv.ID] = true
+	}
+	for _, c := range cat.Components {
+		if c.Custom {
+			out[c.ID] = true
+		}
+	}
+	return out, nil
+}
+
+// RefreshUpstream fetches upstream info for the running components (cached responses make this cheap;
+// only expired entries hit the network). Components that stopped running anywhere leave the map; their
+// cache rows stay, so coming back costs one revalidation.
 func (s *Server) RefreshUpstream(ctx context.Context) {
 	if s.Upstream == nil {
 		return
@@ -442,8 +468,15 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	fresh := map[string]*upstream.Info{}
 	errs := 0
 	cat := s.cat()
+	want, err := s.runningComponents(ctx, cat)
+	if err != nil {
+		s.Log.Error("upstream refresh: listing running components failed; refreshing all", "err", err)
+	}
 	for i := range cat.Components {
 		c := &cat.Components[i]
+		if want != nil && !want[c.ID] {
+			continue
+		}
 		info := s.Upstream.Refresh(ctx, c)
 		if len(info.Errors) > 0 {
 			errs++
@@ -451,12 +484,17 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 		}
 		fresh[c.ID] = info
 	}
-	s.mu.Lock()
-	// The catalog may have changed while this ran (a component added in the UI): keep what customChanged
-	// fetched for components this refresh didn't cover, and drop components that are gone.
+	// The catalog or the clusters may have changed while this ran (a component added in the UI, a push):
+	// keep what was fetched meanwhile for components this refresh didn't cover and that are still wanted,
+	// drop the rest.
 	now := s.cat()
+	still, err := s.runningComponents(ctx, now)
+	if err != nil {
+		still = nil
+	}
+	s.mu.Lock()
 	for id, info := range s.upstream {
-		if _, ok := fresh[id]; !ok && now.ByID(id) != nil {
+		if _, ok := fresh[id]; !ok && now.ByID(id) != nil && (still == nil || still[id]) {
 			fresh[id] = info
 		}
 	}
@@ -467,12 +505,81 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	}
 	s.upstream = fresh
 	s.mu.Unlock()
-	s.Log.Info("upstream refreshed", "components", len(fresh), "withErrors", errs, "took", time.Since(start).Round(time.Millisecond))
+	s.Log.Info("upstream refreshed", "components", len(fresh), "catalog", len(now.Components), "withErrors", errs,
+		"took", time.Since(start).Round(time.Millisecond))
 	s.kickSummaries() // new targets or releases: jumps and notes may have changed
 	s.kickNotify()    // new advisories or a passed EOL date change levels without any cluster change
 }
 
-// RunUpstreamRefresher refreshes now and then every interval until ctx is done.
+// fetchKicks: pushes (and map overrides) ask the refresher to fetch components that started running.
+func (s *Server) fetchKicks() chan struct{} {
+	s.fetchOnce.Do(func() { s.fetchKick = make(chan struct{}, 1) })
+	return s.fetchKick
+}
+
+// kickFetch asks for upstream data of components that run now but have none yet (a new deployment),
+// so they don't wait for the next scheduled refresh.
+func (s *Server) kickFetch() {
+	select {
+	case s.fetchKicks() <- struct{}{}:
+	default:
+	}
+}
+
+// FetchNew fetches upstream data for running components that have none yet. Before the first refresh it
+// does nothing (that refresh covers them).
+func (s *Server) FetchNew(ctx context.Context) {
+	if s.Upstream == nil {
+		return
+	}
+	cat := s.cat()
+	want, err := s.runningComponents(ctx, cat)
+	if err != nil {
+		s.Log.Error("fetching new components failed", "err", err)
+		return
+	}
+	s.mu.RLock()
+	loaded := s.upstream != nil
+	var missing []*catalog.Component
+	for i := range cat.Components {
+		c := &cat.Components[i]
+		if _, ok := s.upstream[c.ID]; want[c.ID] && !ok {
+			missing = append(missing, c)
+		}
+	}
+	s.mu.RUnlock()
+	if !loaded || len(missing) == 0 {
+		return
+	}
+	got := map[string]*upstream.Info{}
+	for _, c := range missing {
+		got[c.ID] = s.Upstream.Refresh(ctx, c)
+	}
+	s.mu.Lock()
+	next := make(map[string]*upstream.Info, len(s.upstream)+len(got))
+	for k, v := range s.upstream {
+		next[k] = v
+	}
+	now := s.cat()
+	for id, info := range got {
+		if _, ok := next[id]; !ok && now.ByID(id) != nil {
+			next[id] = info
+		}
+	}
+	s.upstream = next
+	s.mu.Unlock()
+	ids := make([]string, 0, len(got))
+	for id := range got {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	s.Log.Info("upstream fetched for components that started running", "components", ids)
+	s.kickSummaries()
+	s.kickNotify()
+}
+
+// RunUpstreamRefresher refreshes now and then every interval until ctx is done; in between it fetches
+// components that started running (kickFetch). One goroutine does all of it, so they never overlap.
 func (s *Server) RunUpstreamRefresher(ctx context.Context, every time.Duration) {
 	s.RefreshUpstream(ctx)
 	t := time.NewTicker(every)
@@ -483,6 +590,8 @@ func (s *Server) RunUpstreamRefresher(ctx context.Context, every time.Duration) 
 			return
 		case <-t.C:
 			s.RefreshUpstream(ctx)
+		case <-s.fetchKicks():
+			s.FetchNew(ctx)
 		}
 	}
 }
