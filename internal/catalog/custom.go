@@ -65,8 +65,8 @@ func ValidateCustom(c *Component) error {
 		return errors.New("github: owner/repository, e.g. openssh/openssh-portable")
 	case c.EOL != "" && !reEOLSlug.MatchString(c.EOL):
 		return errors.New("eol: an endoflife.date product, e.g. postgresql (or empty)")
-	case c.VersionParts < 0 || c.VersionParts > 4:
-		return errors.New("versionParts: 1–4 (0 = default 3)")
+	case c.VersionParts < 0 || c.VersionParts > 3: // ParseVersion reads at most major.minor.patch
+		return errors.New("versionParts: 1–3 (0 = default 3)")
 	case !rePrefix.MatchString(c.TagPrefix) || !rePrefix.MatchString(c.ReleaseTagPrefix):
 		return errors.New("tag prefixes: up to 40 letters, digits, '.', '_', '-', '/'")
 	case c.Source != "" || c.OSV != nil || c.ReleaseNotes != "" || c.Notes != "":

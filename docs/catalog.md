@@ -45,7 +45,7 @@ components:
 | `images` | Image names without tag: `registry/repository`, or a bare repository for Docker Hub (`redis` = `docker.io/library/redis`). Mirrors are matched by path suffix. |
 | `github` | `owner/repo` for releases, archived/retired detection and repository advisories. |
 | `eol` | endoflife.date product slug. **Set only when verified to be the same project** — e.g. endoflife.date `haproxy-ingress` is jcmoraisjr's project, not HAProxy Technologies'. |
-| `versionParts` | How many numeric parts a pinned version has (default 3). Tags with fewer parts are "unpinned (floating)". |
+| `versionParts` | How many numeric parts a pinned version has: 1–3 (default 3). Tags with fewer parts are "unpinned (floating)". |
 | `tagPrefix` | Prefix stripped from image tags before parsing (`controller-v1.10.4`). |
 | `releaseTagPrefix` | Only GitHub release tags with this prefix count (repositories that release several things). |
 | `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. |

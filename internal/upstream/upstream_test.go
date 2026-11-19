@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"owl/internal/catalog"
+	"owl/internal/store"
 	"owl/internal/store/sqlite"
 )
 
@@ -195,5 +196,33 @@ func TestRelevantFix(t *testing.T) {
 	pv, _ := catalog.ParseVersion("17.0", "")
 	if got := RelevantFix(pv, []string{"16.6", "17.2"}); got != "17.2" { // major-named lines (Postgres)
 		t.Errorf("postgres: %q", got)
+	}
+}
+
+// GitHub release lines strip the release tag prefix before parsing (nginx tags "release-1.27.4").
+func TestGitHubLinesReleaseTagPrefix(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	body := `[{"tag_name":"release-1.27.4","published_at":"2025-02-05T00:00:00Z"},{"tag_name":"release-1.26.3","published_at":"2025-01-01T00:00:00Z"},{"tag_name":"other-9.9.9"}]`
+	_ = db.PutCache(context.Background(), store.CacheEntry{Key: "gh-releases:nginx/nginx:1", FetchedAt: time.Now(), Body: []byte(body)})
+	c := &Client{F: &Fetcher{HTTP: http.DefaultClient, Cache: db, TTL: time.Hour, now: time.Now}}
+	comp := &catalog.Component{ID: "nginx", GitHub: "nginx/nginx", ReleaseTagPrefix: "release-"}
+	if got := c.GitHubLatest(context.Background(), comp); got != "1.27.4" {
+		t.Fatalf("latest: %q", got)
+	}
+}
+
+// OSV: introduced without a fixed event = affected with no fix (not "needs review").
+func TestOSVOpenRangeIsAffectedNoFix(t *testing.T) {
+	info := &Info{Advisories: []Advisory{{ID: "OSV-1", Ranges: eventsToRanges([]map[string]string{{"introduced": "1.3.0"}})}}}
+	ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, "1.3.4")
+	if len(ms) != 1 || !ms[0].Certain || !ms[0].NoFix {
+		t.Fatalf("want certain, no fix: %+v", ms)
+	}
+	if ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, "1.2.9"); len(ms) != 0 {
+		t.Fatalf("below introduced: %+v", ms)
 	}
 }

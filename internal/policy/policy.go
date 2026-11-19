@@ -122,7 +122,8 @@ func Resolve(sp Spec, lines []upstream.ReleaseLine, now time.Time) (Target, bool
 		}
 		if n >= len(ls) {
 			n = len(ls) - 1
-			t.Note = fmt.Sprintf("only %d release lines known; using the oldest", len(ls))
+			// Appended: an earlier note ("no supported LTS line; …") still explains the choice.
+			t.Note = strings.TrimPrefix(t.Note+"; "+fmt.Sprintf("only %d release lines known; using the oldest", len(ls)), "; ")
 		}
 		return pick(ls[n])
 	}

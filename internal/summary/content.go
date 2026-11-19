@@ -3,6 +3,7 @@ package summary
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -163,6 +164,8 @@ func parseContent(raw string, sources []upstream.Note) (Content, error) {
 }
 
 // clean removes control characters (newlines become spaces), collapses whitespace and caps the length.
+var reURL = regexp.MustCompile(`(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+`)
+
 func clean(s string, max int) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || r == ' ' || r == ' ' {
@@ -171,6 +174,9 @@ func clean(s string, max int) string {
 		return r
 	}, s)
 	s = strings.Join(strings.Fields(s), " ")
+	// Links in a summary come only from Owl's own release-note sources. A URL in Claude's text (an
+	// injection in upstream notes could plant one) would be auto-linked by Mattermost and mail clients.
+	s = reURL.ReplaceAllString(s, "[link removed]")
 	if r := []rune(s); len(r) > max {
 		s = strings.TrimSpace(string(r[:max-1])) + "…"
 	}

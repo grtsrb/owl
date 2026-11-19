@@ -296,7 +296,9 @@ func (m *Manager) collect(ctx context.Context, st *jumpState) {
 	case errors.Is(err, upstream.ErrNoNotes):
 		st.noNotes = true
 	case err != nil:
-		st.notesErr = err.Error()
+		// The raw error (URLs, HTTP status) goes to the log; the public view gets a plain message.
+		m.Log.Warn("release notes unavailable", "component", st.Component, "from", st.From, "to", st.To, "err", err)
+		st.notesErr = "release notes couldn't be fetched right now (details in the server log); retried automatically"
 		st.collected = false // try again next cycle
 	default:
 		st.notes = notes
@@ -495,8 +497,10 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 	body, _ := json.Marshal(Stored{Content: content, Sources: sources})
 	if err := m.Store.PutSummary(ctx, store.Summary{Component: st.Component, FromVersion: st.From, ToVersion: st.To,
 		Model: m.Model, PromptVersion: PromptVersion, CreatedAt: now, Content: body}); err != nil {
-		_ = m.record(ctx, st.Jump, req.Model, inTok, outTok, cost, "failed", "saving the summary failed: "+err.Error())
-		return err
+		// Paid but not saved: a failure like any other, so automatic mode backs off and repeated
+		// failures pause it — instead of paying for the same jump again every cycle.
+		m.Log.Error("saving a paid summary failed", "err", err)
+		return m.fail(ctx, st, req, inTok, outTok, cost, "saving the summary failed (see the server log)")
 	}
 	m.mu.Lock()
 	st.failedAt, st.lastErr = time.Time{}, ""

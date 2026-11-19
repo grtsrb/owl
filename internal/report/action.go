@@ -80,6 +80,11 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 			if sc.EOL != nil {
 				return Action{ActionUpgrade, "Move to a supported release line", strings.Join(append(why, "policy "+target.Policy+" targets it"), "; ")}
 			}
+			if sc.EOLSoon != nil && len(sc.Advisories) == 0 {
+				// At the newest patch of a line that ends soon: the work is planning the next line.
+				return Action{ActionUpgrade, "Plan the move off " + sc.Line,
+					strings.Join(append(why, sc.Line+" reaches end-of-life on "+sc.EOLSoon.Format("2006-01-02")), "; ")}
+			}
 			return Action{ActionCheck, "Review advisories", strings.Join(append(why, "no newer patch in "+sc.Line), "; ")}
 		}
 		if len(why) == 0 {
@@ -167,13 +172,36 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 	case needs[ActionReplace]:
 		return Action{ActionReplace, "Replace", worst.Action.Why}
 	case needs[ActionPatch] || needs[ActionUpgrade]:
-		if target != nil {
-			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why}
+		if target == nil {
+			break
 		}
+		// "Update to <target>" only when some instance's step is the target itself; instances ahead of
+		// the target that only need a patch in their own line must not read as "go back to the target".
+		toTarget, texts := false, map[string]bool{}
+		for _, in := range insts {
+			if in.Action.Kind == ActionPatch || in.Action.Kind == ActionUpgrade {
+				texts[in.Action.Text] = true
+				toTarget = toTarget || strings.HasSuffix(in.Action.Text, " "+target.Version)
+			}
+		}
+		switch {
+		case toTarget:
+			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why}
+		case len(texts) == 1:
+			return Action{worst.Action.Kind, firstKey(texts), worst.Action.Why}
+		}
+		return Action{ActionPatch, "Patch each to the newest of its line", worst.Action.Why}
 	case needs[ActionPin]:
 		return Action{ActionPin, "Pin an exact version", worst.Action.Why}
 	case needs[ActionCheck]:
 		return Action{ActionCheck, worst.Action.Text, worst.Action.Why}
 	}
 	return worst.Action
+}
+
+func firstKey(m map[string]bool) string {
+	for k := range m {
+		return k
+	}
+	return ""
 }

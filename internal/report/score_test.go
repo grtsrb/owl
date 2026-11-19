@@ -158,3 +158,21 @@ func TestDriftPartialPromotion(t *testing.T) {
 func driftDefault(insts []ScoredInstance) []Drift {
 	return drift(insts, map[string]int{"staging": 1, "prelive": 2, "live": 3}, nil)
 }
+
+// A line upstream data doesn't list yet (newer than all, or a gap) is judged by the next older line
+// only — old EOL lines further down don't make it EOL.
+func TestUnlistedLineEOL(t *testing.T) {
+	if s := score("1.38.0", "identified", k8sInfo(), nil); has(s, "older than end-of-life") || s.Level == LevelCritical {
+		t.Errorf("newer than all lines: %s %+v", s.Level, s.Reasons)
+	}
+	gap := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "8.0", Latest: "8.0.2"}, {Name: "7.4", Latest: "7.4.3"},
+		{Name: "7.2", Latest: "7.2.9", EOL: true, EOLDate: day("2026-01-01")},
+	}}
+	if s := score("7.5.1", "identified", gap, nil); has(s, "older than end-of-life") {
+		t.Errorf("gap above a supported line: %+v", s.Reasons)
+	}
+	if s := score("7.1.0", "identified", gap, nil); !has(s, "older than end-of-life") {
+		t.Errorf("below an EOL line: %+v", s.Reasons)
+	}
+}

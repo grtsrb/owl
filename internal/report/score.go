@@ -64,6 +64,8 @@ type Score struct {
 	// reason text). Review counts advisories that need a human look (no clear fixed range).
 	EOL    *EOLInfo `json:"eol,omitempty"`
 	Review int      `json:"review,omitempty"`
+	// EOLSoon is the end-of-life date of the running line when it's within EOLSoon (the High reason).
+	EOLSoon *time.Time `json:"eolSoon,omitempty"`
 }
 
 type EOLInfo struct {
@@ -176,17 +178,14 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 			s.EOL = &EOLInfo{Line: l.Name, Since: l.EOLDate}
 		case l.EOLDate != nil && l.EOLDate.Sub(now) <= EOLSoon:
 			s.add(LevelHigh, "release line %s reaches end-of-life on %s", l.Name, l.EOLDate.Format("2006-01-02"))
+			s.EOLSoon = l.EOLDate
 		}
 	} else {
-		olderEOL := false
-		for _, l := range lines[pos:] {
-			if policy.IsEOL(l, now) {
-				olderEOL = true
-				break
-			}
-		}
+		// lines[pos] is the next older listed line (pos == len: older than all of them, judged by the
+		// oldest). Lines further down don't matter: a 1.35 nobody lists yet isn't EOL because 1.29 is.
+		olderEOL := pos < len(lines) && policy.IsEOL(lines[pos], now)
 		switch {
-		case olderEOL || pos == len(lines) && policy.IsEOL(lines[len(lines)-1], now):
+		case olderEOL || pos == len(lines) && len(lines) > 0 && policy.IsEOL(lines[len(lines)-1], now):
 			s.add(LevelCritical, "version %s is older than end-of-life release lines (not tracked upstream any more)", in.Version)
 			s.EOL = &EOLInfo{Line: in.Version}
 		case pos == len(lines):

@@ -203,7 +203,8 @@ func (c *Client) githubLines(ctx context.Context, comp *catalog.Component, info 
 			if comp.ReleaseTagPrefix != "" && !strings.HasPrefix(r.Tag, comp.ReleaseTagPrefix) {
 				continue
 			}
-			v, ok := catalog.ParseVersion(r.Tag, comp.TagPrefix)
+			// Same as notes.go: the release tag prefix (nginx "release-") comes off before parsing.
+			v, ok := catalog.ParseVersion(strings.TrimPrefix(r.Tag, comp.ReleaseTagPrefix), comp.TagPrefix)
 			if !ok || v.Prerelease != "" || v.Parts < 2 {
 				continue
 			}
@@ -363,11 +364,11 @@ func eventsToRanges(events []map[string]string) []AffectedRange {
 			open = false
 		}
 	}
-	if open { // no fix yet
+	if open { // no fix yet: OSV's events are exact, so this is "affected, no fix", not "needs review"
 		if lower == "0" {
-			out = append(out, AffectedRange{Range: ">= 0.0.0"})
+			out = append(out, AffectedRange{Range: ">= 0.0.0", Exact: true})
 		} else {
-			out = append(out, AffectedRange{Range: ">= " + lower})
+			out = append(out, AffectedRange{Range: ">= " + lower, Exact: true})
 		}
 	}
 	return out

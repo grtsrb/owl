@@ -2,6 +2,21 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Fixes after milestone 12
+
+- Argo Rollouts and other ReplicaSet-based controllers: after a rollback the intended image is the
+  rolled-back revision (revision annotation), not the newest ReplicaSet.
+- A release line upstream doesn't list yet is no longer called end-of-life because of much older lines.
+- Newest patch of a line that ends soon: "Plan the move off <line>" instead of "Review advisories".
+- Clusters ahead of the policy target that need only a patch no longer show "Update to <older target>".
+- OSV advisories without a fix are "affected, no fix listed" instead of "needs review".
+- GitHub-derived release lines honour the catalog's release tag prefix (e.g. nginx `release-`).
+- Custom components: version parts 1–3 (4 was never parsed).
+- Claude summaries: URLs in generated text are removed; a summary that was paid for but couldn't be
+  saved counts as a failure (backs off instead of paying again); release-note fetch errors show a
+  plain message, details in the log.
+- The `lts` policy keeps its "no supported LTS line" note when it falls back to the oldest line.
+
 ## Milestone 12 — CLI and personal API tokens
 
 - **Personal API tokens** (Account → API tokens): read-only by default, read & write for admins (only

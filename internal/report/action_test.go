@@ -118,3 +118,30 @@ func TestComponentAction(t *testing.T) {
 		t.Errorf("all up to date: %+v", a)
 	}
 }
+
+// Review regressions (2026-11-19): a line that ends soon at its newest patch says so (not "Review
+// advisories"); instances ahead of the target that only need a patch don't make the headline
+// "Update to <older target>".
+func TestActionEOLSoonAndAheadOfTarget(t *testing.T) {
+	pin, _ := policy.Parse("pin:1.35")
+	pt, _ := policy.Resolve(pin, k8sInfo().Lines, now)
+	in := inventory.Instance{Version: "1.35.10", Status: "identified", Image: "img:1.35.10"}
+	sc := ScoreInstance(in, k8sInfo(), &pt, nil, now)
+	if a := ActionFor(in, sc, &pt, k8sInfo()); sc.Level != LevelHigh || a.Text != "Plan the move off 1.35" || !strings.Contains(a.Why, "2027-02-01") {
+		t.Errorf("EOL soon at latest patch: %s %+v", sc.Level, a)
+	}
+
+	sp, _ := policy.Parse("lts-or-n-1")
+	tg, _ := policy.Resolve(sp, k8sInfo().Lines, now)
+	mk := func(v string) ScoredInstance {
+		in := inventory.Instance{Cluster: "c", Version: v, Status: "identified", Image: "img:" + v}
+		sc := ScoreInstance(in, k8sInfo(), &tg, nil, now)
+		return ScoredInstance{Instance: in, Score: sc, Action: ActionFor(in, sc, &tg, k8sInfo())}
+	}
+	if a := ComponentAction([]ScoredInstance{mk("1.37.0"), mk("1.36.6")}, &tg); a.Text != "Patch to 1.37.2" {
+		t.Errorf("ahead of target: %+v", a)
+	}
+	if a := ComponentAction([]ScoredInstance{mk("1.37.0"), mk("1.36.2")}, &tg); a.Text != "Update to 1.36.6" {
+		t.Errorf("one instance needs the target: %+v", a)
+	}
+}

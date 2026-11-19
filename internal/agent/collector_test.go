@@ -169,3 +169,27 @@ func TestRolloutScaledToZeroStaysVisible(t *testing.T) {
 		t.Errorf("want newest revision's template and 0 replicas, got %+v", ro)
 	}
 }
+
+// A rollback reuses the older ReplicaSet under a higher revision number: the revision decides, not
+// the creation time.
+func TestRolloutRollbackUsesRevision(t *testing.T) {
+	one := int32(1)
+	old := metav1.NewTime(metav1.Now().Add(-time.Hour))
+	newer := metav1.Now()
+	rev := func(n string) map[string]string { return map[string]string{"rollout.argoproj.io/revision": n} }
+	objs := []runtime.Object{
+		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "api-a", Namespace: "ns", CreationTimestamp: old,
+			Annotations: rev("3"), OwnerReferences: ctrl("Rollout", "api")},
+			Spec: appsv1.ReplicaSetSpec{Replicas: &one, Template: corev1.PodTemplateSpec{Spec: podSpec("ghcr.io/acme/api:1.0.0")}}},
+		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "api-b", Namespace: "ns", CreationTimestamp: newer,
+			Annotations: rev("2"), OwnerReferences: ctrl("Rollout", "api")},
+			Spec: appsv1.ReplicaSetSpec{Template: corev1.PodTemplateSpec{Spec: podSpec("ghcr.io/acme/api:2.0.0-bad")}}},
+	}
+	snap, err := (&Collector{Client: fake.NewClientset(objs...), Version: "test"}).Collect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ro := find(t, snap, "Rollout", "api"); ro.Containers[0].Image != "ghcr.io/acme/api:1.0.0" {
+		t.Errorf("rolled-back image not intended: %+v", ro)
+	}
+}

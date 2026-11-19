@@ -136,7 +136,8 @@ Grafana), that query returns every advisory regardless of version.
 
 - **Affected, fixed in X** — counts towards the level by severity.
 - **Affected, no fix listed** — shown, but doesn't raise the level (there's nothing to upgrade to).
-- **Needs review** — the advisory's range is open-ended and no patch is listed (common for Redis).
+- **Needs review** — a GitHub advisory's range is open-ended and no patch is listed (common for
+  Redis). OSV ranges are exact, so an open OSV range is "affected, no fix listed" instead.
   Shown as a note; doesn't change the level.
 - **No advisory data** — the project publishes no GitHub advisories (Postgres, nginx, HAProxy,
   metrics-server). Owl says so explicitly; it never shows "no vulnerabilities" for these.
@@ -175,7 +176,9 @@ Notes are shown next to an instance but **never change its level**:
 ## Recommended action
 
 Each component has one **goal**, the same whatever clusters you're looking at — e.g. "Update to
-1.14.7 — fixes 11 high advisories", "Replace — retired upstream", "Pin an exact version". Below it,
+1.14.7 — fixes 11 high advisories", "Replace — retired upstream", "Pin an exact version", "Plan the move off 1.35" (newest patch of a
+line that reaches end-of-life soon). When clusters are ahead of the policy target and only need a
+patch in their own line, the goal says that ("Patch to 1.37.2") rather than "Update to" the older target. Below it,
 one line per group of clusters says what each needs ("it-hetzner 1.14.6 → patch", "it-aws-test,
 it-aws-prod 1.13.1 → 1 line behind"). The action is derived from the level and its reasons, never
 the other way round.

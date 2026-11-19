@@ -94,6 +94,7 @@ cluster (each)                               server (Docker locally, later one E
     regardless of version (verified: latest ingress-nginx "had" CVE-2025-1974).
   - Open-ended repo ranges (`>= 7.0.0`, `All`) are decided by the patched list (one fix per release
     line). Open range + `TBD`/no patch → **needs review**, not affected (Redis rarely closes ranges).
+    OSV ranges are exact: `introduced` without a `fixed` event = affected, no fix listed (not review).
   - Affected with no fixed version → shown as "no fix listed", not counted for priority.
   - Repos that publish no GitHub advisories (postgres, nginx, haproxy, haproxytech ingress,
     metrics-server) → **"no advisory data"** — never shown as "no vulnerabilities".

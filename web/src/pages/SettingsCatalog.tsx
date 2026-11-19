@@ -215,7 +215,7 @@ function ComponentDialog({ initial, image, onClose, onSaved }: { initial?: Catal
           <div className="form-grid" style={{ marginTop: 10 }}>
             <label className="field">Version parts
               <select className="select" value={v.versionParts} onChange={(e) => set({ versionParts: Number(e.target.value) })}>
-                <option value={1}>1 (e.g. 17)</option><option value={2}>2 (e.g. 16.4)</option><option value={3}>3 (e.g. 1.2.3)</option><option value={4}>4</option>
+                <option value={1}>1 (e.g. 17)</option><option value={2}>2 (e.g. 16.4)</option><option value={3}>3 (e.g. 1.2.3)</option>
               </select>
               <span className="subtle" style={{ fontWeight: 400 }}>Tags with fewer parts count as floating (unpinned).</span>
             </label>

@@ -71,3 +71,11 @@ func TestResolve(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveKeepsLTSNote(t *testing.T) {
+	sp, _ := Parse("lts")
+	tg, ok := Resolve(sp, []upstream.ReleaseLine{{Name: "2.0", Latest: "2.0.3"}}, time.Now())
+	if !ok || !strings.Contains(tg.Note, "no supported LTS line") || !strings.Contains(tg.Note, "only 1 release lines known") {
+		t.Fatalf("note: %+v", tg)
+	}
+}

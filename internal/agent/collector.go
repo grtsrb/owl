@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -210,12 +212,31 @@ func each(ctx context.Context, list pager.ListPageFunc, fn func(runtime.Object))
 	})
 }
 
-// newerRS orders ReplicaSets by creation time (name breaks ties so the choice is deterministic).
+// newerRS: the current revision of a controller we don't list (Argo Rollouts, …). Controllers number
+// revisions in an annotation (deployment.kubernetes.io/revision, rollout.argoproj.io/revision) and a
+// rollback reuses an older ReplicaSet under a new, higher number — so the revision decides; creation
+// time only when there's none.
 func newerRS(a, b *appsv1.ReplicaSet) bool {
+	ra, okA := rsRevision(a)
+	rb, okB := rsRevision(b)
+	if okA && okB && ra != rb {
+		return ra > rb
+	}
 	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
 		return b.CreationTimestamp.Before(&a.CreationTimestamp)
 	}
 	return a.Name > b.Name
+}
+
+func rsRevision(rs *appsv1.ReplicaSet) (int64, bool) {
+	for k, v := range rs.Annotations {
+		if strings.HasSuffix(k, "/revision") {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func resolveOwner(p *corev1.Pod, rsOwner, jobOwner map[ownerKey]ownerKey) ownerKey {

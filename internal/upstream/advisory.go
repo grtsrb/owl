@@ -11,6 +11,9 @@ import (
 type AffectedRange struct {
 	Range   string `json:"range"`   // GitHub syntax: ">= 7.0.0, < 7.2.5", "<= 1.14.6", "All"
 	Patched string `json:"patched"` // "1.14.7", "7.2.5, 7.4.1", "TBD", ""
+	// Exact: an open-ended range that really means "affected, no fix yet" (OSV: introduced without a
+	// fixed event). GitHub-repo ranges are often never closed after a fix, so theirs need review.
+	Exact bool `json:"exact,omitempty"`
 }
 
 type Advisory struct {
@@ -91,7 +94,7 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 			if strings.EqualFold(strings.TrimSpace(r.Range), "all") && len(patched) > 0 {
 				in, known = true, true // "All" + per-line patches: decided by the patch list below
 			}
-			if in && openEnded(r.Range) {
+			if in && openEnded(r.Range) && !r.Exact {
 				// Open-ended range (">= 7.0.0", "All"): many repos never close it after fixing, so the
 				// patched list decides. Without one we can't tell -> needs review, not affected.
 				if len(patched) == 0 {

@@ -21,7 +21,7 @@ export interface Match extends Advisory { certain: boolean; noFix?: boolean; rel
 export interface Score {
   level: Level; reasons: Reason[]; notes?: string[]; line?: string; linesBehind: number;
   latestInLine?: string; advisories?: Match[];
-  eol?: { line: string; since?: string }; review?: number;
+  eol?: { line: string; since?: string }; review?: number; eolSoon?: string;
 }
 
 export interface Instance {
