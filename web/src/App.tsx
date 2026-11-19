@@ -72,8 +72,14 @@ function Shell() {
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
           <div className="side-foot">
-            <NavLink to="/account" className="side-user" title={`${me.email} — your account`}>{me.email}</NavLink>
-            <span>{me.role} · <NavLink to="/account" className="side-link">Account</NavLink> · <button className="side-link" onClick={() => void signOut()}>Sign out</button></span>
+            <NavLink to="/account" className="side-me" title={`${me.email} — your account`}>
+              <span className="avatar" aria-hidden="true">{me.email.charAt(0).toUpperCase()}</span>
+              <span className="side-me-text">
+                <span className="side-user">{me.email}</span>
+                <span className="side-role">{me.role === "admin" ? "Admin" : "Viewer"} · Account</span>
+              </span>
+            </NavLink>
+            <button className="side-out" onClick={() => void signOut()} title="Sign out" aria-label="Sign out"><Icon.signout /></button>
           </div>
         </nav>
         <div className="main">
