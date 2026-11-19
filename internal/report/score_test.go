@@ -176,3 +176,43 @@ func TestUnlistedLineEOL(t *testing.T) {
 		t.Errorf("below an EOL line: %+v", s.Reasons)
 	}
 }
+
+// ≥ 2 lines behind is High — unless upstream lifecycle data says the line is still supported and doesn't
+// end within EOLSoon: then Medium, with the reason saying so (Elasticsearch 8.19 while 9.x moves on).
+func TestFarBehindSupportedLineIsMedium(t *testing.T) {
+	yes := true
+	es := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "9.5", Latest: "9.5.6", Maintained: &yes},
+		{Name: "9.4", Latest: "9.4.9", Maintained: &yes},
+		{Name: "9.3", Latest: "9.3.8", EOL: true, EOLDate: day("2026-08-04")},
+		{Name: "9.2", Latest: "9.2.8", EOL: true, EOLDate: day("2026-05-05")},
+		{Name: "8.19", Latest: "8.19.25", EOLDate: day("2027-07-15"), Maintained: &yes},
+		{Name: "8.18", Latest: "8.18.8", EOL: true, EOLDate: day("2025-10-21")},
+	}}
+	if s := score("8.19.25", "identified", es, nil); s.Level != LevelMedium || !has(s, "8.19 supported until 2027-07-15") {
+		t.Errorf("supported line far behind: %s %+v", s.Level, s.Reasons)
+	}
+	if s := score("8.19.20", "identified", es, nil); s.Level != LevelMedium || !has(s, "release lines behind") {
+		t.Errorf("supported line, older patch: %s %+v", s.Level, s.Reasons)
+	}
+	// Maintained without a date counts too; no lifecycle data at all (GitHub lines) stays High.
+	noDate := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "3.3", Latest: "3.3.0", Maintained: &yes}, {Name: "3.2", Latest: "3.2.1", Maintained: &yes},
+		{Name: "3.1", Latest: "3.1.4", Maintained: &yes}, {Name: "3.0", Latest: "3.0.9", Maintained: &yes},
+	}}
+	if s := score("3.0.9", "identified", noDate, nil); s.Level != LevelMedium || !has(s, "3.0 still maintained upstream") {
+		t.Errorf("maintained, no end date: %s %+v", s.Level, s.Reasons)
+	}
+	gh := &upstream.Info{AdvisorySource: "github-repo", Lines: []upstream.ReleaseLine{
+		{Name: "3.3", Latest: "3.3.0"}, {Name: "3.2", Latest: "3.2.1"}, {Name: "3.1", Latest: "3.1.4"}, {Name: "3.0", Latest: "3.0.9"},
+	}}
+	if s := score("3.0.9", "identified", gh, nil); s.Level != LevelHigh {
+		t.Errorf("no lifecycle data must stay High: %s %+v", s.Level, s.Reasons)
+	}
+	// Ending within EOLSoon stays High (and says so).
+	k := k8sInfo()
+	k.Lines = append(k.Lines[:3:3], upstream.ReleaseLine{Name: "1.34", Latest: "1.34.13", EOLDate: day("2027-01-20")})
+	if s := score("1.34.13", "identified", k, nil); s.Level != LevelHigh {
+		t.Errorf("line ending soon: %s %+v", s.Level, s.Reasons)
+	}
+}

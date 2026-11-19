@@ -15,6 +15,9 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
 - Elastic `-SNAPSHOT` and OpenTelemetry `-nightly` tags read as pre-releases, not as the release.
 - GitHub releases are read 30 per page when GitHub times out on 100 (very large release notes).
 - After the upgrade, already running ones are announced once ("Owl now recognizes N more components").
+- **Priority**: 2+ release lines behind is **Medium**, not High, when endoflife.date says the line is still
+  supported and doesn't end within 90 days (Elasticsearch/Kibana 8.19, a supported Kubernetes minor).
+  The reason says so: "…; 8.19 supported until 2027-07-15".
 
 ## Cluster picker redesign
 

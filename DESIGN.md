@@ -111,7 +111,10 @@ cluster (each)                               server (Docker locally, later one E
 ## Priority (rule-based; Claude explains, never decides)
 - 🔴 Critical — affected by a high/critical advisory *with a fix*, past EOL, or upstream retired
 - 🟠 High — EOL within 90 days, or ≥ 2 release lines behind target
-- 🟡 Medium — 1 release line behind target, unpinned, or a moderate/unknown-severity advisory
+- 🟡 Medium — 1 release line behind target, unpinned, or a moderate/unknown-severity advisory; also ≥ 2 lines
+  behind when lifecycle data says the line is still supported (end date > 90 days away, or maintained) —
+  agreed 2026-11-19: "far behind" is High because it usually means unsupported, which Elasticsearch 8.19
+  (supported to 2027-07) isn't. GitHub-derived lines have no lifecycle data → stay High.
 - 🟢 Low — only patch updates available (or a low-severity advisory)
 - ✅ OK — at/above target and on the latest patch of its line
 - ❔ Unknown — no upstream release data (never shown as OK)

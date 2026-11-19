@@ -219,6 +219,11 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		s.LinesBehind = max(s.LinesBehind, lineDistance(v, tv, lines))
 	}
 	switch {
+	case s.LinesBehind >= 2 && exact && supported(lines[pos], now) != "":
+		// Far behind, but upstream still supports this line (endoflife.date says so, and it doesn't end
+		// within EOLSoon): planning work, like one line behind — not the "probably unsupported" High.
+		s.add(LevelMedium, "%d release lines behind target %s (%s); %s", s.LinesBehind, target.Version, target.Policy,
+			supported(lines[pos], now))
 	case s.LinesBehind >= 2:
 		s.add(LevelHigh, "%d release lines behind target %s (%s)", s.LinesBehind, target.Version, target.Policy)
 	case s.LinesBehind == 1:
@@ -227,6 +232,24 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		s.add(LevelLow, "patch available: %s", target.Version)
 	}
 	return s
+}
+
+// supported says why a release line is still supported upstream ("8.19 supported until 2027-07-15"), or
+// "" when Owl can't tell or it isn't: EOL, ending within EOLSoon, or a line without lifecycle data
+// (GitHub-derived lines have no end date and no maintained flag).
+func supported(l upstream.ReleaseLine, now time.Time) string {
+	switch {
+	case policy.IsEOL(l, now):
+		return ""
+	case l.EOLDate != nil:
+		if l.EOLDate.Sub(now) <= EOLSoon {
+			return ""
+		}
+		return l.Name + " supported until " + l.EOLDate.Format(time.DateOnly)
+	case l.Maintained != nil && *l.Maintained:
+		return l.Name + " still maintained upstream"
+	}
+	return ""
 }
 
 // lineDistance counts release lines between v and t from the versions: majors for products whose
