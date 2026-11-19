@@ -224,3 +224,33 @@ func TestActionSupportedLine(t *testing.T) {
 		t.Errorf("bundled planning: %+v", a)
 	}
 }
+
+// The step must fix the advisories it's recommended for: an advisory fixed only in a later line than the
+// policy target moves the step to that line's newest patch (Velero 1.17.1, fix only in 1.18.1).
+func TestActionCoversAdvisoryFixes(t *testing.T) {
+	info := &upstream.Info{AdvisorySource: "osv", Lines: []upstream.ReleaseLine{
+		{Name: "1.19", Latest: "1.19.0"}, {Name: "1.18", Latest: "1.18.4"},
+		{Name: "1.17", Latest: "1.17.2"}, {Name: "1.16", Latest: "1.16.3"},
+	}}
+	sp, _ := policy.Parse("n-2")
+	tg, _ := policy.Resolve(sp, info.Lines, now) // 1.17.2
+	act := func(v string, ms ...upstream.Match) Action {
+		in := inventory.Instance{Version: v, Status: "identified", Image: "img:" + v}
+		sc := ScoreInstance(in, info, &tg, ms, now)
+		return ActionFor(in, sc, &tg, info)
+	}
+	moderate := upstream.Match{Advisory: upstream.Advisory{ID: "CVE-2026-32637", Severity: "moderate"}, Certain: true, RelevantFix: "1.18.1"}
+	if a := act("1.17.1", moderate); a.Kind != ActionUpgrade || a.Text != "Upgrade to 1.18.4" || a.To != "1.18.4" ||
+		!strings.Contains(a.Why, "CVE-2026-32637 (moderate) fixed in 1.18.1") || !strings.Contains(a.Why, "policy target 1.17.2") {
+		t.Errorf("fix beyond the patch: %+v", a)
+	}
+	// On the target's newest patch: no newer patch in the line — was "Review advisories", now the step that fixes it.
+	if a := act("1.17.2", moderate); a.Text != "Upgrade to 1.18.4" {
+		t.Errorf("at target, fix in a later line: %+v", a)
+	}
+	// A fix the patch reaches: the patch stays.
+	inLine := upstream.Match{Advisory: upstream.Advisory{ID: "CVE-1", Severity: "high"}, Certain: true, RelevantFix: "1.17.2"}
+	if a := act("1.17.1", inLine); a.Text != "Patch to 1.17.2" || !strings.Contains(a.Why, "fixes 1 high advisory") {
+		t.Errorf("fix within the patch: %+v", a)
+	}
+}

@@ -2,6 +2,12 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Fix: actions that fix the advisories
+
+- The recommended step now always includes the advisories' fixes: an advisory fixed only in a later line
+  than the policy target (Velero 1.17.1, fix in 1.18.1) gives "Upgrade to 1.18.4" with the advisory and
+  "beyond the policy target" in the reason, instead of "Patch to 1.17.2" (or "Review advisories").
+
 ## Milestone 13, batch 2 — CI runners, storage and backup (19 more)
 
 - **CI**: GitLab Runner and its helper (release lines and support dates from endoflife.date — it's

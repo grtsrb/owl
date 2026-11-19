@@ -311,6 +311,8 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   (incl. Longhorn's and Rancher's copies). **GitOps (Argo/Flux) and Harbor deferred** by the user. **Left out**:
   Tekton (ko image names carry build hashes; v1.x image names unverified), MinIO (date tags, no community
   images since 2025). Next: batch 3 (data/policy/ops).
+- **Actions cover advisory fixes** (2026-11-19): a patch/upgrade step that doesn't reach an advisory's fix becomes
+  "Upgrade to" the newest patch of the fix's line — security beats the policy target, as for the level.
 - **`plan` action** (agreed with the supported-line rule): an instance on the newest patch of a line upstream
   still supports, but 2+ lines behind (Medium), gets "Plan the move to <target>" (kind `plan`). It isn't a
   step: a component summary prefers any real patch/upgrade step, and shows the plan only when nothing else
