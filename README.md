@@ -54,8 +54,9 @@ Design decisions and the roadmap live in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Pre-1.0, used internally. Milestones 1–11 are done (agent, server, catalog, upstream data, scoring,
+Pre-1.0, used internally. Milestones 1–12 are done (agent, server, catalog, upstream data, scoring,
 UI, cluster management, backups/logging/audit, Claude upgrade summaries — off by default, with spending
 caps — invite-only sign-in with passwords or Google, email, Docker Compose/Kubernetes packaging, and
 Mattermost notifications: weekly digest and alerts, adding catalog components from the UI, and the
-`owl` CLI with personal API tokens and users from a file). See the roadmap in DESIGN.md for v2.
+`owl` CLI with personal API tokens and users from a file). Milestone 13 — a much longer built-in
+catalog of common infrastructure tools — is under way. See the roadmap in DESIGN.md for v2.

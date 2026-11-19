@@ -27,6 +27,11 @@ end-of-life dates and advisories. It's `internal/catalog/catalog.yaml`, compiled
 "None published" means the project doesn't publish GitHub security advisories; Owl shows **no
 advisory data** for it rather than implying it's clean.
 
+Owl fetches upstream data only for components that **run in at least one cluster** (plus every
+component added in the UI), so a long catalog costs nothing until you deploy something from it. Settings →
+Catalog lists every built-in component with a green dot (running, and in how many clusters) or a grey
+one (not running).
+
 ## Format
 
 ```yaml
@@ -48,10 +53,11 @@ components:
 | `versionParts` | How many numeric parts a pinned version has: 1–3 (default 3). Tags with fewer parts are "unpinned (floating)". |
 | `tagPrefix` | Prefix stripped from image tags before parsing (`controller-v1.10.4`). |
 | `releaseTagPrefix` | Only GitHub release tags with this prefix count (repositories that release several things). |
-| `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. |
+| `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. Any OSV ecosystem works (`PyPI`, `Maven`, `npm` …); set it only when the package is the same project **and** its versions match the image tags. |
+| `bundledWith` | `{<image>: rke2 \| k3s}` — images the distribution ships and upgrades itself (`rancher/hardened-*`, `rancher/mirrored-*`). In a cluster of that distribution the recommended action is "Comes with RKE2 — upgrade RKE2 …" and the UI tags it *RKE2-managed*; the level is unchanged. Each image must also be in `images`. |
 | `source: cluster` | Not matched by image: the version comes from the cluster's nodes. |
 | `notes` | Shown with the component. |
-| `versionPattern` | A regular expression for tags `ParseVersion` can't read: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). |
+| `versionPattern` | A regular expression for tags `ParseVersion` can't read: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). Also for tags with two versions: `-kafka-(\d+\.\d+\.\d+)$` reads Strimzi's `0.45.0-kafka-3.9.0` as Kafka 3.9.0. |
 | `releaseNotes` | Where [upgrade summaries](concepts.md#upgrade-summaries) read release notes when the GitHub releases don't carry them: `kubernetes-changelog`, `redis-releasenotes`, `haproxy-changelog`, `postgres-release-notes`. Empty = GitHub release notes. A new source needs code in `internal/upstream/notes.go`. |
 
 `releaseTagPrefix` is also stripped before reading a version from a GitHub release tag (nginx tags
@@ -66,14 +72,25 @@ releases `release-1.27.4`).
 
 ## Adding a component
 
-1. Add an entry to `catalog.yaml` with every image name you know (upstream, Bitnami, vendor mirrors).
-2. Check the endoflife.date product is the same project before setting `eol`.
-3. Check what upstream data you get:
+What gets a built-in entry: it runs as a container image in the cluster, has a public GitHub repository
+with tagged releases, and its image names and tag format were checked against real published images.
+Anything else is better added from the UI.
+
+1. Add an entry to `catalog.yaml` with **every** image the tool ships — upstream, Bitnami
+   (`bitnami/*` and `bitnamilegacy/*`), vendor mirrors, and its helper images. Helpers that share the
+   tool's version (cert-manager's webhook) belong to the same entry; helpers with their own release cycle
+   (CSI sidecars) get their own. A standard install should leave no unrecognized images.
+2. Check the endoflife.date product (and the OSV package) is the same project before setting `eol` (`osv`).
+3. Check it against the live upstreams:
    ```bash
-   set -a; . ./.env; set +a
-   make build && ./bin/owl upstream --component <id> --version <a version you run>
+   make catalog-check COMPONENTS=<id>[,<id>…]    # needs GITHUB_TOKEN in .env
+   ./bin/owl upstream --component <id> --version <a version you run>
    ```
-4. Add a case to `internal/catalog/catalog_test.go` for any unusual tag format.
+   `catalog-check` fails on a missing repository, endoflife.date product or release data, and warns
+   about an archived repository, endoflife.date and GitHub disagreeing about the newest release line,
+   and an OSV package without advisories. Warnings need a human look (ingress-nginx *is* archived);
+   it's a manual check, not part of CI.
+4. Add real image references to `internal/catalog/catalog_test.go` (image → component and version).
 5. `make test`, rebuild, and check the component in the UI.
 
 Or add a component **from the UI** (Settings → Catalog, or **New component** on an unrecognized image):
@@ -93,6 +110,8 @@ use the actions on a cluster's **Unrecognized images** card instead of editing t
 | ignore | Hidden from the unrecognized list. |
 
 Overrides are per repository (across all clusters), stored in the database, included in backups and
-listed with **Undo** in Settings → Catalog. They **never** change how an image the catalog
-already recognizes is treated. Registries passed in `--internal-registries` are in-house without any
-override.
+listed with **Undo** in Settings → Catalog. **In-house** and **ignore** always apply, even after a newer
+Owl's catalog learns the image — an upgrade never undoes your choice (Settings shows "Owl now recognizes
+this as …"). **Map** applies only while the catalog doesn't recognize the image; once a built-in entry
+covers it, the built-in wins and Settings shows "Now covered by built-in … — remove?". Registries passed
+in `--internal-registries` are in-house without any override.

@@ -14,6 +14,11 @@
 # Vendor build suffixes (-hardened3, -build20240305, -debian-12-r20, -alpine, ...) are stripped
 # generically; the exact image is always kept for display.
 #   source: cluster — not matched by image; version comes from the cluster itself (node kubeletVersion).
+#   bundledWith: image -> rke2 | k3s, for images the distribution ships and upgrades itself
+#               (rancher/hardened-*, rancher/mirrored-*). In a cluster of that distribution the action
+#               becomes "upgrade RKE2/k3s"; the level is unchanged. The image must also be in images.
+#   versionPattern: regexp whose groups, joined with ".", are the version in a tag ParseVersion can't
+#               read (two versions in one tag: 0.45.0-kafka-3.9.0 -> ^.*-kafka-(\d+\.\d+\.\d+)$).
 #   releaseNotes: where upgrade summaries read release notes when GitHub releases don't carry them:
 #               kubernetes-changelog | redis-releasenotes | haproxy-changelog | postgres-release-notes.
 components:
@@ -44,6 +49,9 @@ components:
       - k8s.gcr.io/ingress-nginx/controller
       - rancher/nginx-ingress-controller        # RKE2 hardened build
       - rancher/hardened-ingress-nginx
+    bundledWith:
+      rancher/nginx-ingress-controller: rke2
+      rancher/hardened-ingress-nginx: rke2
     github: kubernetes/ingress-nginx
     tagPrefix: "controller-"
     releaseTagPrefix: "controller-"
@@ -90,6 +98,9 @@ components:
       - registry.k8s.io/coredns/coredns
       - rancher/mirrored-coredns-coredns          # k3s
       - rancher/hardened-coredns                  # RKE2
+    bundledWith:
+      rancher/mirrored-coredns-coredns: k3s
+      rancher/hardened-coredns: rke2
     github: coredns/coredns
     osv: {ecosystem: Go, name: github.com/coredns/coredns}
 
@@ -142,5 +153,8 @@ components:
       - registry.k8s.io/metrics-server/metrics-server
       - rancher/mirrored-metrics-server
       - rancher/hardened-k8s-metrics-server
+    bundledWith:
+      rancher/mirrored-metrics-server: k3s
+      rancher/hardened-k8s-metrics-server: rke2
     github: kubernetes-sigs/metrics-server
     releaseTagPrefix: "v"

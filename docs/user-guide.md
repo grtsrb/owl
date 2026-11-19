@@ -162,8 +162,13 @@ The global policy (default `lts-or-n-1`) and per-component overrides. See
     release (probably different projects). You can save anyway; the button then says so.
 - Deleting a component makes its images unrecognized again and also removes its version policy and
   any overrides mapped to it — the dialog lists them.
-- **Built-in components** — the list Owl ships with (read-only).
-- **Catalog overrides** — every map / in-house / ignore decision, with **Undo**.
+- **Built-in components** — the list Owl ships with (read-only), searchable, with links to GitHub,
+  endoflife.date and OSV. A **green dot** means it runs in your clusters (hover for which), a **grey dot**
+  that it doesn't — Owl fetches no upstream data for those. Filter with All / Running / Not running.
+  Images RKE2 or k3s ship themselves are marked (RKE2) / (k3s).
+- **Catalog overrides** — every map / in-house / ignore decision, with **Undo**. A map that a built-in
+  component now covers says **Now covered by built-in … — remove?**; an in-house or ignore decision on an
+  image Owl now recognizes keeps applying (and says so).
 
 ### Backups & restore
 

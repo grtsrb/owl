@@ -67,8 +67,14 @@ An exact match always beats a suffix match.
 
 Images the catalog doesn't know end up as **unrecognized**. For each such repository you can, in
 the UI, **map** it to a known component, mark it **in-house**, or **ignore** it. These choices are
-*catalog overrides*, stored in the database, applied across all clusters, and only ever applied to
-images the built-in catalog does not recognize.
+*catalog overrides*, stored in the database and applied across all clusters. A map applies only to
+images the catalog doesn't recognize; in-house and ignore keep applying even when a newer catalog
+learns the image.
+
+Some images are shipped and upgraded by the distribution itself — RKE2's `rancher/hardened-coredns`,
+k3s's `rancher/mirrored-coredns-coredns`. In a cluster of that distribution they're tagged
+*RKE2-managed* (*k3s-managed*), and the recommended action is to upgrade RKE2 rather than the component.
+Their level is computed exactly like any other.
 
 ## Image statuses
 
@@ -113,11 +119,14 @@ component page). A per-component policy overrides the global one.
 
 ## Upstream data
 
-Owl refreshes upstream data every 6 hours (and at startup):
+Owl refreshes upstream data every 6 hours (and at startup) for the components running in at least one
+cluster, plus every component added in the UI. A component that starts running is fetched right after
+the agent report that shows it:
 
 - **endoflife.date** — release lines, LTS flags, EOL dates,
 - **GitHub** — releases, whether the repository is archived, published security advisories,
-- **OSV.dev** — advisories for Go-module projects (Kubernetes, RKE2, k3s, ingress-nginx, Grafana, CoreDNS).
+- **OSV.dev** — advisories for packages it tracks (Go modules such as Kubernetes, RKE2, k3s, ingress-nginx,
+  Grafana, CoreDNS; other ecosystems where the catalog names the package).
 
 Responses are cached in the database with ETags. If an upstream is unreachable, the last good copy
 is used and marked **stale**. Without `GITHUB_TOKEN`, GitHub allows only 60 requests/hour and data

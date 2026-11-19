@@ -69,8 +69,8 @@ func ValidateCustom(c *Component) error {
 		return errors.New("versionParts: 1–3 (0 = default 3)")
 	case !rePrefix.MatchString(c.TagPrefix) || !rePrefix.MatchString(c.ReleaseTagPrefix):
 		return errors.New("tag prefixes: up to 40 letters, digits, '.', '_', '-', '/'")
-	case c.Source != "" || c.OSV != nil || c.ReleaseNotes != "" || c.Notes != "":
-		return errors.New("source, osv, releaseNotes and notes can only be set in the built-in catalog")
+	case c.Source != "" || c.OSV != nil || c.ReleaseNotes != "" || c.Notes != "" || len(c.BundledWith) > 0:
+		return errors.New("source, osv, releaseNotes, notes and bundledWith can only be set in the built-in catalog")
 	}
 	seen := map[string]bool{}
 	for i, img := range c.Images {
@@ -121,9 +121,15 @@ func (c *Component) prepare() error {
 		return err
 	}
 	c.versionRe = re
-	c.refs = nil
+	c.refs, c.bundled = nil, nil
 	for _, img := range c.Images {
 		c.refs = append(c.refs, ParseRef(img+":x")) // dummy tag; only the name is used
+	}
+	for img, d := range c.BundledWith {
+		if c.bundled == nil {
+			c.bundled = map[string]string{}
+		}
+		c.bundled[ParseRef(img+":x").Name()] = d
 	}
 	return nil
 }
@@ -187,7 +193,7 @@ func Merge(builtin *Catalog, custom []Component) (*Catalog, []CustomState) {
 		}
 		for _, r := range c.refs {
 			// Built-in first, the way identification works: exact name or a mirror of a built-in image.
-			if b := builtin.match(r); b != nil {
+			if b, _ := builtin.match(r); b != nil {
 				st.Replaced = b.ID
 				break
 			}
@@ -212,7 +218,7 @@ func Merge(builtin *Catalog, custom []Component) (*Catalog, []CustomState) {
 // Claimant returns the id of the component (built-in or custom) that would identify this image
 // repository — by exact name or as a mirror of one of its images — or "".
 func (c *Catalog) Claimant(image string) string {
-	if comp := c.match(ParseRef(image + ":x")); comp != nil {
+	if comp, _ := c.match(ParseRef(image + ":x")); comp != nil {
 		return comp.ID
 	}
 	return ""

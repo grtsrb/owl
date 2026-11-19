@@ -147,3 +147,41 @@ func TestVersionOrderingNatural(t *testing.T) {
 		}
 	}
 }
+
+// bundledWith marks images a distribution ships itself — also through a mirror — and never the upstream
+// image of the same component.
+func TestBundledWith(t *testing.T) {
+	cat, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ image, comp, bundled string }{
+		{"rancher/hardened-coredns:v1.11.1-build20240305", "coredns", "rke2"},
+		{"harbor.example.com/proxy/rancher/hardened-coredns:v1.11.1-build20240305", "coredns", "rke2"},
+		{"rancher/mirrored-coredns-coredns:1.11.3", "coredns", "k3s"},
+		{"coredns/coredns:1.11.3", "coredns", ""},
+		{"rancher/hardened-k8s-metrics-server:v0.7.1-build20240910", "metrics-server", "rke2"},
+		{"rancher/nginx-ingress-controller:v1.10.4-hardened3", "ingress-nginx", "rke2"},
+		{"registry.k8s.io/ingress-nginx/controller:v1.11.3", "ingress-nginx", ""},
+	} {
+		id := cat.Identify(c.image)
+		if id.Component == nil || id.Component.ID != c.comp || id.BundledWith != c.bundled {
+			t.Errorf("%s: component %v bundledWith %q, want %s %q", c.image, id.Component, id.BundledWith, c.comp, c.bundled)
+		}
+	}
+}
+
+// Built-in entries may use versionPattern (two versions in one tag): the app version is what's read.
+func TestBuiltinVersionPattern(t *testing.T) {
+	cat := &Catalog{Components: []Component{{ID: "kafka", Name: "Kafka", Images: []string{"quay.io/strimzi/kafka"},
+		GitHub: "apache/kafka", VersionPattern: `-kafka-(\d+\.\d+\.\d+)$`}}}
+	for i := range cat.Components {
+		if err := cat.Components[i].prepare(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id := cat.Identify("quay.io/strimzi/kafka:0.45.0-kafka-3.9.0")
+	if id.Status != StatusIdentified || id.Version == nil || id.Version.String() != "3.9.0" {
+		t.Errorf("got %s %v (%s)", id.Status, id.Version, id.Reason)
+	}
+}

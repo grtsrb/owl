@@ -552,3 +552,11 @@ func (c *Client) GitHubLatest(ctx context.Context, comp *catalog.Component) stri
 	}
 	return info.LatestStable
 }
+
+// OSVCount returns how many advisories OSV.dev lists for a package (cached like every OSV fetch). Zero
+// for a package that has advisories elsewhere usually means a wrong package name — `owl catalog-check`
+// warns about it.
+func (c *Client) OSVCount(ctx context.Context, pkg *catalog.OSVPackage) (int, error) {
+	advs, _, err := c.osvAll(ctx, pkg)
+	return len(advs), err
+}

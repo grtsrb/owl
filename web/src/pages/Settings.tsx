@@ -508,17 +508,28 @@ function OverridesTab() {
   const hasToken = useIsAdmin();
   if (overrides.error) return <ErrorBox error={overrides.error} retry={overrides.reload} />;
   if (!overrides.data) return <Loading />;
+  const components = catalog.data?.components ?? [];
+  const nameOf = (id: string) => components.find((c) => c.id === id)?.name ?? id;
   return (
     <Card title="Catalog overrides" actions={<span className="subtle">Your decisions about unrecognized images. They apply on top of the built-in catalog.</span>}>
       {overrides.data.length === 0 ? <Empty>No overrides yet. Open a cluster and use Map / In-house / Ignore on an unrecognized image.</Empty> : (
         <div className="stack">
           {overrides.data.map((o) => (
-            <div key={o.repository} className="list-row">
+            <div key={o.repository} className="list-row" style={{ flexWrap: "wrap" }}>
               <span className="mono grow" style={{ wordBreak: "break-all" }}>{o.repository}</span>
-              <span className="tag tone-ok">{overrideText(o, catalog.data?.components ?? [])}</span>
+              {o.kind === "map" && o.recognizedAs
+                ? <Tag tone="warn" title="Owl's built-in catalog now recognizes this image, so this mapping no longer applies">
+                    Now covered by built-in {nameOf(o.recognizedAs)} — remove?</Tag>
+                : <span className="tag tone-ok">{overrideText(o, components)}</span>}
               <span className="subtle" style={{ margin: 0 }}>{ago(o.updatedAt)}</span>
               <button className="btn small" disabled={w.busy || !hasToken}
-                onClick={() => w.run(() => api.deleteOverride(o.repository), `Undone: ${o.repository}.`).then((r) => r && overrides.reload())}>Undo</button>
+                onClick={() => w.run(() => api.deleteOverride(o.repository), `Removed: ${o.repository}.`).then((r) => r && overrides.reload())}>
+                {o.kind === "map" && o.recognizedAs ? "Remove" : "Undo"}</button>
+              {o.kind !== "map" && o.recognizedAs && (
+                <div className="subtle" style={{ margin: 0, flexBasis: "100%" }}>
+                  Owl now recognizes this as {nameOf(o.recognizedAs)}; your choice still applies. Undo it to track it as {nameOf(o.recognizedAs)}.
+                </div>
+              )}
             </div>
           ))}
         </div>

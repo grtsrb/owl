@@ -28,6 +28,8 @@ export interface Instance {
   cluster: string; stage: string; tenant: string; namespace?: string; kind?: string; workload?: string;
   container?: string; image: string; version?: string; status: string; reason?: string;
   repository?: string; override?: "map" | "inhouse" | "ignore";
+  /** The cluster's distribution ships and upgrades this image itself. */
+  bundledWith?: "rke2" | "k3s";
   desiredReplicas: number; running?: RunningImage[];
 }
 export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update";
@@ -79,18 +81,26 @@ export interface ComponentDetail {
   advisoriesByVersion: { version: string; advisories: Match[]; error?: string }[];
 }
 
+export interface ComponentView {
+  id: string; name: string; github?: string; eol?: string; notes?: string; instances: Instance[];
+  /** cluster -> distinct versions there */
+  versionsByCluster: Record<string, string[]>;
+}
 export interface Inventory {
+  components: ComponentView[];
   unpinned: Instance[]; inHouse: Instance[]; ignored: Instance[];
   unrecognized: { repository: string; instances: Instance[] }[];
 }
 
 export interface StageInfo { name: string; position: number; clusters: number }
 export interface TenantInfo { name: string; clusters: number }
-export interface CatalogOverride { repository: string; kind: "map" | "inhouse" | "ignore"; component?: string; updatedAt: string }
+/** recognizedAs: the component the catalog itself now recognizes the repository as (a map override then no longer applies). */
+export interface CatalogOverride { repository: string; kind: "map" | "inhouse" | "ignore"; component?: string; updatedAt: string; recognizedAs?: string }
 export interface ServerSettings { serverURL: string; agentImage: string }
 export interface CatalogComponent {
   id: string; name: string; source?: string; images?: string[]; github?: string; eol?: string;
   versionParts?: number; tagPrefix?: string; releaseTagPrefix?: string; versionPattern?: string; custom?: boolean;
+  osv?: { ecosystem: string; name: string }; notes?: string; bundledWith?: Record<string, "rke2" | "k3s">;
 }
 /** A component as entered in the New component form (milestone 11). */
 export interface CustomInput {

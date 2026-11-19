@@ -16,7 +16,8 @@ or operators can notice updates the matching page in the same branch (which page
 Milestones 1–11 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI
 redesign + cluster management, backups/restore/logging/audit, Claude summaries, sign-in + packaging,
 Mattermost notifications, catalog from the UI + Settings reorganised, CLI + personal API tokens + users
-from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Keep this file's commands and
+from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Milestone 13 (bigger built-in
+catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing done, catalog batches next. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -42,6 +43,7 @@ make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # am
 ./bin/owl login --server http://127.0.0.1:8080      # then: owl status / outdated / component coredns / users plan …
 curl -s -H "Authorization: Bearer $OWL_TOKEN" 127.0.0.1:8080/api/v1/report   # levels + reasons + targets + drift
 ./bin/owl upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
+make catalog-check COMPONENTS=redis,coredns               # verify catalog entries live (GitHub/endoflife.date/OSV)
 set -a; . ./.env; set +a   # GITHUB_TOKEN (+ optional OWL_GOOGLE_CLIENT_ID/SECRET for local Google sign-in)
 make dev-down
 ```
@@ -90,7 +92,9 @@ make dev-down
   `ParseVersion` strips vendor suffixes (`-hardened3`, `-build…`, `-debian-12-r20`) but keeps real
   pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
   "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
-  version, not images.
+  version, not images. `bundledWith` (image → rke2|k3s, built-in only) sets `Instance.BundledWith` only in
+  a cluster of that distribution; `ActionFor` then says "Comes with RKE2 — upgrade RKE2…" (level
+  unchanged). Built-in entries may use `versionPattern` and OSV packages of any ecosystem.
 - Custom catalog components (milestone 11): `catalog.ValidateCustom` / `Merge` (built-in always wins;
   `CustomState` says why one isn't in effect); stored as JSON in `custom_components` (**restored** with
   backups). The server keeps the merged catalog in `Server.live` (atomic pointer) — always read it via
@@ -98,8 +102,12 @@ make dev-down
   with `ReloadCatalog` after a change or restore. `versionPattern` = regexp, groups joined with ".".
   Summaries send `comp.GitHub` as the name for custom components (tested). `internal/registry` reads
   OCI labels anonymously from the public registries in `registry.Hosts` only, on demand.
-- `internal/inventory` — computed on read from current state + catalog + catalog overrides (map /
-  inhouse / ignore per repository, applied **only to images the catalog doesn't recognize**). Server flag `--internal-registries` marks in-house images.
+- `internal/inventory` — computed on read from current state + catalog + catalog overrides (per
+  repository: `inhouse`/`ignore` **always** win, even over the catalog — an upgrade must not undo them;
+  `map` only for images the catalog doesn't recognize). `GET /catalog/overrides` adds `recognizedAs`. Server flag `--internal-registries` marks in-house images.
+- Upstream refresh (`Server.RefreshUpstream`) covers only `runningComponents` (in some cluster's inventory)
+  + custom ones; `kickFetch` (after a push with changes / a map override) → `FetchNew` in the refresher
+  goroutine fetches components that started running. Components no longer running leave `s.upstream`.
 - `internal/upstream` — `Fetcher` (cached GET/POST in `upstream_cache`, ETag revalidation, stale
   fallback) and `Client.Refresh` (endoflife.date lines, GitHub releases/archived, advisories).
   `AdvisoriesFor` matches versions against ranges **locally** for both OSV and GitHub advisories —
@@ -161,7 +169,10 @@ make dev-down
   opted-in user once. Never calls Claude (stored summary headlines only). Webhook URL: env only, errors
   strip it (`*url.Error`). Tenant sections use `report.ComponentAction` on that tenant's instances.
   Posts happen **outside** `Notifier.mu`; a restore runs inside `WhileQuiet` (checks wait, then a quiet
-  check). Pairs of a component whose upstream refresh had errors (`Incomplete`) are never resolved.
+  check). Pairs of a component whose upstream refresh had errors (`Incomplete`) are never resolved; pairs
+  of a component gone from the catalog are dropped. Catalog upgrades: `catalogLearned` compares built-in
+  ids with `notify_meta` `catalogBuiltins` (missing = `builtinsBeforeM13`); new ones already running are
+  "learning" until `Fetched`, then recorded quietly with one "Owl now recognizes N more" post.
 - `internal/upstream/notes.go` — release notes per jump: GitHub bodies or `releaseNotes` sources
   (Kubernetes CHANGELOG sections, Redis/HAProxy per-branch files with pre-releases folded into x.y.0 and
   each version taken only from its own line's file, postgresql.org HTML). Which versions belong to a

@@ -629,3 +629,61 @@ func TestCriticalTitleCountsComponentsAndClusters(t *testing.T) {
 		t.Errorf("%q / %q", one, two)
 	}
 }
+
+// A catalog upgrade that recognizes images already running doesn't alert per component: they're recorded
+// once their upstream data is in, with one summary. A component deployed after the upgrade alerts as usual.
+func TestCatalogUpgradeIsQuiet(t *testing.T) {
+	e := newEnv(t)
+	e.set(KeyCritical, "on", KeyUnrecognized, "on")
+	e.cluster("prod", "IT", "redis:7.2.4", "example.org/foo/foo:1.0")
+	e.check() // first check: quiet
+	// Simulate a server from before milestone 13 (no catalog recorded): the old built-ins are the baseline.
+	if err := e.db.SetNotifyMeta(context.Background(), metaCatalog, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upgrade: the built-in catalog learns foo (running) and bar (not running anywhere yet).
+	up, _ := catalog.Merge(e.cat, []catalog.Component{
+		{ID: "foo", Name: "Foo Server", Images: []string{"example.org/foo/foo"}, GitHub: "foo/foo"},
+		{ID: "bar", Name: "Bar", Images: []string{"example.org/bar/bar"}, GitHub: "bar/bar"},
+	})
+	for i := range up.Components {
+		up.Components[i].Custom = false // built-in in this test
+	}
+	e.n.Catalog = up
+	fetched := false
+	e.n.Fetched = func(id string) bool { return id != "foo" || fetched }
+	e.crit("foo@prod")
+	e.check()
+	if got := e.mm.texts(); len(got) != 0 {
+		t.Fatalf("before foo's upstream data loaded: %q", got)
+	}
+	fetched = true
+	e.check()
+	got := e.mm.texts()
+	if len(got) != 1 || !strings.Contains(got[0], "Owl now recognizes 1 more component; 1 Critical") ||
+		!strings.Contains(got[0], "**Foo Server** — **Critical**") || strings.Contains(got[0], "became Critical") {
+		t.Fatalf("summary: %q", got)
+	}
+	e.mm.reset()
+	e.check()
+	if got := e.mm.texts(); len(got) != 0 {
+		t.Fatalf("summary repeated: %q", got)
+	}
+
+	// bar was in the catalog before it ran: a normal deployment, a normal alert.
+	e.cluster("prod", "IT", "redis:7.2.4", "example.org/foo/foo:1.0", "example.org/bar/bar:1.0.0")
+	e.crit("foo@prod", "bar@prod")
+	e.check()
+	if got := e.mm.texts(); len(got) != 1 || !strings.Contains(got[0], "Bar became Critical") {
+		t.Fatalf("new deployment after the upgrade: %q", got)
+	}
+
+	// Components that leave the catalog (a custom one deleted) are forgotten, not "no longer Critical".
+	e.n.Catalog = e.cat
+	e.crit()
+	e.check()
+	if res, _ := e.db.ListResolved(context.Background(), time.Time{}); len(res) != 0 {
+		t.Errorf("pairs of components gone from the catalog must not read as resolved: %+v", res)
+	}
+}

@@ -366,13 +366,26 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 
 // --- catalog overrides ---
 
+// overrideView: an override plus the component the catalog itself now recognizes the repository as
+// (a newer Owl may have learned it). For `map` that means the override no longer applies; `ignore` and
+// `inhouse` still do.
+type overrideView struct {
+	store.CatalogOverride
+	RecognizedAs string `json:"recognizedAs,omitempty"`
+}
+
 func (s *Server) listOverrides(w http.ResponseWriter, r *http.Request) {
 	os, err := s.Store.ListOverrides(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, os)
+	cat := s.cat()
+	out := make([]overrideView, len(os))
+	for i, o := range os {
+		out[i] = overrideView{CatalogOverride: o, RecognizedAs: cat.Claimant(o.Repository)}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) {
@@ -399,6 +412,7 @@ func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "catalog override set", "repository", o.Repository, "kind", o.Kind, "component", o.Component)
+	s.kickFetch() // a map can make a component start running
 	s.kickNotify()
 	s.listOverrides(w, r)
 }

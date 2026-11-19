@@ -35,8 +35,32 @@ type Action struct {
 	To string `json:"-"`
 }
 
-// ActionFor turns a score into the recommended action for one instance.
+// ActionFor turns a score into the recommended action for one instance. For an image the cluster's
+// distribution ships itself (BundledWith) a patch or upgrade means upgrading the distribution.
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
+	a := scoreAction(in, sc, target, info)
+	if in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade) {
+		a.Text = bundledText(in.BundledWith, a.To)
+	}
+	return a
+}
+
+// distroNames: how the distributions are written in sentences.
+var distroNames = map[string]string{"rke2": "RKE2", "k3s": "k3s"}
+
+// bundledText: "Comes with RKE2 — upgrade RKE2 to a release that ships 1.11.3 or newer".
+func bundledText(distro, to string) string {
+	d := distroNames[distro]
+	if d == "" {
+		d = distro
+	}
+	if to == "" {
+		return "Comes with " + d + " — upgrade " + d + " to a newer release"
+	}
+	return "Comes with " + d + " — upgrade " + d + " to a release that ships " + to + " or newer"
+}
+
+func scoreAction(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
 	switch {
 	case in.Status == string(catalog.StatusUnpinned):
 		return Action{ActionPin, "Pin an exact version", "tag " + tagOf(in.Image) + " doesn't say which version runs", ""}
@@ -182,19 +206,33 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 		// "Update to <target>" only when some instance's step is the target itself; instances ahead of
 		// the target that only need a patch in their own line must not read as "go back to the target".
 		toTarget, steps := false, map[string]Action{} // distinct steps by text
+		bundled, first := "", true                    // the distribution every step goes through, if they all do
 		for _, in := range insts {
 			if in.Action.Kind == ActionPatch || in.Action.Kind == ActionUpgrade {
 				steps[in.Action.Text] = in.Action
 				toTarget = toTarget || in.Action.To == target.Version
+				if first {
+					bundled, first = in.BundledWith, false
+				} else if in.BundledWith != bundled {
+					bundled = ""
+				}
 			}
 		}
+		// bundled: every step is an upgrade of that distribution, so say that instead of a version step.
 		if toTarget {
-			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why, target.Version}
+			text := "Update to " + target.Version
+			if bundled != "" {
+				text = bundledText(bundled, target.Version)
+			}
+			return Action{ActionUpdate, text, worst.Action.Why, target.Version}
 		}
 		if len(steps) == 1 {
 			for _, a := range steps {
 				return Action{a.Kind, a.Text, worst.Action.Why, a.To}
 			}
+		}
+		if bundled != "" {
+			return Action{ActionUpgrade, bundledText(bundled, ""), worst.Action.Why, ""}
 		}
 		return Action{ActionPatch, "Patch each to the newest of its line", worst.Action.Why, ""}
 	case needs[ActionPin]:
