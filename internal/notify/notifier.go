@@ -3,9 +3,9 @@ package notify
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -262,7 +262,7 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 	if set.NewCluster {
 		for _, c := range fresh {
 			covered[c.Name] = true
-			msgs = append(msgs, message{"new cluster", n.newClusterDoc(c, rep, unrec, st.Repos).Markdown()})
+			msgs = append(msgs, message{"new cluster", n.newClusterDoc(c, rep, crit, unrec, st.Repos).Markdown()})
 		}
 	}
 	if set.Critical {
@@ -298,7 +298,7 @@ func unrecognizedByRepo(inv *inventory.Inventory) map[string][]string {
 	out := map[string][]string{}
 	for _, u := range inv.Unrecognized {
 		for _, in := range u.Instances {
-			if !contains(out[u.Repository], in.Cluster) {
+			if !slices.Contains(out[u.Repository], in.Cluster) {
 				out[u.Repository] = append(out[u.Repository], in.Cluster)
 			}
 		}
@@ -350,12 +350,12 @@ func (n *Notifier) criticalDoc(list []*critical) Doc {
 	for _, c := range list {
 		comps[c.Component], clusters[c.Cluster] = true, true
 	}
-	title := plural(len(comps), "component") + " became Critical"
+	title := report.Plural(len(comps), "component") + " became Critical"
 	if len(comps) == 1 {
 		title = list[0].Name + " became Critical"
 	}
 	if len(clusters) > 1 {
-		title += " on " + plural(len(clusters), "cluster")
+		title += " on " + report.Plural(len(clusters), "cluster")
 	}
 	b := Block{Title: "Newly Critical"}
 	shown, more := capLines(len(list), 10)
@@ -418,20 +418,20 @@ func (n *Notifier) unrecognizedDoc(repos []string, where map[string][]string, co
 	b.More, b.MoreLink = more, n.link("/clusters")
 	title := "New unrecognized image"
 	if len(repos) != 1 {
-		title = itoa(len(repos)) + " new unrecognized images"
+		title = strconv.Itoa(len(repos)) + " new unrecognized images"
 	}
 	return Doc{Title: title, Intro: []Line{Ln(T("Owl can't score these yet. Add one as a component, or on the cluster's page map it to an existing one, mark it in-house, or ignore it."))},
 		Sections: []Section{{Blocks: []Block{b}}}}
 }
 
-func (n *Notifier) newClusterDoc(c store.Cluster, rep *report.Report, unrec map[string][]string, knownRepos map[string]bool) Doc {
+func (n *Notifier) newClusterDoc(c store.Cluster, rep *report.Report, crit map[pair]*critical, unrec map[string][]string, knownRepos map[string]bool) Doc {
 	sc := scope{c.Name: true}
 	comps := componentsIn(rep, sc)
 	d := Doc{Title: "New cluster connected: " + c.Name}
 	d.Intro = append(d.Intro, Ln(T("Stage "), B(string(c.Stage)), T(" · tenant "), B(c.Tenant), T(" · first report received")))
 	for _, ci := range comps {
-		if ci.C.ID != "kubernetes" && ci.C.ID != "rke2" && ci.C.ID != "k3s" {
-			continue
+		if c := n.cat().ByID(ci.C.ID); c == nil || c.Source != "cluster" {
+			continue // only the cluster's own versions (kubernetes, rke2, k3s) here
 		}
 		for _, in := range ci.C.Instances {
 			if in.Cluster == c.Name {
@@ -446,10 +446,10 @@ func (n *Notifier) newClusterDoc(c store.Cluster, rep *report.Report, unrec map[
 	}
 	d.Intro = append(d.Intro, Ln(T("Components: "+levelCounts(comps))))
 
-	crit := sortedCriticals(criticalPairs(rep), func(k pair) bool { return k.Cluster == c.Name })
+	mine := sortedCriticals(crit, func(k pair) bool { return k.Cluster == c.Name })
 	cb := Block{Title: "Critical", Empty: "Nothing Critical."}
-	shown, more := capLines(len(crit), 10)
-	for _, x := range crit[:shown] {
+	shown, more := capLines(len(mine), 10)
+	for _, x := range mine[:shown] {
 		cb.Items = append(cb.Items, n.criticalLine(x, false))
 	}
 	cb.More = more
@@ -461,7 +461,7 @@ func (n *Notifier) newClusterDoc(c store.Cluster, rep *report.Report, unrec map[
 
 	var repos []string
 	for repo, cls := range unrec {
-		if contains(cls, c.Name) {
+		if slices.Contains(cls, c.Name) {
 			repos = append(repos, repo)
 		}
 	}
@@ -504,7 +504,7 @@ func (n *Notifier) actionLine(ci compIn, headline *string, clusters bool) Line {
 		l = append(l, T(" — "+ci.Action.Why))
 	}
 	if clusters {
-		where := "runs in " + plural(len(ci.Clusters), "cluster")
+		where := "runs in " + report.Plural(len(ci.Clusters), "cluster")
 		if ci.InLast {
 			where += ", incl. the last stage"
 		}
@@ -580,21 +580,9 @@ func (n *Notifier) DigestEnabled(ctx context.Context) error {
 }
 
 func metaTime(v string) *time.Time {
-	if v == "" {
-		return nil
-	}
 	t, err := time.Parse(time.RFC3339, v)
 	if err != nil {
 		return nil
 	}
 	return &t
-}
-
-func itoa(n int) string { return strconv.Itoa(n) }
-
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }

@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"owl/internal/catalog"
 	"owl/internal/inventory"
@@ -30,23 +31,25 @@ type Action struct {
 	Kind ActionKind `json:"kind"`
 	Text string     `json:"text"`
 	Why  string     `json:"why"`
+	// To is the version a patch or upgrade step goes to ("" for every other step).
+	To string `json:"-"`
 }
 
 // ActionFor turns a score into the recommended action for one instance.
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
 	switch {
 	case in.Status == string(catalog.StatusUnpinned):
-		return Action{ActionPin, "Pin an exact version", "tag " + tagOf(in.Image) + " doesn't say which version runs"}
+		return Action{ActionPin, "Pin an exact version", "tag " + tagOf(in.Image) + " doesn't say which version runs", ""}
 	case info != nil && info.Retired:
 		why := "retired upstream"
 		if s := advisorySummary(sc.Advisories); s != "" {
 			why += "; " + s + " open"
 		}
-		return Action{ActionReplace, "Replace", why}
+		return Action{ActionReplace, "Replace", why, ""}
 	case sc.Level == LevelUnknown:
-		return Action{ActionCheck, "Check manually", firstReason(sc, LevelUnknown)}
+		return Action{ActionCheck, "Check manually", firstReason(sc, LevelUnknown), ""}
 	case sc.Level == LevelOK:
-		return Action{ActionNone, "Up to date", "at target, latest patch"}
+		return Action{ActionNone, "Up to date", "at target, latest patch", ""}
 	}
 
 	var why []string
@@ -56,16 +59,16 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 	if sc.EOL != nil {
 		e := sc.EOL.Line + " is EOL"
 		if sc.EOL.Since != nil {
-			e += " since " + sc.EOL.Since.Format("2006-01-02")
+			e += " since " + sc.EOL.Since.Format(time.DateOnly)
 		}
 		why = append(why, e)
 	}
 	if sc.LinesBehind >= 1 && len(why) < 2 {
-		why = append(why, plural(sc.LinesBehind, "release line")+" behind")
+		why = append(why, Plural(sc.LinesBehind, "release line")+" behind")
 	}
 
 	if target == nil {
-		return Action{ActionCheck, "Check manually", "no version target for the policy"}
+		return Action{ActionCheck, "Check manually", "no version target for the policy", ""}
 	}
 	v, okV := catalog.ParseVersion(in.Version, "")
 	tv, okT := catalog.ParseVersion(target.Version, "")
@@ -78,24 +81,24 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 			// Nothing newer in this line, yet the level isn't OK: EOL line (e.g. a pin on it) or an
 			// advisory fixed only in a later line. Patching can't help — say what can.
 			if sc.EOL != nil {
-				return Action{ActionUpgrade, "Move to a supported release line", strings.Join(append(why, "policy "+target.Policy+" targets it"), "; ")}
+				return Action{ActionUpgrade, "Move to a supported release line", strings.Join(append(why, "policy "+target.Policy+" targets it"), "; "), ""}
 			}
 			if sc.EOLSoon != nil && len(sc.Advisories) == 0 {
 				// At the newest patch of a line that ends soon: the work is planning the next line.
 				return Action{ActionUpgrade, "Plan the move off " + sc.Line,
-					strings.Join(append(why, sc.Line+" reaches end-of-life on "+sc.EOLSoon.Format("2006-01-02")), "; ")}
+					strings.Join(append(why, sc.Line+" reaches end-of-life on "+sc.EOLSoon.Format(time.DateOnly)), "; "), ""}
 			}
-			return Action{ActionCheck, "Review advisories", strings.Join(append(why, "no newer patch in "+sc.Line), "; ")}
+			return Action{ActionCheck, "Review advisories", strings.Join(append(why, "no newer patch in "+sc.Line), "; "), ""}
 		}
 		if len(why) == 0 {
 			why = append(why, "patch release")
 		}
-		return Action{ActionPatch, "Patch to " + to, strings.Join(why, "; ")}
+		return Action{ActionPatch, "Patch to " + to, strings.Join(why, "; "), to}
 	}
 	if len(why) == 0 {
 		why = append(why, "behind target ("+target.Policy+")")
 	}
-	return Action{ActionUpgrade, "Upgrade to " + target.Version, strings.Join(why, "; ")}
+	return Action{ActionUpgrade, "Upgrade to " + target.Version, strings.Join(why, "; "), target.Version}
 }
 
 // advisorySummary: "1 critical, 2 high advisories" for the advisories that count (certain, with a fix).
@@ -135,7 +138,8 @@ func firstReason(sc Score, l Level) string {
 	return "no upstream release data"
 }
 
-func plural(n int, word string) string {
+// Plural: "1 release line", "2 release lines".
+func Plural(n int, word string) string {
 	if n == 1 {
 		return "1 " + word
 	}
@@ -168,40 +172,35 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 	}
 	switch {
 	case worst == nil:
-		return Action{ActionCheck, "Check manually", "not running anywhere"}
+		return Action{ActionCheck, "Check manually", "not running anywhere", ""}
 	case needs[ActionReplace]:
-		return Action{ActionReplace, "Replace", worst.Action.Why}
+		return Action{ActionReplace, "Replace", worst.Action.Why, ""}
 	case needs[ActionPatch] || needs[ActionUpgrade]:
 		if target == nil {
 			break
 		}
 		// "Update to <target>" only when some instance's step is the target itself; instances ahead of
 		// the target that only need a patch in their own line must not read as "go back to the target".
-		toTarget, texts := false, map[string]bool{}
+		toTarget, steps := false, map[string]Action{} // distinct steps by text
 		for _, in := range insts {
 			if in.Action.Kind == ActionPatch || in.Action.Kind == ActionUpgrade {
-				texts[in.Action.Text] = true
-				toTarget = toTarget || strings.HasSuffix(in.Action.Text, " "+target.Version)
+				steps[in.Action.Text] = in.Action
+				toTarget = toTarget || in.Action.To == target.Version
 			}
 		}
-		switch {
-		case toTarget:
-			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why}
-		case len(texts) == 1:
-			return Action{worst.Action.Kind, firstKey(texts), worst.Action.Why}
+		if toTarget {
+			return Action{ActionUpdate, "Update to " + target.Version, worst.Action.Why, target.Version}
 		}
-		return Action{ActionPatch, "Patch each to the newest of its line", worst.Action.Why}
+		if len(steps) == 1 {
+			for _, a := range steps {
+				return Action{a.Kind, a.Text, worst.Action.Why, a.To}
+			}
+		}
+		return Action{ActionPatch, "Patch each to the newest of its line", worst.Action.Why, ""}
 	case needs[ActionPin]:
-		return Action{ActionPin, "Pin an exact version", worst.Action.Why}
+		return Action{ActionPin, "Pin an exact version", worst.Action.Why, ""}
 	case needs[ActionCheck]:
-		return Action{ActionCheck, worst.Action.Text, worst.Action.Why}
+		return Action{ActionCheck, worst.Action.Text, worst.Action.Why, ""}
 	}
 	return worst.Action
-}
-
-func firstKey(m map[string]bool) string {
-	for k := range m {
-		return k
-	}
-	return ""
 }

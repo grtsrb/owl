@@ -3,6 +3,7 @@ package notify
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -83,14 +84,7 @@ func (s Settings) Values() map[string]string {
 		KeyNewCluster: on(s.NewCluster), KeyDigestDay: s.DigestDay, KeyDigestTime: s.DigestTime, KeyDigestTZ: s.DigestTZ}
 }
 
-func dayIndex(d string) int {
-	for i, x := range days {
-		if x == d {
-			return i
-		}
-	}
-	return -1
-}
+func dayIndex(d string) int { return slices.Index(days, d) }
 
 func parseHM(v string) (int, int, bool) {
 	hs, ms, ok := strings.Cut(v, ":")

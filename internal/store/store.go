@@ -523,6 +523,8 @@ type Store interface {
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)
 	PutCache(ctx context.Context, e CacheEntry) error
+	// TouchCache marks an entry fresh again (a 304: the body didn't change, so it isn't rewritten).
+	TouchCache(ctx context.Context, key string, at time.Time) error
 
 	Close() error
 }

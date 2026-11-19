@@ -24,7 +24,7 @@ func (s *Server) summaryRoutes(mux *http.ServeMux) {
 // BuildReport is the scored report (also what summaries derive their jumps from).
 func (s *Server) BuildReport(ctx context.Context) (*report.Report, error) {
 	return report.Build(ctx, report.Inputs{
-		Catalog: s.cat(), Store: s.Store, Upstream: s.Upstream, Infos: s.upstreamInfo, Now: time.Now().UTC(),
+		Catalog: s.cat(), Store: s.Store, Infos: s.upstreamInfo, Now: time.Now().UTC(),
 	})
 }
 
@@ -76,11 +76,9 @@ func (s *Server) putSummarySettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for k, v := range set.Values() {
-		if err := s.Store.SetSetting(r.Context(), k, v); err != nil {
-			s.fail(w, err)
-			return
-		}
+	if err := s.saveSettings(r.Context(), set.Values()); err != nil {
+		s.fail(w, err)
+		return
 	}
 	s.audit(r, "summary settings changed", "mode", set.Mode, "dailyCap", summary.USD(set.DailyCapMicros),
 		"monthlyCap", summary.USD(set.MonthlyCapMicros), "maxInputTokens", set.MaxInputTokens, "maxOutputTokens", set.MaxOutputTokens)

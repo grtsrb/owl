@@ -1,7 +1,6 @@
 package upstream
 
 import (
-	"context"
 	"slices"
 	"strings"
 
@@ -79,11 +78,11 @@ func RelevantFix(v catalog.Version, fixed []string) string {
 
 // AdvisoriesFor returns the advisories affecting a component version. Both sources (OSV, GitHub
 // repo advisories) are evaluated here against their ranges; no network calls.
-func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, info *Info, version string) ([]Match, error) {
+func AdvisoriesFor(info *Info, version string) []Match {
 	out := []Match{}
 	v, ok := catalog.ParseVersion(version, "")
 	if !ok || info == nil {
-		return out, nil
+		return out
 	}
 	for _, a := range info.Advisories {
 		affected, certain := false, true
@@ -125,7 +124,7 @@ func (c *Client) AdvisoriesFor(ctx context.Context, comp *catalog.Component, inf
 			out = append(out, m)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // InRange evaluates a GitHub advisory version range for v. known=false means the range doesn't

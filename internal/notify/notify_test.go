@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -140,7 +141,7 @@ func (e *env) cluster(name, tenant string, images ...string) {
 	}
 	snap := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Cluster: snapshot.Cluster{KubernetesVersion: "v1.31.2"}}
 	for i, img := range images {
-		snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "ns", Name: "w" + itoa(i),
+		snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "ns", Name: "w" + strconv.Itoa(i),
 			DesiredReplicas: 1, Containers: []snapshot.Container{{Name: "c", Image: img}}})
 	}
 	if _, err := e.db.Ingest(ctx, c.ID, snap); err != nil {
@@ -158,7 +159,7 @@ func (e *env) crit(pairs ...string) {
 		c := byComp[comp]
 		if c == nil {
 			c = &report.ComponentReport{ID: comp, Name: strings.ToUpper(comp[:1]) + comp[1:], Level: report.LevelCritical,
-				Action: report.Action{Kind: report.ActionUpgrade, Text: "Upgrade to 2.0.0", Why: "1 critical advisory"}}
+				Action: report.Action{Kind: report.ActionUpgrade, Text: "Upgrade to 2.0.0", Why: "1 critical advisory", To: "2.0.0"}}
 			byComp[comp] = c
 			order = append(order, comp)
 		}
@@ -428,7 +429,7 @@ func TestDigestContent(t *testing.T) {
 		Target: &policy.Target{Version: "7.2.6"},
 		Instances: []report.ScoredInstance{{Instance: inventory.Instance{Cluster: "it-hetzner", Stage: "live", Version: "7.2.5"},
 			Score:  report.Score{Level: report.LevelHigh},
-			Action: report.Action{Kind: report.ActionPatch, Text: "Patch to 7.2.6", Why: "fixes 1 high advisory"}}}}}
+			Action: report.Action{Kind: report.ActionPatch, Text: "Patch to 7.2.6", Why: "fixes 1 high advisory", To: "7.2.6"}}}}}
 	d, err := e.n.BuildDigest(ctx)
 	if err != nil {
 		t.Fatal(err)

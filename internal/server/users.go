@@ -11,9 +11,14 @@ import (
 )
 
 func userID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	return pathID(w, r, "user not found")
+}
+
+// pathID reads a positive {id}; anything else is a 404 with notFound.
+func pathID(w http.ResponseWriter, r *http.Request, notFound string) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		httpError(w, http.StatusNotFound, "user not found")
+		httpError(w, http.StatusNotFound, notFound)
 		return 0, false
 	}
 	return id, true
@@ -138,11 +143,7 @@ func (s *Server) resetUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if on, err := s.passwordLogin(r.Context()); err != nil {
-		s.fail(w, err)
-		return
-	} else if !on {
-		httpError(w, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl db user reset-link` on the server.")
+	if !s.requirePasswordLogin(w, r, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl db user reset-link` on the server.") {
 		return
 	}
 	u, err := s.Store.GetUser(r.Context(), id)

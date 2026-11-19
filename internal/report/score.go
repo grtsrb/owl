@@ -106,7 +106,7 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 	if info.Retired {
 		last := "never"
 		if info.LastReleaseAt != nil {
-			last = info.LastReleaseAt.Format("2006-01-02")
+			last = info.LastReleaseAt.Format(time.DateOnly)
 		}
 		s.add(LevelCritical, "upstream project retired (repository archived, last release %s) — plan a replacement", last)
 	} else if info.Archived {
@@ -172,12 +172,12 @@ func ScoreInstance(in inventory.Instance, info *upstream.Info, target *policy.Ta
 		case policy.IsEOL(l, now):
 			when := ""
 			if l.EOLDate != nil {
-				when = " since " + l.EOLDate.Format("2006-01-02")
+				when = " since " + l.EOLDate.Format(time.DateOnly)
 			}
 			s.add(LevelCritical, "release line %s is end-of-life%s", l.Name, when)
 			s.EOL = &EOLInfo{Line: l.Name, Since: l.EOLDate}
 		case l.EOLDate != nil && l.EOLDate.Sub(now) <= EOLSoon:
-			s.add(LevelHigh, "release line %s reaches end-of-life on %s", l.Name, l.EOLDate.Format("2006-01-02"))
+			s.add(LevelHigh, "release line %s reaches end-of-life on %s", l.Name, l.EOLDate.Format(time.DateOnly))
 			s.EOLSoon = l.EOLDate
 		}
 	} else {

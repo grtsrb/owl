@@ -78,11 +78,10 @@ type Report struct {
 
 // Inputs are what Build needs; the server supplies them.
 type Inputs struct {
-	Catalog  *catalog.Catalog
-	Store    store.Store
-	Upstream *upstream.Client
-	Infos    func(id string) *upstream.Info
-	Now      time.Time
+	Catalog *catalog.Catalog
+	Store   store.Store
+	Infos   func(id string) *upstream.Info
+	Now     time.Time
 }
 
 func Build(ctx context.Context, in Inputs) (*Report, error) {
@@ -116,25 +115,29 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 	}
 
 	for _, cv := range inv.Components {
-		comp := in.Catalog.ByID(cv.ID)
 		info := in.Infos(cv.ID)
 		cr := ComponentReport{ID: cv.ID, Name: cv.Name, Level: LevelOK, Notes: cv.Notes, Drift: []Drift{}}
 		if info != nil {
 			cr.Upstream = UpstreamSummary{LatestStable: info.LatestStable, Retired: info.Retired, Archived: info.Archived,
 				LastReleaseAt: info.LastReleaseAt, AdvisorySource: info.AdvisorySource, Stale: info.Stale, FetchedAt: &info.FetchedAt}
-			if sp, note := effectivePolicy(pols, cv.ID); true {
-				if t, ok := policy.Resolve(sp, info.Lines, in.Now); ok {
-					if note != "" {
-						t.Note = strings.TrimPrefix(t.Note+"; "+note, "; ")
-					}
-					cr.Target = &t
+			sp, note := effectivePolicy(pols, cv.ID)
+			if t, ok := policy.Resolve(sp, info.Lines, in.Now); ok {
+				if note != "" {
+					t.Note = strings.TrimPrefix(t.Note+"; "+note, "; ")
 				}
+				cr.Target = &t
 			}
 		}
+		matchesOf := map[string][]upstream.Match{} // many instances share a version; matching is the costly part
 		for _, inst := range cv.Instances {
 			var matches []upstream.Match
-			if info != nil && in.Upstream != nil && inst.Status == string(catalog.StatusIdentified) {
-				matches, _ = in.Upstream.AdvisoriesFor(ctx, comp, info, inst.Version)
+			if info != nil && inst.Status == string(catalog.StatusIdentified) {
+				m, ok := matchesOf[inst.Version]
+				if !ok {
+					m = upstream.AdvisoriesFor(info, inst.Version)
+					matchesOf[inst.Version] = m
+				}
+				matches = m
 			}
 			sc := ScoreInstance(inst, info, cr.Target, matches, in.Now)
 			cr.Instances = append(cr.Instances, ScoredInstance{Instance: inst, Score: sc, Action: ActionFor(inst, sc, cr.Target, info)})

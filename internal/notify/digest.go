@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
+	"strconv"
 	"time"
 
 	"owl/internal/catalog"
@@ -216,7 +218,7 @@ func (n *Notifier) digestDoc(in digestInputs, loc *time.Location) Doc {
 	if len(names) == 1 {
 		d.Sections = []Section{n.digestSection("", nil, in)}
 	} else {
-		d.Intro = []Line{Ln(T(plural(len(in.clusters), "cluster") + " in " + itoa(len(names)) + " tenants."))}
+		d.Intro = []Line{Ln(T(report.Plural(len(in.clusters), "cluster") + " in " + strconv.Itoa(len(names)) + " tenants."))}
 		for _, t := range names {
 			sc := scope{}
 			for _, c := range tenants[t] {
@@ -279,7 +281,8 @@ func (n *Notifier) digestSection(heading string, sc scope, in digestInputs) Sect
 		if seen[k] || !sc.has(r.Cluster) || !clusterExists(in.clusters, r.Cluster) {
 			continue
 		}
-		if levelOn(in.rep, r.Component, r.Cluster) == report.LevelCritical {
+		lvl := levelOn(in.rep, r.Component, r.Cluster)
+		if lvl == report.LevelCritical {
 			continue // Critical again since: it's not "no longer Critical"
 		}
 		seen[k] = true
@@ -292,8 +295,8 @@ func (n *Notifier) digestSection(heading string, sc scope, in digestInputs) Sect
 			}
 		}
 		now := "no longer running"
-		if l := levelOn(in.rep, r.Component, r.Cluster); l != "" {
-			now = "now " + levelName(l)
+		if lvl != "" {
+			now = "now " + levelName(lvl)
 		}
 		res = append(res, Ln(B(name), T(" on "+r.Cluster+" — "+now)))
 	}
@@ -413,19 +416,14 @@ func allIn(sc scope, clusters []string) bool {
 }
 
 func clusterExists(cs []store.Cluster, name string) bool {
-	for _, c := range cs {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cs, func(c store.Cluster) bool { return c.Name == name })
 }
 
 func ago(d time.Duration) string {
 	switch {
 	case d < 48*time.Hour:
-		return itoa(int(d.Hours())) + " hours ago"
+		return strconv.Itoa(int(d.Hours())) + " hours ago"
 	default:
-		return itoa(int(d.Hours()/24)) + " days ago"
+		return strconv.Itoa(int(d.Hours()/24)) + " days ago"
 	}
 }

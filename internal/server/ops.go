@@ -138,14 +138,12 @@ func (s *Server) putOps(w http.ResponseWriter, r *http.Request) {
 	}
 	h, mi, _ := backup.ParseTime(o.BackupTime)
 	o.BackupTime = fmt.Sprintf("%02d:%02d", h, mi)
-	for k, v := range map[string]string{
+	if err := s.saveSettings(r.Context(), map[string]string{
 		backup.KeyTime: o.BackupTime, backup.KeyLocalDays: strconv.Itoa(o.BackupLocalDays), backup.KeyLocalCopies: strconv.Itoa(o.BackupLocalCopies),
 		settingLogLevel: o.LogLevel, settingLogDays: strconv.Itoa(o.LogRetentionDays), settingAuditDays: strconv.Itoa(o.AuditRetentionDays),
-	} {
-		if err := s.Store.SetSetting(r.Context(), k, v); err != nil {
-			s.fail(w, err)
-			return
-		}
+	}); err != nil {
+		s.fail(w, err)
+		return
 	}
 	s.ApplyOpsSettings(r.Context())
 	s.audit(r, "operations settings changed", "backupTime", o.BackupTime, "backupLocalDays", o.BackupLocalDays,
@@ -275,17 +273,14 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 		return
 	}
 	s.ApplyOpsSettings(ctx)
-	if s.Summaries != nil {
-		s.Summaries.Kick() // settings (mode, caps) and clusters came back from the backup
-	}
+	s.kickSummaries() // settings (mode, caps) and clusters came back from the backup
 	s.audit(r, "database restored", "from", from, "safetyBackup", safety)
 	go s.RefreshUpstream(context.Background()) // components the backup added or removed (cached: cheap)
 	writeJSON(w, http.StatusOK, map[string]string{"restored": from, "safetyBackup": safety})
 }
 
 func (s *Server) importCluster(w http.ResponseWriter, r *http.Request) {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+	if !requireJSON(w, r) {
 		return
 	}
 	var ex ClusterExport

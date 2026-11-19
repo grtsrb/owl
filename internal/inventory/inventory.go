@@ -53,6 +53,18 @@ type Inventory struct {
 	Ignored []Instance `json:"ignored"`
 }
 
+// All lists every instance: unpinned, in-house, ignored, unrecognized, then recognized components.
+func (inv *Inventory) All() []Instance {
+	all := append(append(append([]Instance{}, inv.Unpinned...), inv.InHouse...), inv.Ignored...)
+	for _, u := range inv.Unrecognized {
+		all = append(all, u.Instances...)
+	}
+	for _, cv := range inv.Components {
+		all = append(all, cv.Instances...)
+	}
+	return all
+}
+
 // Unrecognized groups unknown images by repository, so the user maps each once.
 type Unrecognized struct {
 	Repository string     `json:"repository"` // registry/repository

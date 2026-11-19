@@ -60,8 +60,7 @@ func (f *Fetcher) cached(ctx context.Context, key string, ttl time.Duration, fet
 	body, newETag, notModified, err := fetch(ctx, etag)
 	switch {
 	case err == nil && notModified && entry != nil:
-		entry.FetchedAt = now()
-		_ = f.Cache.PutCache(ctx, *entry)
+		_ = f.Cache.TouchCache(ctx, key, now())
 		return &result{Body: entry.Body}, nil
 	case err == nil && !notModified:
 		_ = f.Cache.PutCache(ctx, store.CacheEntry{Key: key, FetchedAt: now(), ETag: newETag, Body: body})
