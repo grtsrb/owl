@@ -41,8 +41,10 @@ goes back to page 1.
 
 ## Overview
 
-- **Level tiles** — how many components are Critical, High, Medium, Low, Unknown, OK. Click one to
-  filter the list.
+- **Level tiles** — how many problems are Critical, High, Medium, Low, Unknown, OK across the selected
+  clusters: a component counts once **per cluster**, at its worst level there (Critical in staging and
+  in live = 2). When that differs from the number of components, the tile says so ("1 component").
+  Click one to list the components with that level in at least one selected cluster.
 - **Top actions** — the five most urgent components: highest level first, then those running in your
   last (live) stage, then those affecting the most clusters.
 - **Cluster cards** — per cluster: Kubernetes version and its EOL status, last report, counts per level.

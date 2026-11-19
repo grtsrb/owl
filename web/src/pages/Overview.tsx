@@ -17,6 +17,8 @@ export interface Row {
   notes: NoteItem[];
   clusters: string[];
   inLive: boolean;
+  /** Worst level in each selected cluster it runs in (the tiles count these, summed over clusters). */
+  perCluster: Level[];
 }
 
 export function rowsFor(components: ComponentReport[], selected: string[], lastStage: string): Row[] {
@@ -26,9 +28,12 @@ export function rowsFor(components: ComponentReport[], selected: string[], lastS
     const insts = c.instances.filter((i) => sel.has(i.cluster));
     const worst = worstInstance(insts);
     if (!worst) continue;
+    const byCluster = new Map<string, Level[]>();
+    for (const i of insts) byCluster.set(i.cluster, [...(byCluster.get(i.cluster) ?? []), i.score.level]);
     out.push({
       c, insts, worst, level: worstLevel(insts.map((i) => i.score.level)), notes: notesFor(c, insts, selected),
       clusters: [...new Set(insts.map((i) => i.cluster))], inLive: insts.some((i) => i.stage === lastStage),
+      perCluster: [...byCluster.values()].map(worstLevel),
     });
   }
   return out.sort((a, b) => levelRank[b.level] - levelRank[a.level] || a.c.name.localeCompare(b.c.name));
@@ -67,9 +72,11 @@ export default function Overview() {
   }
 
   const cols = reporting.filter((c) => sel.selected.includes(c.name));
-  const counts: Partial<Record<Level, number>> = {};
-  for (const r of rows) counts[r.level] = (counts[r.level] ?? 0) + 1;
-  const shown = rows.filter((r) => (filter === "all" || r.level === filter) && r.c.name.toLowerCase().includes(query.toLowerCase()));
+  // Tiles: a component counts once per selected cluster, at its worst level there — Critical in staging
+  // and in live is 2. A tile lists the components with that level in at least one selected cluster.
+  const counts = tally(rows.flatMap((r) => r.perCluster));
+  const compCounts = tally(rows.flatMap((r) => [...new Set(r.perCluster)]));
+  const shown = rows.filter((r) => (filter === "all" || r.perCluster.includes(filter)) && r.c.name.toLowerCase().includes(query.toLowerCase()));
   const pg = paginate(shown, Number(qs.get("page")), pageSize);
   const top = [...rows]
     .filter((r) => levelRank[r.level] >= levelRank.medium)
@@ -94,6 +101,9 @@ export default function Overview() {
             onClick={() => setFilter(filter === l ? "all" : l)}>
             <span className="tile-n">{counts[l] ?? 0}</span>
             <span className="tile-l"><span className="dot" aria-hidden />{levelLabel[l]}</span>
+            {(compCounts[l] ?? 0) !== (counts[l] ?? 0) && (
+              <span className="tile-s">{compCounts[l]} {compCounts[l] === 1 ? "component" : "components"}</span>
+            )}
           </button>
         ))}
       </div>
@@ -213,6 +223,12 @@ function SingleTable({ rows, onOpen }: { rows: Row[]; onOpen: (id: string) => vo
       </table>
     </div>
   );
+}
+
+function tally(levels: Level[]): Partial<Record<Level, number>> {
+  const n: Partial<Record<Level, number>> = {};
+  for (const l of levels) n[l] = (n[l] ?? 0) + 1;
+  return n;
 }
 
 /** Per-cluster level counts: each component counted once, at its worst level in that cluster. */
