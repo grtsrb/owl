@@ -1,0 +1,123 @@
+{
+ "gh-advisories:redis/redis": [
+  {
+   "ghsa_id": "GHSA-4789-qfc9-5f9q",
+   "cve_id": "CVE-2025-49844",
+   "url": "https://api.github.com/repos/redis/redis/security-advisories/GHSA-4789-qfc9-5f9q",
+   "html_url": "https://github.com/redis/redis/security/advisories/GHSA-4789-qfc9-5f9q",
+   "summary": "Lua Use-After-Free may lead to remote code execution",
+   "description": "### Impact\r\nAn authenticated user may use a specially crafted Lua script to manipulate the garbage collector, trigger a use-after-free and potentially lead to remote code execution.\r\n\r\nThe problem exists in all versions of Redis with Lua scripting.\r\n\r\n### Workarounds\r\nAn additional workaround to mitigate the problem without patching the redis-server executable is to prevent users from executing Lua scripts. This can be done using ACL to restrict EVAL and EVALSHA commands.\r\n\r\n### Credit\r\nThe problem was reported by Wiz researchers Benny Isaacs (@benny_isaacs), Nir Brakha, Sagi Tzadik (@sagitz_) working with Trend Micro, Zero Day Initiative\r\n",
+   "severity": "critical",
+   "author": null,
+   "publisher": {
+    "login": "YaacovHazan",
+    "id": 31382944,
+    "node_id": "MDQ6VXNlcjMxMzgyOTQ0",
+    "avatar_url": "https://avatars.githubusercontent.com/u/31382944?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/YaacovHazan",
+    "html_url": "https://github.com/YaacovHazan",
+    "followers_url": "https://api.github.com/users/YaacovHazan/followers",
+    "following_url": "https://api.github.com/users/YaacovHazan/following{/other_user}",
+    "gists_url": "https://api.github.com/users/YaacovHazan/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/YaacovHazan/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/YaacovHazan/subscriptions",
+    "organizations_url": "https://api.github.com/users/YaacovHazan/orgs",
+    "repos_url": "https://api.github.com/users/YaacovHazan/repos",
+    "events_url": "https://api.github.com/users/YaacovHazan/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/YaacovHazan/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+   },
+   "identifiers": [
+    {
+     "value": "GHSA-4789-qfc9-5f9q",
+     "type": "GHSA"
+    },
+    {
+     "value": "CVE-2025-49844",
+     "type": "CVE"
+    }
+   ],
+   "state": "published",
+   "created_at": null,
+   "updated_at": "2025-10-03T12:28:31Z",
+   "published_at": "2025-10-03T07:22:30Z",
+   "closed_at": null,
+   "withdrawn_at": null,
+   "submission": null,
+   "vulnerabilities": [
+    {
+     "package": {
+      "ecosystem": "",
+      "name": "redis-server"
+     },
+     "vulnerable_version_range": "All",
+     "patched_versions": "6.2.20, 7.2.11, 7.4.6, 8.0.4, 8.2.2",
+     "vulnerable_functions": []
+    }
+   ],
+   "cvss_severities": {
+    "cvss_v3": {
+     "vector_string": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H",
+     "score": 9.9
+    },
+    "cvss_v4": {
+     "vector_string": null,
+     "score": null
+    }
+   },
+   "cwes": [
+    {
+     "cwe_id": "CWE-416",
+     "name": "Use After Free"
+    }
+   ],
+   "cwe_ids": [
+    "CWE-416"
+   ],
+   "credits": [
+    {
+     "login": "zdi-disclosures",
+     "type": "analyst"
+    }
+   ],
+   "credits_detailed": [
+    {
+     "user": {
+      "login": "zdi-disclosures",
+      "id": 176422878,
+      "node_id": "U_kgDOCoP_3g",
+      "avatar_url": "https://avatars.githubusercontent.com/u/176422878?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/zdi-disclosures",
+      "html_url": "https://github.com/zdi-disclosures",
+      "followers_url": "https://api.github.com/users/zdi-disclosures/followers",
+      "following_url": "https://api.github.com/users/zdi-disclosures/following{/other_user}",
+      "gists_url": "https://api.github.com/users/zdi-disclosures/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/zdi-disclosures/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/zdi-disclosures/subscriptions",
+      "organizations_url": "https://api.github.com/users/zdi-disclosures/orgs",
+      "repos_url": "https://api.github.com/users/zdi-disclosures/repos",
+      "events_url": "https://api.github.com/users/zdi-disclosures/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/zdi-disclosures/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     },
+     "type": "analyst",
+     "state": "accepted"
+    }
+   ],
+   "collaborating_users": null,
+   "collaborating_teams": null,
+   "private_fork": null,
+   "comments": 4,
+   "cvss": {
+    "vector_string": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H",
+    "score": 9.9
+   }
+  }
+ ]
+}

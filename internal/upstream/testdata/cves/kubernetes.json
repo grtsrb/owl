@@ -1,0 +1,358 @@
+{
+ "osv-all:Go:k8s.io/kubernetes": [
+  {
+   "id": "GHSA-27wf-5967-98gx",
+   "summary": " Kubernetes kubelet arbitrary command execution",
+   "details": "The Kubernetes kubelet component allows arbitrary command execution via specially crafted gitRepo volumes.This issue affects kubelet: through 1.28.11, from 1.29.0 through 1.29.6, from 1.30.0 through 1.30.2.",
+   "aliases": [
+    "CVE-2024-10220",
+    "GO-2024-3286"
+   ],
+   "modified": "2026-09-10T03:50:20.243855183Z",
+   "published": "2024-11-22T21:32:15Z",
+   "database_specific": {
+    "github_reviewed_at": "2024-11-22T22:50:21Z",
+    "nvd_published_at": "2024-11-22T17:15:06Z",
+    "cwe_ids": [
+     "CWE-22"
+    ],
+    "severity": "HIGH",
+    "github_reviewed": true
+   },
+   "references": [
+    {
+     "type": "ADVISORY",
+     "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-10220"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/issues/128885"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/commit/1ab06efe92d8e898ca1931471c9533ce94aba29b"
+    },
+    {
+     "type": "PACKAGE",
+     "url": "https://github.com/kubernetes/kubernetes"
+    },
+    {
+     "type": "WEB",
+     "url": "https://groups.google.com/g/kubernetes-security-announce/c/ptNgV5Necko"
+    },
+    {
+     "type": "WEB",
+     "url": "https://pkg.go.dev/vuln/GO-2024-3286"
+    },
+    {
+     "type": "WEB",
+     "url": "http://www.openwall.com/lists/oss-security/2024/11/20/1"
+    }
+   ],
+   "affected": [
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "0"
+        },
+        {
+         "fixed": "1.28.12"
+        }
+       ]
+      }
+     ],
+     "database_specific": {
+      "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2024/11/GHSA-27wf-5967-98gx/GHSA-27wf-5967-98gx.json"
+     }
+    },
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "1.29.0"
+        },
+        {
+         "fixed": "1.29.7"
+        }
+       ]
+      }
+     ],
+     "database_specific": {
+      "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2024/11/GHSA-27wf-5967-98gx/GHSA-27wf-5967-98gx.json"
+     }
+    },
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "1.30.0"
+        },
+        {
+         "fixed": "1.30.3"
+        }
+       ]
+      }
+     ],
+     "database_specific": {
+      "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2024/11/GHSA-27wf-5967-98gx/GHSA-27wf-5967-98gx.json"
+     }
+    }
+   ],
+   "schema_version": "1.9.0",
+   "severity": [
+    {
+     "type": "CVSS_V3",
+     "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+     "type": "CVSS_V4",
+     "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+    }
+   ]
+  },
+  {
+   "id": "GHSA-3wgm-2gw2-vh5m",
+   "summary": "Kubernetes GitRepo Volume Inadvertent Local Repository Access",
+   "details": "A security vulnerability was discovered in Kubernetes that could allow a user with create pod permission to exploit gitRepo volumes to access local git repositories belonging to other pods on the same node. This CVE only affects Kubernetes clusters that utilize the in-tree gitRepo volume to clone git repositories from other pods within the same node. Since the in-tree gitRepo volume feature has been deprecated and will not receive security updates upstream, any cluster still using this feature remains vulnerable.",
+   "aliases": [
+    "CVE-2025-1767",
+    "GO-2025-3521"
+   ],
+   "modified": "2026-09-10T03:50:56.736211169Z",
+   "published": "2025-03-13T18:32:22Z",
+   "database_specific": {
+    "cwe_ids": [
+     "CWE-20"
+    ],
+    "severity": "MODERATE",
+    "github_reviewed": true,
+    "github_reviewed_at": "2025-03-14T17:30:06Z",
+    "nvd_published_at": "2025-03-13T17:15:36Z"
+   },
+   "references": [
+    {
+     "type": "ADVISORY",
+     "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-1767"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/pull/130786"
+    },
+    {
+     "type": "PACKAGE",
+     "url": "https://github.com/kubernetes/kubernetes"
+    },
+    {
+     "type": "WEB",
+     "url": "https://groups.google.com/g/kubernetes-security-announce/c/19irihsKg7s"
+    },
+    {
+     "type": "WEB",
+     "url": "http://www.openwall.com/lists/oss-security/2025/03/13/9"
+    }
+   ],
+   "affected": [
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "0"
+        },
+        {
+         "last_affected": "1.32.3"
+        }
+       ]
+      }
+     ],
+     "database_specific": {
+      "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2025/03/GHSA-3wgm-2gw2-vh5m/GHSA-3wgm-2gw2-vh5m.json"
+     }
+    }
+   ],
+   "schema_version": "1.9.0",
+   "severity": [
+    {
+     "type": "CVSS_V3",
+     "score": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:N"
+    }
+   ]
+  },
+  {
+   "id": "GO-2024-3286",
+   "summary": "Kubernetes kubelet arbitrary command execution in k8s.io/kubernetes",
+   "details": "Kubernetes kubelet arbitrary command execution in k8s.io/kubernetes",
+   "aliases": [
+    "CVE-2024-10220",
+    "GHSA-27wf-5967-98gx"
+   ],
+   "modified": "2026-02-04T02:23:56.591231Z",
+   "published": "2024-11-27T19:16:39Z",
+   "related": [
+    "CGA-qv2r-m637-rw2f"
+   ],
+   "database_specific": {
+    "review_status": "REVIEWED",
+    "url": "https://pkg.go.dev/vuln/GO-2024-3286"
+   },
+   "references": [
+    {
+     "type": "ADVISORY",
+     "url": "https://github.com/advisories/GHSA-27wf-5967-98gx"
+    },
+    {
+     "type": "WEB",
+     "url": "http://www.openwall.com/lists/oss-security/2024/11/20/1"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/commit/1ab06efe92d8e898ca1931471c9533ce94aba29b"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/issues/128885"
+    },
+    {
+     "type": "WEB",
+     "url": "https://groups.google.com/g/kubernetes-security-announce/c/ptNgV5Necko"
+    }
+   ],
+   "affected": [
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "0"
+        },
+        {
+         "fixed": "1.28.12"
+        },
+        {
+         "introduced": "1.29.0"
+        },
+        {
+         "fixed": "1.29.7"
+        },
+        {
+         "introduced": "1.30.0"
+        },
+        {
+         "fixed": "1.30.3"
+        }
+       ]
+      }
+     ],
+     "ecosystem_specific": {
+      "imports": [
+       {
+        "path": "k8s.io/kubernetes/pkg/volume/git_repo",
+        "symbols": [
+         "validateVolume"
+        ]
+       }
+      ]
+     },
+     "database_specific": {
+      "source": "https://vuln.go.dev/ID/GO-2024-3286.json"
+     }
+    }
+   ],
+   "schema_version": "1.7.3"
+  },
+  {
+   "id": "GO-2025-3521",
+   "summary": "Kubernetes GitRepo Volume Inadvertent Local Repository Access in k8s.io/kubernetes",
+   "details": "Kubernetes GitRepo Volume Inadvertent Local Repository Access in k8s.io/kubernetes",
+   "aliases": [
+    "CVE-2025-1767",
+    "GHSA-3wgm-2gw2-vh5m"
+   ],
+   "modified": "2026-02-04T02:44:22.558147Z",
+   "published": "2025-03-25T19:38:11Z",
+   "related": [
+    "CGA-6r94-fg49-6632"
+   ],
+   "database_specific": {
+    "review_status": "REVIEWED",
+    "url": "https://pkg.go.dev/vuln/GO-2025-3521"
+   },
+   "references": [
+    {
+     "type": "ADVISORY",
+     "url": "https://github.com/advisories/GHSA-3wgm-2gw2-vh5m"
+    },
+    {
+     "type": "WEB",
+     "url": "http://www.openwall.com/lists/oss-security/2025/03/13/9"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/kubernetes/kubernetes/pull/130786"
+    },
+    {
+     "type": "WEB",
+     "url": "https://groups.google.com/g/kubernetes-security-announce/c/19irihsKg7s"
+    }
+   ],
+   "affected": [
+    {
+     "package": {
+      "name": "k8s.io/kubernetes",
+      "ecosystem": "Go",
+      "purl": "pkg:golang/k8s.io/kubernetes"
+     },
+     "ranges": [
+      {
+       "type": "SEMVER",
+       "events": [
+        {
+         "introduced": "0"
+        }
+       ]
+      }
+     ],
+     "ecosystem_specific": {},
+     "database_specific": {
+      "source": "https://vuln.go.dev/ID/GO-2025-3521.json"
+     }
+    }
+   ],
+   "schema_version": "1.7.3"
+  }
+ ]
+}

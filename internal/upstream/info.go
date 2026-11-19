@@ -75,6 +75,20 @@ func (c *Client) Refresh(ctx context.Context, comp *catalog.Component) *Info {
 			}
 		}
 	}
+	c.advisories(ctx, comp, info, fail)
+	for _, l := range info.Lines {
+		if l.LatestDate != nil && (info.LastReleaseAt == nil || l.LatestDate.After(*info.LastReleaseAt)) {
+			info.LastReleaseAt = l.LatestDate
+		}
+	}
+	info.Retired = info.Archived && releasesKnown &&
+		(info.LastReleaseAt == nil || time.Since(*info.LastReleaseAt) > RetiredAfter)
+	return info
+}
+
+// advisories fills info.Advisories: OSV when the catalog names a package, else (or when OSV fails) the
+// GitHub repo's published advisories.
+func (c *Client) advisories(ctx context.Context, comp *catalog.Component, info *Info, fail func(string, error)) {
 	osvOK := false
 	if comp.OSV != nil {
 		advs, stale, err := c.osvAll(ctx, comp.OSV)
@@ -93,14 +107,6 @@ func (c *Client) Refresh(ctx context.Context, comp *catalog.Component) *Info {
 			info.AdvisorySource = "github-repo"
 		}
 	}
-	for _, l := range info.Lines {
-		if l.LatestDate != nil && (info.LastReleaseAt == nil || l.LatestDate.After(*info.LastReleaseAt)) {
-			info.LastReleaseAt = l.LatestDate
-		}
-	}
-	info.Retired = info.Archived && releasesKnown &&
-		(info.LastReleaseAt == nil || time.Since(*info.LastReleaseAt) > RetiredAfter)
-	return info
 }
 
 // RetiredAfter is how long an archived project must have gone without a release to count as retired.

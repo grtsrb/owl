@@ -61,6 +61,16 @@ cd web && npm run typecheck
 make agent-print CLUSTER=it-aws-prod   # what the agent would send
 ```
 
+**Known CVEs** (`internal/upstream/cve_test.go`): real advisory responses for a handful of verified
+CVEs (IngressNightmare, RediShell, CoreDNS DoQ, Kubernetes gitRepo, Grafana SQL expressions) are
+replayed offline through the same parsing and range matching as production — affected versions must
+be flagged with the right severity and fix, fixed versions must be clean. To add a case, add a row
+to `cveCases` (check it by hand against the vendor advisory) and re-record:
+
+```bash
+set -a; . ./.env; set +a; OWL_RECORD_CVES=1 go test ./internal/upstream -run TestRecordCVEFixtures
+```
+
 Useful while developing:
 
 ```bash
