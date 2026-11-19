@@ -106,7 +106,8 @@ func scoreAction(in inventory.Instance, sc Score, target *policy.Target, info *u
 		if lv, ok := catalog.ParseVersion(sc.LatestInLine, ""); okV && ok && lv.Compare(v) > 0 {
 			return Action{ActionPatch, "Patch to " + sc.LatestInLine, strings.Join(why, "; "), sc.LatestInLine}
 		}
-		return Action{ActionUpgrade, "Plan the move to " + target.Version, strings.Join(why, "; "), target.Version}
+		// Planning, not a step yet: To stays empty so the component summary doesn't turn it into "Update to".
+		return Action{ActionUpgrade, "Plan the move to " + target.Version, strings.Join(why, "; "), ""}
 	}
 	if sc.LinesBehind == 0 {
 		to := target.Version

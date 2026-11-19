@@ -26,6 +26,8 @@ staging=(
   "elastalert|Deployment|0|jertel/elastalert2:2.32.0"
   "cert-manager|Deployment|0|quay.io/jetstack/cert-manager-controller:v1.21.3"
   "prometheus|StatefulSet|0|quay.io/prometheus/prometheus:v3.16.0"
+  "gitlab-runner|Deployment|0|gitlab/gitlab-runner:alpine-v18.5.0"
+  "velero|Deployment|0|velero/velero:v1.18.4"
   "billing-api|Deployment|0|registry.gitlab.example/it/billing-api:2.4.0"
 )
 test=(
@@ -45,6 +47,8 @@ test=(
   "cert-manager|Deployment|0|quay.io/jetstack/cert-manager-controller:v1.20.4"
   "prometheus|StatefulSet|0|prom/prometheus:v3.13.4"
   "traefik|Deployment|0|traefik:v3.7.18"
+  "gitlab-runner|Deployment|0|gitlab/gitlab-runner:v18.3.0"
+  "velero|Deployment|0|velero/velero:v1.17.1"
   "billing-api|Deployment|0|registry.gitlab.example/it/billing-api:2.4.0"
   "session-cache|Deployment|0|redis:latest"
 )
@@ -69,6 +73,10 @@ prod=(
   "alertmanager|StatefulSet|0|quay.io/prometheus/alertmanager:v0.33.1"
   "traefik|Deployment|0|traefik:v2.11.63"
   "fluent-bit|Deployment|0|fluent/fluent-bit:5.1.5"
+  "gitlab-runner|Deployment|0|gitlab/gitlab-runner:v17.11.0"
+  "velero|Deployment|0|velero/velero:v1.16.0"
+  "velero-aws|Deployment|0|velero/velero-plugin-for-aws:v1.12.0"
+  "longhorn-csi-attacher|Deployment|0|longhornio/csi-attacher:v4.8.0"
   "coredns-hardened|Deployment|0|rancher/hardened-coredns:v1.11.1-build20240305"
   "billing-api|Deployment|0|registry.gitlab.example/it/billing-api:2.3.1"
   "mystery-tool|Deployment|0|ghcr.io/acme/mystery-tool:0.4.0"

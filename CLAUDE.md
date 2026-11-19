@@ -18,7 +18,8 @@ redesign + cluster management, backups/restore/logging/audit, Claude summaries, 
 Mattermost notifications, catalog from the UI + Settings reorganised, CLI + personal API tokens + users
 from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Milestone 13 (bigger built-in
 catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (Elastic, networking, certs,
-monitoring — 52 built-ins) done; batches 2 (GitOps/CI/storage) and 3 (data/policy/ops) next. Keep this file's commands and
+monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) next,
+GitOps (Argo/Flux) deferred by the user. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands

@@ -59,6 +59,25 @@ end-of-life dates and advisories. It's `internal/catalog/catalog.yaml`, compiled
 | `opentelemetry-collector` | OpenTelemetry Collector | GitHub releases (`v` tags) | none published |
 | `opentelemetry-operator` | OpenTelemetry Operator | GitHub releases | GitHub |
 | `fluent-bit` | Fluent Bit | endoflife.date | GitHub |
+| `gitlab-runner` | GitLab Runner | endoflife.date | none published |
+| `actions-runner-controller` | Actions Runner Controller (scale sets) | GitHub releases (`gha-runner-scale-set-` tags) | none published |
+| `actions-runner-controller-legacy` | Actions Runner Controller (legacy, summerwind) | GitHub releases (`v` tags) | none published |
+| `actions-runner` | GitHub Actions runner | GitHub releases (`v` tags) | GitHub |
+| `velero` | Velero | GitHub releases | OSV |
+| `velero-plugin-for-aws` | Velero plugin for AWS | GitHub releases | none published |
+| `velero-plugin-for-microsoft-azure` | Velero plugin for Microsoft Azure | GitHub releases | none published |
+| `velero-plugin-for-gcp` | Velero plugin for GCP | GitHub releases | none published |
+| `rook` | Rook (Ceph operator) | GitHub releases | none published |
+| `ceph` | Ceph | endoflife.date | none published |
+| `ceph-csi` | Ceph CSI | GitHub releases | none published |
+| `local-path-provisioner` | Local Path Provisioner | GitHub releases | OSV |
+| `csi-snapshotter` | CSI snapshotter and snapshot controller | GitHub releases (`v` tags) | none published |
+| `csi-provisioner` | CSI external-provisioner | GitHub releases | none published |
+| `csi-attacher` | CSI external-attacher | GitHub releases | none published |
+| `csi-resizer` | CSI external-resizer | GitHub releases | none published |
+| `csi-node-driver-registrar` | CSI node-driver-registrar | GitHub releases | none published |
+| `csi-livenessprobe` | CSI livenessprobe | GitHub releases | none published |
+| `csi-external-health-monitor` | CSI external-health-monitor | GitHub releases | none published |
 
 Images RKE2 or k3s ship themselves (`rancher/hardened-*`, `rancher/mirrored-*`) are listed under the
 component with `bundledWith` — see Settings → Catalog for the full image lists.

@@ -202,4 +202,16 @@ func TestActionSupportedLine(t *testing.T) {
 	if sc, _ := act("8.18.8"); sc.Level != LevelHigh || sc.Supported != "" {
 		t.Errorf("not maintained, future end date: %s %q", sc.Level, sc.Supported)
 	}
+	// The component summary keeps "patch first": never "Update to <target>" from a planning step.
+	si := func(v string) ScoredInstance {
+		in := inventory.Instance{Version: v, Status: "identified", Image: "img:" + v}
+		sc := ScoreInstance(in, info, &tg, nil, now)
+		return ScoredInstance{Instance: in, Score: sc, Action: ActionFor(in, sc, &tg, info)}
+	}
+	if a := ComponentAction([]ScoredInstance{si("8.19.20"), si("8.19.22")}, &tg); a.Text != "Patch to 8.19.25" {
+		t.Errorf("component, all on the supported line: %+v", a)
+	}
+	if a := ComponentAction([]ScoredInstance{si("8.19.20"), si("8.19.25")}, &tg); strings.HasPrefix(a.Text, "Update to") {
+		t.Errorf("component, patch + plan: %+v", a)
+	}
 }
