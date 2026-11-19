@@ -3,7 +3,6 @@ package upstream
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -87,38 +86,15 @@ func (c *Client) githubNotes(ctx context.Context, comp *catalog.Component, inclu
 		return nil, ErrNoNotes
 	}
 	var out []Note
-	for page := 1; page <= 3; page++ { // same URLs and cache keys as githubLines: usually no extra request
-		u := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", comp.GitHub, page)
-		res, err := c.F.get(ctx, fmt.Sprintf("gh-releases:%s:%d", comp.GitHub, page), u)
-		if err != nil {
-			return nil, err
-		}
-		var rels []struct {
-			Tag        string `json:"tag_name"`
-			Draft      bool   `json:"draft"`
-			Prerelease bool   `json:"prerelease"`
-			Body       string `json:"body"`
-			URL        string `json:"html_url"`
-		}
-		if err := json.Unmarshal(res.Body, &rels); err != nil {
-			return nil, err
-		}
-		for _, r := range rels {
-			if r.Draft || r.Prerelease || (comp.ReleaseTagPrefix != "" && !strings.HasPrefix(r.Tag, comp.ReleaseTagPrefix)) {
-				continue
-			}
-			// The release prefix ("release-" for nginx, "controller-" for ingress-nginx) isn't part of the version.
-			v, ok := stable(strings.TrimPrefix(r.Tag, comp.ReleaseTagPrefix), comp.TagPrefix, include)
-			if !ok {
-				continue
-			}
+	_, err := c.githubReleases(ctx, comp, func(r ghRelease, tag string) {
+		if v, ok := stable(tag, comp.TagPrefix, include); ok {
 			// The link is rebuilt from the repo and tag rather than trusted from the response.
 			out = append(out, Note{Version: v.String(), Text: r.Body,
 				URL: "https://github.com/" + comp.GitHub + "/releases/tag/" + urlPathEscape(r.Tag)})
 		}
-		if len(rels) < 100 {
-			break
-		}
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

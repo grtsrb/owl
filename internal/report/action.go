@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"owl/internal/catalog"
 	"owl/internal/inventory"
@@ -58,7 +59,7 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 	if sc.EOL != nil {
 		e := sc.EOL.Line + " is EOL"
 		if sc.EOL.Since != nil {
-			e += " since " + sc.EOL.Since.Format("2006-01-02")
+			e += " since " + sc.EOL.Since.Format(time.DateOnly)
 		}
 		why = append(why, e)
 	}
@@ -85,7 +86,7 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 			if sc.EOLSoon != nil && len(sc.Advisories) == 0 {
 				// At the newest patch of a line that ends soon: the work is planning the next line.
 				return Action{ActionUpgrade, "Plan the move off " + sc.Line,
-					strings.Join(append(why, sc.Line+" reaches end-of-life on "+sc.EOLSoon.Format("2006-01-02")), "; "), ""}
+					strings.Join(append(why, sc.Line+" reaches end-of-life on "+sc.EOLSoon.Format(time.DateOnly)), "; "), ""}
 			}
 			return Action{ActionCheck, "Review advisories", strings.Join(append(why, "no newer patch in "+sc.Line), "; "), ""}
 		}

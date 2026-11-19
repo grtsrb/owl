@@ -176,6 +176,36 @@ type ghRelease struct {
 	Draft       bool      `json:"draft"`
 	Prerelease  bool      `json:"prerelease"`
 	PublishedAt time.Time `json:"published_at"`
+	Body        string    `json:"body"`
+}
+
+// githubReleases pages through the newest 300 GitHub releases (one cache entry per page, shared by
+// lines and notes) and calls fn for each published release whose tag has the component's release tag
+// prefix, with the tag minus that prefix (nginx "release-1.27.4" → "1.27.4"). stale: a page came from
+// the cache after an upstream failure.
+func (c *Client) githubReleases(ctx context.Context, comp *catalog.Component, fn func(r ghRelease, tag string)) (stale bool, err error) {
+	for page := 1; page <= 3; page++ {
+		u := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", comp.GitHub, page)
+		res, err := c.F.get(ctx, fmt.Sprintf("gh-releases:%s:%d", comp.GitHub, page), u)
+		if err != nil {
+			return stale, err
+		}
+		stale = stale || res.Stale
+		var rels []ghRelease
+		if err := json.Unmarshal(res.Body, &rels); err != nil {
+			return stale, err
+		}
+		for _, r := range rels {
+			if r.Draft || r.Prerelease || !strings.HasPrefix(r.Tag, comp.ReleaseTagPrefix) {
+				continue
+			}
+			fn(r, strings.TrimPrefix(r.Tag, comp.ReleaseTagPrefix))
+		}
+		if len(rels) < 100 {
+			break
+		}
+	}
+	return stale, nil
 }
 
 // githubLines derives release lines (per minor) from GitHub releases, newest 300.
@@ -185,37 +215,19 @@ func (c *Client) githubLines(ctx context.Context, comp *catalog.Component, info 
 		date time.Time
 	}
 	best := map[string]found{} // line -> newest stable release
-	for page := 1; page <= 3; page++ {
-		u := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", comp.GitHub, page)
-		res, err := c.F.get(ctx, fmt.Sprintf("gh-releases:%s:%d", comp.GitHub, page), u)
-		if err != nil {
-			return err
+	stale, err := c.githubReleases(ctx, comp, func(r ghRelease, tag string) {
+		v, ok := catalog.ParseVersion(tag, comp.TagPrefix)
+		if !ok || v.Prerelease != "" || v.Parts < 2 {
+			return
 		}
-		info.Stale = info.Stale || res.Stale
-		var rels []ghRelease
-		if err := json.Unmarshal(res.Body, &rels); err != nil {
-			return err
+		line := fmt.Sprintf("%d.%d", v.Major, v.Minor)
+		if cur, ok := best[line]; !ok || v.Compare(cur.v) > 0 {
+			best[line] = found{v, r.PublishedAt}
 		}
-		for _, r := range rels {
-			if r.Draft || r.Prerelease {
-				continue
-			}
-			if comp.ReleaseTagPrefix != "" && !strings.HasPrefix(r.Tag, comp.ReleaseTagPrefix) {
-				continue
-			}
-			// Same as notes.go: the release tag prefix (nginx "release-") comes off before parsing.
-			v, ok := catalog.ParseVersion(strings.TrimPrefix(r.Tag, comp.ReleaseTagPrefix), comp.TagPrefix)
-			if !ok || v.Prerelease != "" || v.Parts < 2 {
-				continue
-			}
-			line := fmt.Sprintf("%d.%d", v.Major, v.Minor)
-			if cur, ok := best[line]; !ok || v.Compare(cur.v) > 0 {
-				best[line] = found{v, r.PublishedAt}
-			}
-		}
-		if len(rels) < 100 {
-			break
-		}
+	})
+	info.Stale = info.Stale || stale
+	if err != nil {
+		return err
 	}
 	for name, f := range best {
 		d := f.date
@@ -470,7 +482,7 @@ func newestLatest(ls []ReleaseLine) string {
 }
 
 func parseDate(s string) *time.Time {
-	for _, layout := range []string{"2006-01-02", time.RFC3339} {
+	for _, layout := range []string{time.DateOnly, time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return &t
 		}

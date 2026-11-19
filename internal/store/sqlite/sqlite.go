@@ -306,6 +306,11 @@ func (d *DB) PutCache(ctx context.Context, e store.CacheEntry) error {
 	return err
 }
 
+func (d *DB) TouchCache(ctx context.Context, key string, at time.Time) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE upstream_cache SET fetched_at=? WHERE key=?`, at.UTC().Format(ts), key)
+	return err
+}
+
 func (d *DB) Close() error { return d.db.Close() }
 
 func now() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
