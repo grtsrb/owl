@@ -225,7 +225,7 @@ var tokenWrites = map[string]bool{
 // tokenRefused: reads are allowed except sign-in internals (/auth/… other than GET /auth/me); writes only
 // from tokenWrites, and only with an effective write scope (read-only POSTs excepted).
 func tokenRefused(r *http.Request, pattern string, sess *store.Session) string {
-	if readOnly(r) && r.Method != http.MethodPost {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		if strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && pattern != "GET /api/v1/auth/me" {
 			return "API tokens can't do this: use the Owl web UI"
 		}

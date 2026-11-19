@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -144,9 +143,8 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 
 // revokeToken: your own token (browser session), or anyone's if you're an admin.
 func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		httpError(w, http.StatusNotFound, "token not found")
+	id, ok := pathID(w, r, "token not found")
+	if !ok {
 		return
 	}
 	sess := sessionFrom(r)
