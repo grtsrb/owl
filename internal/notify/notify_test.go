@@ -158,7 +158,7 @@ func (e *env) crit(pairs ...string) {
 		c := byComp[comp]
 		if c == nil {
 			c = &report.ComponentReport{ID: comp, Name: strings.ToUpper(comp[:1]) + comp[1:], Level: report.LevelCritical,
-				Action: report.Action{Kind: report.ActionUpgrade, Text: "Upgrade to 2.0.0", Why: "1 critical advisory"}}
+				Action: report.Action{Kind: report.ActionUpgrade, Text: "Upgrade to 2.0.0", Why: "1 critical advisory", To: "2.0.0"}}
 			byComp[comp] = c
 			order = append(order, comp)
 		}
@@ -428,7 +428,7 @@ func TestDigestContent(t *testing.T) {
 		Target: &policy.Target{Version: "7.2.6"},
 		Instances: []report.ScoredInstance{{Instance: inventory.Instance{Cluster: "it-hetzner", Stage: "live", Version: "7.2.5"},
 			Score:  report.Score{Level: report.LevelHigh},
-			Action: report.Action{Kind: report.ActionPatch, Text: "Patch to 7.2.6", Why: "fixes 1 high advisory"}}}}}
+			Action: report.Action{Kind: report.ActionPatch, Text: "Patch to 7.2.6", Why: "fixes 1 high advisory", To: "7.2.6"}}}}}
 	d, err := e.n.BuildDigest(ctx)
 	if err != nil {
 		t.Fatal(err)

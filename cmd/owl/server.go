@@ -335,11 +335,7 @@ func runUpstream(args []string) error {
 		fmt.Printf("%-28s latest=%-10s archived=%-5v advisories=%-11s lines=[%s] %s\n", c.ID, info.LatestStable,
 			info.Archived, info.AdvisorySource, strings.Join(lines, ", "), strings.Join(info.Errors, "; "))
 		if *version != "" {
-			ms, err := cl.AdvisoriesFor(ctx, c, info, *version)
-			if err != nil {
-				return err
-			}
-			for _, m := range ms {
+			for _, m := range upstream.AdvisoriesFor(info, *version) {
 				fmt.Printf("    %-22s %-9s certain=%-5v fixed=%v %s\n", m.ID, m.Severity, m.Certain, m.FixedIn, m.Summary)
 			}
 		}

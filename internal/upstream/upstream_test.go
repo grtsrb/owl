@@ -46,7 +46,7 @@ func TestRepoAdvisoryMatching(t *testing.T) {
 		{ID: "B", Severity: "low", Ranges: []AffectedRange{{Range: ">= 2.0.0"}}},
 		{ID: "C", Severity: "high", Ranges: []AffectedRange{{Range: "All", Patched: "TBD"}}},
 	}}
-	ms, err := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{ID: "x"}, info, "1.13.1")
+	ms, err := AdvisoriesFor(info, "1.13.1"), error(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestEventsToRanges(t *testing.T) {
 		eventsToRanges([]map[string]string{{"introduced": "0"}, {"fixed": "1.11.5"}}),
 		eventsToRanges([]map[string]string{{"introduced": "1.12.0-beta.0"}, {"fixed": "1.12.1"}})...)}}}
 	for v, want := range map[string]bool{"1.11.3": true, "1.11.5": false, "1.12.0": true, "1.15.1": false} {
-		ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, v)
+		ms, _ := AdvisoriesFor(info, v), error(nil)
 		if (len(ms) == 1) != want {
 			t.Errorf("%s: affected=%v want %v", v, len(ms) == 1, want)
 		}
@@ -143,7 +143,7 @@ func TestOpenRangesWithPatchLists(t *testing.T) {
 	}}
 	check := func(version string, want map[string]string) {
 		t.Helper()
-		ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, version)
+		ms, _ := AdvisoriesFor(info, version), error(nil)
 		got := map[string]string{}
 		for _, m := range ms {
 			got[m.ID] = map[bool]string{true: "affected", false: "review"}[m.Certain]
@@ -167,7 +167,7 @@ func TestDistroBuildsAndExactRanges(t *testing.T) {
 		{ID: "exact", Ranges: []AffectedRange{{Range: "= 1.2.3"}}},
 	}}
 	affected := func(version string) map[string]bool {
-		ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, version)
+		ms, _ := AdvisoriesFor(info, version), error(nil)
 		got := map[string]bool{}
 		for _, m := range ms {
 			got[m.ID] = m.Certain
@@ -218,11 +218,11 @@ func TestGitHubLinesReleaseTagPrefix(t *testing.T) {
 // OSV: introduced without a fixed event = affected with no fix (not "needs review").
 func TestOSVOpenRangeIsAffectedNoFix(t *testing.T) {
 	info := &Info{Advisories: []Advisory{{ID: "OSV-1", Ranges: eventsToRanges([]map[string]string{{"introduced": "1.3.0"}})}}}
-	ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, "1.3.4")
+	ms, _ := AdvisoriesFor(info, "1.3.4"), error(nil)
 	if len(ms) != 1 || !ms[0].Certain || !ms[0].NoFix {
 		t.Fatalf("want certain, no fix: %+v", ms)
 	}
-	if ms, _ := (&Client{}).AdvisoriesFor(context.Background(), &catalog.Component{}, info, "1.2.9"); len(ms) != 0 {
+	if ms, _ := AdvisoriesFor(info, "1.2.9"), error(nil); len(ms) != 0 {
 		t.Fatalf("below introduced: %+v", ms)
 	}
 }

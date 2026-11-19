@@ -551,11 +551,7 @@ func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 			case info == nil:
 				va.Error = "upstream data not loaded yet"
 			default:
-				ms, err := s.Upstream.AdvisoriesFor(r.Context(), comp, info, in.Version)
-				va.Advisories = ms
-				if err != nil {
-					va.Error = err.Error()
-				}
+				va.Advisories = upstream.AdvisoriesFor(info, in.Version)
 			}
 			if va.Advisories == nil {
 				va.Advisories = []upstream.Match{}
