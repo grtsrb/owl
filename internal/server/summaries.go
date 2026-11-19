@@ -76,11 +76,9 @@ func (s *Server) putSummarySettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for k, v := range set.Values() {
-		if err := s.Store.SetSetting(r.Context(), k, v); err != nil {
-			s.fail(w, err)
-			return
-		}
+	if err := s.saveSettings(r.Context(), set.Values()); err != nil {
+		s.fail(w, err)
+		return
 	}
 	s.audit(r, "summary settings changed", "mode", set.Mode, "dailyCap", summary.USD(set.DailyCapMicros),
 		"monthlyCap", summary.USD(set.MonthlyCapMicros), "maxInputTokens", set.MaxInputTokens, "maxOutputTokens", set.MaxOutputTokens)

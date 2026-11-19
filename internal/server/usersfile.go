@@ -161,15 +161,8 @@ func planUsers(current []store.User, desired []fileUser, prune bool) UsersPlan {
 
 // readUsersFile decodes and validates the body (users files can be bigger than other bodies).
 func (s *Server) readUsersFile(w http.ResponseWriter, r *http.Request) (*usersFileBody, bool) {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
-		return nil, false
-	}
 	var b usersFileBody
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&b); err != nil {
-		httpError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSONMax(w, r, &b, 1<<20) {
 		return nil, false
 	}
 	if probs := validateUsersFile(&b); len(probs) > 0 {

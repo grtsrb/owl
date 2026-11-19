@@ -62,10 +62,13 @@ func (s *Server) ReloadCatalog(ctx context.Context) error {
 		if err := json.Unmarshal(r.Data, &c); err != nil {
 			bad[r.ID] = "stored data unreadable: " + err.Error()
 			c = catalog.Component{ID: r.ID, Name: r.ID}
-		} else if c.ID = r.ID; catalog.ValidateCustom(&c) != nil {
-			bad[r.ID] = "stored data invalid: " + catalog.ValidateCustom(&c).Error()
 		} else {
-			comps = append(comps, c)
+			c.ID = r.ID
+			if err := catalog.ValidateCustom(&c); err != nil {
+				bad[r.ID] = "stored data invalid: " + err.Error()
+			} else {
+				comps = append(comps, c)
+			}
 		}
 		views = append(views, customView{Component: c, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt})
 	}
@@ -264,9 +267,7 @@ func (s *Server) customChanged(ctx context.Context, id string) {
 		}
 		s.mu.Unlock()
 		s.kickNotify()
-		if s.Summaries != nil {
-			s.Summaries.Kick()
-		}
+		s.kickSummaries()
 	}()
 }
 
@@ -316,32 +317,17 @@ func (s *Server) previewCustom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clustersOf := map[string]map[string]bool{}
-	collect := func(in inventory.Instance) {
+	for _, in := range inv.All() {
+		if in.Workload == "" {
+			continue // a cluster-source version (kubernetes, rke2, k3s), not an image
+		}
 		if clustersOf[in.Image] == nil {
 			clustersOf[in.Image] = map[string]bool{}
 		}
 		clustersOf[in.Image][in.Cluster] = true
 	}
-	for _, cv := range inv.Components {
-		for _, in := range cv.Instances {
-			collect(in)
-		}
-	}
-	for _, list := range [][]inventory.Instance{inv.Unpinned, inv.InHouse, inv.Ignored} {
-		for _, in := range list {
-			collect(in)
-		}
-	}
-	for _, u := range inv.Unrecognized {
-		for _, in := range u.Instances {
-			collect(in)
-		}
-	}
 	readable := 0
 	for img, cls := range clustersOf {
-		if strings.HasPrefix(img, "kubernetes") || img == "" {
-			continue
-		}
 		id := solo.Identify(img)
 		if id.Component == nil {
 			continue
@@ -475,14 +461,7 @@ func (s *Server) runningTag(ctx context.Context, repo string) string {
 	if err != nil {
 		return "latest"
 	}
-	all := append(append(append([]inventory.Instance{}, inv.Unpinned...), inv.InHouse...), inv.Ignored...)
-	for _, u := range inv.Unrecognized {
-		all = append(all, u.Instances...)
-	}
-	for _, cv := range inv.Components {
-		all = append(all, cv.Instances...)
-	}
-	for _, in := range all {
+	for _, in := range inv.All() {
 		if r := catalog.ParseRef(in.Image); r.Name() == repo && r.Tag != "" {
 			return r.Tag
 		}

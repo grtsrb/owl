@@ -18,6 +18,12 @@ func (s *Server) notifyRoutes(mux *http.ServeMux) {
 
 // kickNotify asks notifications to look for changes (after a push, an upstream refresh or an admin change
 // that can change levels: policies, overrides, clusters).
+func (s *Server) kickSummaries() {
+	if s.Summaries != nil {
+		s.Summaries.Kick()
+	}
+}
+
 func (s *Server) kickNotify() {
 	if s.Notify != nil {
 		s.Notify.Kick()
@@ -83,11 +89,9 @@ func (s *Server) putNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before := notify.ParseSettings(m)
-	for k, v := range in.Values() {
-		if err := s.Store.SetSetting(r.Context(), k, v); err != nil {
-			s.fail(w, err)
-			return
-		}
+	if err := s.saveSettings(r.Context(), in.Values()); err != nil {
+		s.fail(w, err)
+		return
 	}
 	if in.Digest && !before.Digest {
 		if err := s.Notify.DigestEnabled(r.Context()); err != nil {
@@ -101,24 +105,20 @@ func (s *Server) putNotifications(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
-	if s.notifyOff(w) {
-		return
-	}
-	err := s.Notify.SendTest(context.WithoutCancel(r.Context()))
-	s.audit(r, "notification test sent", "ok", err == nil)
-	if err != nil {
-		httpError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
+	s.sendNow(w, r, "notification test sent", func(ctx context.Context) error { return s.Notify.SendTest(ctx) })
 }
 
 func (s *Server) digestNow(w http.ResponseWriter, r *http.Request) {
+	s.sendNow(w, r, "digest sent manually", func(ctx context.Context) error { return s.Notify.SendDigestNow(ctx) })
+}
+
+// sendNow runs a manual send (not cancelled when the browser goes away) and audits it.
+func (s *Server) sendNow(w http.ResponseWriter, r *http.Request, action string, send func(context.Context) error) {
 	if s.notifyOff(w) {
 		return
 	}
-	err := s.Notify.SendDigestNow(context.WithoutCancel(r.Context()))
-	s.audit(r, "digest sent manually", "ok", err == nil)
+	err := send(context.WithoutCancel(r.Context()))
+	s.audit(r, action, "ok", err == nil)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return

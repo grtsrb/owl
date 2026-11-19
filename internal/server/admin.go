@@ -31,14 +31,36 @@ const (
 // decodeJSON enforces JSON-only writes (with no CORS headers, a cross-site page can't send them) and
 // a small body.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+	return decodeJSONMax(w, r, v, 16<<10)
+}
+
+func decodeJSONMax(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	if !requireJSON(w, r) {
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// saveSettings writes each key (settings are independent rows; the first error stops).
+func (s *Server) saveSettings(ctx context.Context, kv map[string]string) error {
+	for k, v := range kv {
+		if err := s.Store.SetSetting(ctx, k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// requireJSON: the Content-Type half of decodeJSON, for handlers that decode the body themselves.
+func requireJSON(w http.ResponseWriter, r *http.Request) bool {
+	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
 		return false
 	}
 	return true
@@ -432,11 +454,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "agentImage: an image reference like registry.example.com/team/owl:0.7.0")
 		return
 	}
-	for k, v := range map[string]string{settingServerURL: b.ServerURL, settingAgentImage: b.AgentImage} {
-		if err := s.Store.SetSetting(r.Context(), k, v); err != nil {
-			s.fail(w, err)
-			return
-		}
+	if err := s.saveSettings(r.Context(), map[string]string{settingServerURL: b.ServerURL, settingAgentImage: b.AgentImage}); err != nil {
+		s.fail(w, err)
+		return
 	}
 	s.audit(r, "settings changed", "serverURL", b.ServerURL, "agentImage", b.AgentImage)
 	writeJSON(w, http.StatusOK, b)

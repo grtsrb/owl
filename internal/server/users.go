@@ -138,11 +138,7 @@ func (s *Server) resetUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if on, err := s.passwordLogin(r.Context()); err != nil {
-		s.fail(w, err)
-		return
-	} else if !on {
-		httpError(w, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl db user reset-link` on the server.")
+	if !s.requirePasswordLogin(w, r, http.StatusConflict, "Password sign-in is off. In an emergency, run `owl db user reset-link` on the server.") {
 		return
 	}
 	u, err := s.Store.GetUser(r.Context(), id)

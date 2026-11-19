@@ -43,6 +43,18 @@ func (s *Server) signinRoutes(mux *http.ServeMux) {
 // passwordLogin reports whether password sign-in is on. "off" only counts while Google sign-in is
 // configured: if the Google settings disappear (env changed, restart), passwords come back on by
 // themselves instead of leaving nobody able to sign in.
+// requirePasswordLogin answers code/msg (or the store error) when password sign-in is off.
+func (s *Server) requirePasswordLogin(w http.ResponseWriter, r *http.Request, code int, msg string) bool {
+	on, err := s.passwordLogin(r.Context())
+	switch {
+	case err != nil:
+		s.fail(w, err)
+	case !on:
+		httpError(w, code, msg)
+	}
+	return err == nil && on
+}
+
 func (s *Server) passwordLogin(ctx context.Context) (bool, error) {
 	m, err := s.Store.GetSettings(ctx)
 	if err != nil {
@@ -123,11 +135,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	if on, err := s.passwordLogin(r.Context()); err != nil {
-		s.fail(w, err)
-		return
-	} else if !on {
-		httpError(w, http.StatusForbidden, "Password sign-in is turned off: sign in with Google.")
+	if !s.requirePasswordLogin(w, r, http.StatusForbidden, "Password sign-in is turned off: sign in with Google.") {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(b.Email))
@@ -197,11 +205,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := sessionFrom(r)
-	if on, err := s.passwordLogin(r.Context()); err != nil {
-		s.fail(w, err)
-		return
-	} else if !on {
-		httpError(w, http.StatusForbidden, "Password sign-in is turned off.")
+	if !s.requirePasswordLogin(w, r, http.StatusForbidden, "Password sign-in is turned off.") {
 		return
 	}
 	if !sess.User.HasPassword {
@@ -297,11 +301,7 @@ func (s *Server) acceptToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if kind == store.TokenInvite {
-		if on, err := s.passwordLogin(r.Context()); err != nil {
-			s.fail(w, err)
-			return
-		} else if !on {
-			httpError(w, http.StatusForbidden, "Password sign-in is turned off: accept the invite by signing in with Google.")
+		if !s.requirePasswordLogin(w, r, http.StatusForbidden, "Password sign-in is turned off: accept the invite by signing in with Google.") {
 			return
 		}
 	}

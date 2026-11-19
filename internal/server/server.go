@@ -280,10 +280,8 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("snapshot ingested", "cluster", cluster.Name, "workloads", len(snap.Workloads),
 		"changes", len(res.Changes), "first", res.First, "agent", snap.AgentVersion)
-	if s.Summaries != nil && (len(res.Changes) > 0 || res.First) {
-		s.Summaries.Kick() // running versions changed: the upgrades needed may have too
-	}
 	if len(res.Changes) > 0 || res.First {
+		s.kickSummaries() // running versions changed: the upgrades needed may have too
 		s.kickNotify()
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"cluster": cluster.Name, "changes": len(res.Changes)})
@@ -470,10 +468,8 @@ func (s *Server) RefreshUpstream(ctx context.Context) {
 	s.upstream = fresh
 	s.mu.Unlock()
 	s.Log.Info("upstream refreshed", "components", len(fresh), "withErrors", errs, "took", time.Since(start).Round(time.Millisecond))
-	if s.Summaries != nil {
-		s.Summaries.Kick() // new targets or releases: jumps and notes may have changed
-	}
-	s.kickNotify() // new advisories or a passed EOL date change levels without any cluster change
+	s.kickSummaries() // new targets or releases: jumps and notes may have changed
+	s.kickNotify()    // new advisories or a passed EOL date change levels without any cluster change
 }
 
 // RunUpstreamRefresher refreshes now and then every interval until ctx is done.
@@ -588,8 +584,7 @@ func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		httpError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+	if !requireJSON(w, r) {
 		return
 	}
 	scope := r.PathValue("scope")
