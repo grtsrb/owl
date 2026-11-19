@@ -196,7 +196,7 @@ func TestActionSupportedLine(t *testing.T) {
 		!strings.Contains(a.Why, "8.19 supported until 2027-07-15") || !strings.Contains(a.Why, "plan the move to 9.4.9") {
 		t.Errorf("older patch: %s %+v", sc.Level, a)
 	}
-	if sc, a := act("8.19.25"); sc.Level != LevelMedium || a.Text != "Plan the move to 9.4.9" {
+	if sc, a := act("8.19.25"); sc.Level != LevelMedium || a.Kind != ActionPlan || a.Text != "Plan the move to 9.4.9" || a.To != "9.4.9" {
 		t.Errorf("latest patch: %s %+v", sc.Level, a)
 	}
 	if sc, _ := act("8.18.8"); sc.Level != LevelHigh || sc.Supported != "" {
@@ -211,7 +211,16 @@ func TestActionSupportedLine(t *testing.T) {
 	if a := ComponentAction([]ScoredInstance{si("8.19.20"), si("8.19.22")}, &tg); a.Text != "Patch to 8.19.25" {
 		t.Errorf("component, all on the supported line: %+v", a)
 	}
-	if a := ComponentAction([]ScoredInstance{si("8.19.20"), si("8.19.25")}, &tg); strings.HasPrefix(a.Text, "Update to") {
+	if a := ComponentAction([]ScoredInstance{si("8.19.20"), si("8.19.25")}, &tg); a.Text != "Patch to 8.19.25" {
 		t.Errorf("component, patch + plan: %+v", a)
+	}
+	if a := ComponentAction([]ScoredInstance{si("8.19.25")}, &tg); a.Kind != ActionPlan || a.Text != "Plan the move to 9.4.9" {
+		t.Errorf("component, all planning: %+v", a)
+	}
+	// Shipped by a distribution: the planning text names it and keeps the version.
+	in := inventory.Instance{Version: "8.19.25", Status: "identified", Image: "img:8.19.25", BundledWith: "k3s", BundledName: "k3s"}
+	sc := ScoreInstance(in, info, &tg, nil, now)
+	if a := ActionFor(in, sc, &tg, info); a.Text != "Comes with k3s — plan the k3s upgrade that ships 9.4.9 or newer" {
+		t.Errorf("bundled planning: %+v", a)
 	}
 }

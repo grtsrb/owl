@@ -540,7 +540,7 @@ components:
       - registry.gitlab.com/gitlab-org/gitlab-runner
       - registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper
     # Tags: v18.5.0, alpine-v18.5.0, ubuntu-v18.5.0; helper x86_64-v18.5.0, alpine3.21-x86_64-v18.5.0.
-    versionPattern: 'v(\d+\.\d+\.\d+)'
+    versionPattern: 'v(\d+\.\d+\.\d+(?:-rc\d+)?)'   # keeps a release candidate one (v18.6.0-rc1)
     github: gitlabhq/gitlab-runner             # read-only mirror (no releases): archived status only
     eol: gitlab-runner                         # release lines and support dates
     notes: Developed on gitlab.com — release lines and dates come from endoflife.date, not GitHub releases.
@@ -553,11 +553,12 @@ components:
 
   - id: actions-runner-controller-legacy
     name: Actions Runner Controller (legacy, summerwind)
-    images: [summerwind/actions-runner-controller]
-    versionPattern: '^v(\d+\.\d+\.\d+)$'       # the image also carries gha-runner-scale-set-* tags
+    images: [summerwind/actions-runner-controller]   # its gha-runner-scale-set-* tags don't parse: unpinned
     github: actions/actions-runner-controller
     releaseTagPrefix: "v"
-    notes: The legacy mode, superseded by runner scale sets (actions-runner-controller).
+    notes: The legacy mode, superseded by runner scale sets (actions-runner-controller). Shares the GitHub repository's advisories with the scale-set controller.
+    # Same repo as actions-runner-controller: repo advisories apply to both version series (none published
+    # as of 2026-11-19); check the ranges if that changes.
 
   - id: actions-runner
     name: GitHub Actions runner
@@ -624,35 +625,39 @@ components:
       - rancher/hardened-snapshot-controller
       - rancher/mirrored-sig-storage-snapshot-controller
       - rancher/mirrored-sig-storage-snapshot-validation-webhook
+      - rancher/mirrored-longhornio-csi-snapshotter
     bundledWith:
       rancher/hardened-csi-snapshotter: rke2
       rancher/hardened-snapshot-controller: rke2
+      rancher/mirrored-sig-storage-snapshot-controller: rke2           # older RKE2 releases
+      rancher/mirrored-sig-storage-snapshot-validation-webhook: rke2
     github: kubernetes-csi/external-snapshotter
     releaseTagPrefix: "v"                      # not client/vx.y.z
 
   - id: csi-provisioner
     name: CSI external-provisioner
-    images: [registry.k8s.io/sig-storage/csi-provisioner, longhornio/csi-provisioner]
+    images: [registry.k8s.io/sig-storage/csi-provisioner, longhornio/csi-provisioner, rancher/mirrored-longhornio-csi-provisioner]
     github: kubernetes-csi/external-provisioner
 
   - id: csi-attacher
     name: CSI external-attacher
-    images: [registry.k8s.io/sig-storage/csi-attacher, longhornio/csi-attacher]
+    images: [registry.k8s.io/sig-storage/csi-attacher, longhornio/csi-attacher, rancher/mirrored-longhornio-csi-attacher]
     github: kubernetes-csi/external-attacher
 
   - id: csi-resizer
     name: CSI external-resizer
-    images: [registry.k8s.io/sig-storage/csi-resizer, longhornio/csi-resizer]
+    images: [registry.k8s.io/sig-storage/csi-resizer, longhornio/csi-resizer, rancher/mirrored-longhornio-csi-resizer]
     github: kubernetes-csi/external-resizer
 
   - id: csi-node-driver-registrar
     name: CSI node-driver-registrar
-    images: [registry.k8s.io/sig-storage/csi-node-driver-registrar, longhornio/csi-node-driver-registrar]
+    images: [registry.k8s.io/sig-storage/csi-node-driver-registrar, longhornio/csi-node-driver-registrar,
+      rancher/mirrored-longhornio-csi-node-driver-registrar]
     github: kubernetes-csi/node-driver-registrar
 
   - id: csi-livenessprobe
     name: CSI livenessprobe
-    images: [registry.k8s.io/sig-storage/livenessprobe, longhornio/livenessprobe]
+    images: [registry.k8s.io/sig-storage/livenessprobe, longhornio/livenessprobe, rancher/mirrored-longhornio-livenessprobe]
     github: kubernetes-csi/livenessprobe
 
   - id: csi-external-health-monitor

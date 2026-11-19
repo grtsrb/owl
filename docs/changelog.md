@@ -12,7 +12,10 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
   Kubernetes CSI sidecars — snapshotter/snapshot-controller, provisioner, attacher, resizer,
   node-driver-registrar, livenessprobe, health monitor — including Longhorn's `longhornio/csi-*` copies
   and RKE2's snapshot controller.
-- Medium on a supported line: the component's action stays "patch first" (planning isn't a step).
+- Medium on a supported line: the newest patch of the line first; on it, "Plan the move to <target>" (a
+  new `plan` action kind in the API), which never replaces a real step in the component's summary.
+- RKE2's older snapshot-controller copies are RKE2-managed; Rancher's `mirrored-longhornio-csi-*` copies
+  are recognized. GitLab Runner release candidates stay pre-releases.
 - Not included: Tekton (image names carry build hashes), MinIO (date tags, no community images).
 
 ## Milestone 13, batch 1 — 36 more built-in components

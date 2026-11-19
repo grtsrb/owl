@@ -190,7 +190,9 @@ Notes are shown next to an instance but **never change its level**:
 Each component has one **goal**, the same whatever clusters you're looking at — e.g. "Update to
 1.14.7 — fixes 11 high advisories", "Replace — retired upstream", "Pin an exact version", "Plan the move off 1.35" (newest patch of a
 line that reaches end-of-life soon). When clusters are ahead of the policy target and only need a
-patch in their own line, the goal says that ("Patch to 1.37.2") rather than "Update to" the older target. Below it,
+patch in their own line, the goal says that ("Patch to 1.37.2") rather than "Update to" the older target.
+On a line upstream still supports but far behind (Medium), it's the newest patch of that line first
+("Patch to 8.19.25"), then "Plan the move to 9.4.9" once on it. Below it,
 one line per group of clusters says what each needs ("it-hetzner 1.14.6 → patch", "it-aws-test,
 it-aws-prod 1.13.1 → 1 line behind"). The action is derived from the level and its reasons, never
 the other way round.

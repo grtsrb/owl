@@ -34,7 +34,7 @@ export interface Instance {
   bundledWith?: string; bundledName?: string;
   desiredReplicas: number; running?: RunningImage[];
 }
-export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update";
+export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update" | "plan";
 export interface Action { kind: ActionKind; text: string; why: string }
 export interface ScoredInstance extends Instance { score: Score; action: Action }
 
