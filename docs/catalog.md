@@ -110,8 +110,9 @@ use the actions on a cluster's **Unrecognized images** card instead of editing t
 | ignore | Hidden from the unrecognized list. |
 
 Overrides are per repository (across all clusters), stored in the database, included in backups and
-listed with **Undo** in Settings → Catalog. **In-house** and **ignore** always apply, even after a newer
-Owl's catalog learns the image — an upgrade never undoes your choice (Settings shows "Owl now recognizes
-this as …"). **Map** applies only while the catalog doesn't recognize the image; once a built-in entry
-covers it, the built-in wins and Settings shows "Now covered by built-in … — remove?". Registries passed
+listed with **Undo** in Settings → Catalog. **In-house** and **ignore** apply even after a newer Owl's
+built-in catalog learns the image — an upgrade never undoes your choice (Settings shows "Owl now
+recognizes this as …"); only a component you add yourself for that repository takes precedence. **Map**
+applies only while the catalog doesn't recognize the image; once a component covers it, that one wins
+and Settings shows "Now covered by … — remove?". Registries passed
 in `--internal-registries` are in-house without any override.

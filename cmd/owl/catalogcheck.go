@@ -54,14 +54,17 @@ func runCatalogCheck(args []string) error {
 		info := cl.Refresh(ctx, c)
 		fails := append([]string(nil), info.Errors...)
 		if len(info.Lines) == 0 && len(info.Errors) == 0 {
-			fails = append(fails, "no releases found on "+c.GitHub+" (check releaseTagPrefix)")
+			if c.GitHub != "" {
+				fails = append(fails, "no releases found on "+c.GitHub+" (check releaseTagPrefix)")
+			} else {
+				fails = append(fails, "no release lines on endoflife.date "+c.EOL)
+			}
 		}
 		if info.Archived {
 			warns = append(warns, c.GitHub+" is archived on GitHub")
 		}
-		gh := info.LatestStable
-		if c.EOL != "" {
-			gh = cl.GitHubLatest(ctx, c)
+		if c.EOL != "" && c.GitHub != "" {
+			gh := cl.GitHubLatest(ctx, c)
 			a, okA := catalog.ParseVersion(info.LatestStable, "")
 			b, okB := catalog.ParseVersion(gh, "")
 			switch {

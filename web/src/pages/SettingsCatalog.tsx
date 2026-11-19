@@ -4,6 +4,7 @@ import { api, useIsAdmin, writeErrorText, type CatalogComponent, type CustomImpa
 import { Icon } from "../icons";
 import { Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
 import { Dialog, useWrite } from "./Settings";
+import { distroName } from "./Component";
 
 /** Settings → Catalog: components added in the UI (milestone 11) and the built-in list. Overrides follow below (Settings). */
 export default function CatalogComponents() {
@@ -90,7 +91,8 @@ function BuiltinCard() {
   if (cat.error) return <ErrorBox error={cat.error} retry={cat.reload} />;
   const builtin = (cat.data?.components ?? []).filter((c) => !c.custom);
   const where = new Map<string, string[]>();
-  for (const cv of inv.data?.components ?? []) where.set(cv.id, Object.keys(cv.versionsByCluster).sort());
+  // From the instances, not versionsByCluster: an unpinned tag (redis:latest) has no version but runs.
+  for (const cv of inv.data?.components ?? []) where.set(cv.id, [...new Set(cv.instances.map((i) => i.cluster))].sort());
   const running = builtin.filter((c) => (where.get(c.id)?.length ?? 0) > 0).length;
   const needle = q.trim().toLowerCase();
   const rows = builtin.filter((c) => {
@@ -128,7 +130,7 @@ function BuiltinCard() {
                       </span>
                     </td>
                     <td className="mono small" style={{ overflowWrap: "anywhere", minWidth: 220 }}>{c.source === "cluster" ? "from the cluster's nodes" : (c.images ?? []).map((img) => (
-                      <div key={img}>{img}{c.bundledWith?.[img] && <span className="subtle"> ({c.bundledWith[img] === "rke2" ? "RKE2" : c.bundledWith[img]})</span>}</div>
+                      <div key={img}>{img}{c.bundledWith?.[img] && <span className="subtle"> ({distroName(c.bundledWith[img])})</span>}</div>
                     ))}</td>
                     <td className="small" style={{ minWidth: 150 }}>
                       {c.github && <div><a href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer noopener">GitHub</a>

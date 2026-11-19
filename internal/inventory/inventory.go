@@ -195,7 +195,9 @@ func contains(s []string, v string) bool {
 }
 
 // Identifier identifies images like the inventory does. `ignore` and `inhouse` overrides are explicit
-// choices about a repository and always win — a catalog upgrade that learns the image must not undo them.
+// choices about a repository and win over the built-in catalog — a catalog upgrade that learns the image
+// must not undo them. A custom component claiming the repository wins over them: adding it was the
+// later, more specific choice.
 // A `map` override only applies to images the catalog doesn't recognize (once the catalog learns an
 // image, its own verified mapping wins). The second result is the override kind applied, if any.
 func Identifier(cat *catalog.Catalog, ovList []store.CatalogOverride) func(image string) (catalog.Identification, string) {
@@ -206,7 +208,7 @@ func Identifier(cat *catalog.Catalog, ovList []store.CatalogOverride) func(image
 	return func(image string) (catalog.Identification, string) {
 		id := cat.Identify(image)
 		o, ok := overrides[id.Ref.Name()]
-		if !ok || o.Kind == store.OverrideMap && id.Status != catalog.StatusUnrecognized {
+		if !ok || o.Kind == store.OverrideMap && id.Status != catalog.StatusUnrecognized || id.Component != nil && id.Component.Custom {
 			return id, ""
 		}
 		if id.Status != catalog.StatusUnrecognized && id.Status != catalog.StatusInHouse {

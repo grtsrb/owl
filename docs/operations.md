@@ -185,7 +185,8 @@ What and when: [User guide → Notifications](user-guide.md#notifications). How 
   restore, Owl records the restored state without posting anything. The switches and the schedule are
   ordinary settings and come back with the backup.
 - **After an upgrade** whose catalog recognizes images that were already running (unrecognized until
-  then), Owl doesn't alert per component: once their upstream data is in, it posts one message —
+  then), Owl doesn't alert per component: once their upstream data is in and complete (at most 24 hours
+  later if an upstream keeps failing), it posts one message —
   "Owl now recognizes N more components; M Critical" — if the Critical or unrecognized-image alert is on.
   Components deployed after the upgrade alert as usual.
 - **Delivery**: each message is tried 3 times (network errors, `429`, `5xx`; 2 s and 8 s apart). A failed

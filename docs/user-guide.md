@@ -167,7 +167,7 @@ The global policy (default `lts-or-n-1`) and per-component overrides. See
   that it doesn't — Owl fetches no upstream data for those. Filter with All / Running / Not running.
   Images RKE2 or k3s ship themselves are marked (RKE2) / (k3s).
 - **Catalog overrides** — every map / in-house / ignore decision, with **Undo**. A map that a built-in
-  component now covers says **Now covered by built-in … — remove?**; an in-house or ignore decision on an
+  component now covers says **Now covered by … — remove?**; an in-house or ignore decision on an
   image Owl now recognizes keeps applying (and says so).
 
 ### Backups & restore

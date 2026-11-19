@@ -518,8 +518,8 @@ function OverridesTab() {
             <div key={o.repository} className="list-row" style={{ flexWrap: "wrap" }}>
               <span className="mono grow" style={{ wordBreak: "break-all" }}>{o.repository}</span>
               {o.kind === "map" && o.recognizedAs
-                ? <Tag tone="warn" title="Owl's built-in catalog now recognizes this image, so this mapping no longer applies">
-                    Now covered by built-in {nameOf(o.recognizedAs)} — remove?</Tag>
+                ? <Tag tone="warn" title="Owl's catalog (built-in or one of your components) now recognizes this image, so this mapping no longer applies">
+                    Now covered by {nameOf(o.recognizedAs)} — remove?</Tag>
                 : <span className="tag tone-ok">{overrideText(o, components)}</span>}
               <span className="subtle" style={{ margin: 0 }}>{ago(o.updatedAt)}</span>
               <button className="btn small" disabled={w.busy || !hasToken}

@@ -68,8 +68,8 @@ An exact match always beats a suffix match.
 Images the catalog doesn't know end up as **unrecognized**. For each such repository you can, in
 the UI, **map** it to a known component, mark it **in-house**, or **ignore** it. These choices are
 *catalog overrides*, stored in the database and applied across all clusters. A map applies only to
-images the catalog doesn't recognize; in-house and ignore keep applying even when a newer catalog
-learns the image.
+images the catalog doesn't recognize; in-house and ignore keep applying even when a newer built-in
+catalog learns the image (a component you add yourself for that repository takes precedence).
 
 Some images are shipped and upgraded by the distribution itself — RKE2's `rancher/hardened-coredns`,
 k3s's `rancher/mirrored-coredns-coredns`. In a cluster of that distribution they're tagged

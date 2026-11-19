@@ -31,8 +31,12 @@ const (
 	metaDigestTry     = "digestTriedAt"  // last attempt (retry hourly)
 	metaDigestEnabled = "digestEnabledAt"
 	metaCatalog       = "catalogBuiltins" // built-in component ids the last check knew (comma separated)
-	metaLearning      = "catalogLearning" // running components a catalog upgrade taught Owl, upstream data pending
+	metaLearning      = "catalogLearning" // id@RFC3339 since: running components a catalog upgrade taught Owl, upstream data pending
 )
+
+// learnFor bounds how long a newly recognized component waits quietly for complete upstream data (an
+// upstream that keeps failing must not silence it forever).
+const learnFor = 24 * time.Hour
 
 // builtinsBeforeM13 is the built-in catalog of the releases that didn't record metaCatalog yet: an
 // upgrade from one of them learns everything else quietly too.
@@ -56,7 +60,8 @@ type Notifier struct {
 	// until a complete refresh — otherwise they'd be announced as "newly Critical" once it recovers.
 	Incomplete func(componentID string) bool
 	// Fetched reports whether upstream data for a component has loaded. Components a catalog upgrade
-	// taught Owl stay quiet until it has (nil = always loaded).
+	// taught Owl stay quiet until it has, completely (see Incomplete), or for learnFor at most
+	// (nil = always loaded).
 	Fetched   func(componentID string) bool
 	Webhook   *Webhook    // nil = OWL_MATTERMOST_WEBHOOK_URL not set
 	Mail      mail.Sender // nil = no SMTP: no digest email
@@ -184,6 +189,12 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Which components have complete upstream data — decided before the report is built, so a fetch that
+	// lands in between can't mark a component learned against a report without its data.
+	complete := map[string]bool{}
+	for _, c := range n.cat().Components {
+		complete[c.ID] = (n.Fetched == nil || n.Fetched(c.ID)) && (n.Incomplete == nil || !n.Incomplete(c.ID))
+	}
 	rep, err := n.Report(ctx)
 	if err != nil {
 		return nil, err
@@ -226,7 +237,10 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 
 	// Components a newer catalog recognizes that already ran (unrecognized before): recorded quietly
 	// once their upstream data is in, then one summary instead of an alert per component.
-	learning, learned := n.catalogLearned(st, inv, &delta)
+	learning, learned, err := n.catalogLearned(ctx, st, inv, complete, &delta)
+	if err != nil {
+		return nil, err
+	}
 
 	// Critical pairs: new ones alert, ones that left are recorded for the digest, pairs of deleted
 	// clusters are forgotten silently.
@@ -322,9 +336,11 @@ func (n *Notifier) check(ctx context.Context, quiet bool) ([]message, error) {
 
 // catalogLearned compares the built-in catalog with the one the last check knew. Components that are new
 // in it and already run somewhere were unrecognized images until now: they're "learning" until their
-// upstream data loads, then "learned" in exactly one check. Components deployed after the upgrade aren't
-// affected (they weren't running when the catalog changed). Updates delta's meta.
-func (n *Notifier) catalogLearned(st *store.NotifyState, inv *inventory.Inventory, delta *store.NotifyDelta) (learning, learned map[string]bool) {
+// upstream data is complete (or for learnFor), then "learned" in exactly one check. Components deployed
+// after the upgrade aren't affected (they weren't running when the catalog changed), and neither is a
+// built-in that replaces a custom component of the same id (Owl tracked it already). Updates delta's meta.
+func (n *Notifier) catalogLearned(ctx context.Context, st *store.NotifyState, inv *inventory.Inventory, complete map[string]bool,
+	delta *store.NotifyDelta) (learning, learned map[string]bool, err error) {
 	cat := n.cat()
 	var builtins []string
 	for _, c := range cat.Components {
@@ -348,37 +364,51 @@ func (n *Notifier) catalogLearned(st *store.NotifyState, inv *inventory.Inventor
 			knew[id] = true
 		}
 	}
+	custom, err := n.Store.ListCustomComponents(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, c := range custom {
+		knew[c.ID] = true
+	}
 	running := map[string]bool{}
 	for _, cv := range inv.Components {
 		running[cv.ID] = true
 	}
-	learning, learned = map[string]bool{}, map[string]bool{}
+	now := n.now()
+	since := map[string]time.Time{}
 	if st.Meta[metaLearning] != "" {
-		for _, id := range strings.Split(st.Meta[metaLearning], ",") {
-			learning[id] = true
+		for _, e := range strings.Split(st.Meta[metaLearning], ",") {
+			id, at, _ := strings.Cut(e, "@")
+			t, err := time.Parse(time.RFC3339, at)
+			if err != nil {
+				t = now
+			}
+			since[id] = t
 		}
 	}
 	for _, id := range builtins {
-		if !knew[id] && running[id] {
-			learning[id] = true
+		if _, ok := since[id]; !ok && !knew[id] && running[id] {
+			since[id] = now
 		}
 	}
+	learning, learned = map[string]bool{}, map[string]bool{}
 	var still []string
-	for id := range learning {
+	for id, t := range since {
 		switch {
 		case !running[id] || cat.ByID(id) == nil:
-			delete(learning, id) // removed meanwhile: nothing to announce
-		case n.Fetched == nil || n.Fetched(id):
-			delete(learning, id)
+			// removed meanwhile: nothing to announce
+		case complete[id] || now.Sub(t) >= learnFor:
 			learned[id] = true
 		default:
-			still = append(still, id)
+			learning[id] = true
+			still = append(still, id+"@"+t.Format(time.RFC3339))
 		}
 	}
 	sort.Strings(still)
 	delta.Meta[metaCatalog] = strings.Join(builtins, ",")
 	delta.Meta[metaLearning] = strings.Join(still, ",")
-	return learning, learned
+	return learning, learned, nil
 }
 
 // learnedDoc: "Owl now recognizes 3 more components" after a catalog upgrade, with the Critical ones.

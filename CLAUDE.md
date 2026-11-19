@@ -103,7 +103,8 @@ make dev-down
   Summaries send `comp.GitHub` as the name for custom components (tested). `internal/registry` reads
   OCI labels anonymously from the public registries in `registry.Hosts` only, on demand.
 - `internal/inventory` — computed on read from current state + catalog + catalog overrides (per
-  repository: `inhouse`/`ignore` **always** win, even over the catalog — an upgrade must not undo them;
+  repository: `inhouse`/`ignore` win over built-in matches — an upgrade must not undo them; a custom
+  component beats them;
   `map` only for images the catalog doesn't recognize). `GET /catalog/overrides` adds `recognizedAs`. Server flag `--internal-registries` marks in-house images.
 - Upstream refresh (`Server.RefreshUpstream`) covers only `runningComponents` (in some cluster's inventory)
   + custom ones; `kickFetch` (after a push with changes / a map override) → `FetchNew` in the refresher
@@ -172,7 +173,8 @@ make dev-down
   check). Pairs of a component whose upstream refresh had errors (`Incomplete`) are never resolved; pairs
   of a component gone from the catalog are dropped. Catalog upgrades: `catalogLearned` compares built-in
   ids with `notify_meta` `catalogBuiltins` (missing = `builtinsBeforeM13`); new ones already running are
-  "learning" until `Fetched`, then recorded quietly with one "Owl now recognizes N more" post.
+  "learning" until `Fetched` && !`Incomplete` (snapshotted before the report is built; ≤ `learnFor` 24 h),
+  then recorded quietly with one "Owl now recognizes N more" post; custom ids count as known.
 - `internal/upstream/notes.go` — release notes per jump: GitHub bodies or `releaseNotes` sources
   (Kubernetes CHANGELOG sections, Redis/HAProxy per-branch files with pre-releases folded into x.y.0 and
   each version taken only from its own line's file, postgresql.org HTML). Which versions belong to a

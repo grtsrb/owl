@@ -279,12 +279,14 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   snapshot plus all custom components. A push that brings a component without upstream data triggers a
   background fetch of it. A component no longer running anywhere stops being refreshed and leaves the
   in-memory map; its cache rows stay (one ETag revalidation if it comes back).
-- **Upgrades never undo a choice**: `ignore`/`inhouse` overrides are checked before the catalog. A `map` override
-  or custom component whose images a new built-in now claims: built-in wins (unchanged rule), shown as
-  "Now covered by built-in X — remove?" in Settings → Catalog.
+- **Upgrades never undo a choice**: `ignore`/`inhouse` overrides are checked before the built-in catalog (a
+  custom component claiming the repository still beats them — the later, more specific choice). A `map`
+  override or custom component whose images a new built-in now claims: built-in wins (unchanged rule), shown
+  as "Now covered by X — remove?" in Settings → Catalog.
 - **No notification flood after an upgrade**: components that become recognized because the *catalog* changed
-  (not because they were deployed) are recorded quietly; one post instead: "Owl now recognizes N more
-  components; M are Critical". Newly deployed components afterwards notify as usual.
+  (not because they were deployed) are recorded quietly once their upstream data is complete (at most 24 h);
+  one post instead: "Owl now recognizes N more components; M are Critical". A built-in replacing a custom
+  component of the same id isn't news. Newly deployed components afterwards notify as usual.
 - **Settings → Catalog** lists every built-in (searchable; GitHub / endoflife.date / OSV links) with a green dot
   + "running in N clusters" (names on hover) or a grey dot + "not running" (grey, not red: not a problem), and
   an All / Running / Not running filter. No upstream fetch for components not running, except the New

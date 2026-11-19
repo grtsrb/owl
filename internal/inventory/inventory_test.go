@@ -163,3 +163,21 @@ func TestBundledWith(t *testing.T) {
 		t.Errorf("bundled instances: %v, want %v", got, want)
 	}
 }
+
+// A custom component claiming a repository beats an in-house/ignore override on it: adding the component
+// was the later, more specific choice (the New component preview shows its tags as identified).
+func TestCustomBeatsOverride(t *testing.T) {
+	builtin, _ := catalog.Builtin()
+	cat, _ := catalog.Merge(builtin, []catalog.Component{{ID: "tool", Name: "Tool", Images: []string{"ghcr.io/acme/tool"}, GitHub: "acme/tool"}})
+	ovs := []store.CatalogOverride{
+		{Repository: "ghcr.io/acme/tool", Kind: store.OverrideInHouse},
+		{Repository: "docker.io/library/nginx", Kind: store.OverrideIgnore},
+	}
+	identify := Identifier(cat, ovs)
+	if id, ov := identify("ghcr.io/acme/tool:1.2.3"); id.Component == nil || id.Component.ID != "tool" || ov != "" {
+		t.Errorf("custom component must win over in-house: %+v %q", id, ov)
+	}
+	if id, ov := identify("nginx:1.27.4"); id.Status != catalog.StatusIgnored || ov != "ignore" {
+		t.Errorf("ignore must still win over a built-in: %+v %q", id, ov)
+	}
+}

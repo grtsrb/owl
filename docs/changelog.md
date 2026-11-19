@@ -9,8 +9,10 @@ Groundwork for a much longer built-in catalog; the new entries follow in batches
 - **Upstream data only for what runs**: the 6-hourly refresh covers components running in at least one
   cluster plus your custom ones. A component that starts running is fetched right after that agent
   report, not at the next refresh.
-- **Upgrades never undo your choices**: in-house and ignore overrides apply even when the catalog
-  learns the image. A map override a built-in now covers says "Now covered by built-in … — remove?".
+- **Upgrades never undo your choices**: in-house and ignore overrides apply even when the built-in
+  catalog learns the image (a component you add for that repository still wins). A map override a
+  component now covers says "Now covered by … — remove?"; removing an override fetches the component's
+  upstream data at once.
 - **No alert flood after an upgrade**: components a newer catalog recognizes among images already
   running are recorded quietly, with one "Owl now recognizes N more components; M Critical" message.
 - **RKE2-/k3s-managed images** (`bundledWith` in the catalog): CoreDNS, metrics-server and the

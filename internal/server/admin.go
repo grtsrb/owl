@@ -424,6 +424,7 @@ func (s *Server) deleteOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "catalog override removed", "repository", repo)
+	s.kickFetch() // the catalog (or nothing) decides again: a component may start running
 	s.kickNotify()
 	s.listOverrides(w, r)
 }
