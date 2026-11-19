@@ -123,5 +123,20 @@ func (f *Fetcher) send(req *http.Request) ([]byte, string, bool, error) {
 		return nil, "", true, nil
 	}
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	return nil, "", false, fmt.Errorf("%s %s: HTTP %d", req.Method, req.URL, resp.StatusCode)
+	return nil, "", false, &StatusError{Method: req.Method, URL: req.URL.String(), Code: resp.StatusCode}
+}
+
+// StatusError is an upstream answer other than 200/304.
+type StatusError struct {
+	Method, URL string
+	Code        int
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("%s %s: HTTP %d", e.Method, e.URL, e.Code) }
+
+// gatewayTimeout: the upstream gave up producing the answer (GitHub does for 100 releases with very large
+// notes) — a smaller page may work.
+func gatewayTimeout(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && (se.Code == http.StatusBadGateway || se.Code == http.StatusServiceUnavailable || se.Code == http.StatusGatewayTimeout)
 }

@@ -2,6 +2,20 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 13, batch 1 — 36 more built-in components
+
+- **Elastic**: ECK operator, Elasticsearch (OSV advisories via Maven), Kibana, Logstash, Beats, Elastic
+  Agent, ElastAlert 2.
+- **Networking**: Traefik (incl. k3s/RKE2 builds), Cilium + Hubble UI + certgen, Envoy (incl. Cilium's
+  build), Calico + Tigera operator, flannel + its CNI plugin, MetalLB + FRR, ExternalDNS.
+- **Certificates & secrets**: cert-manager, External Secrets Operator, Sealed Secrets.
+- **Monitoring & logging**: Prometheus, Alertmanager, Prometheus Operator, node exporter,
+  kube-state-metrics (incl. Rancher monitoring mirrors), Grafana Loki (+ Promtail), Alloy, Tempo, Mimir,
+  rollout-operator, Thanos, OpenTelemetry Collector and Operator, Fluent Bit.
+- Elastic `-SNAPSHOT` and OpenTelemetry `-nightly` tags read as pre-releases, not as the release.
+- GitHub releases are read 30 per page when GitHub times out on 100 (very large release notes).
+- After the upgrade, already running ones are announced once ("Owl now recognizes N more components").
+
 ## Cluster picker redesign
 
 - Overview and Changes: one clusters button (top right) with a popover — All / stage / tenant

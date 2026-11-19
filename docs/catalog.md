@@ -23,6 +23,45 @@ end-of-life dates and advisories. It's `internal/catalog/catalog.yaml`, compiled
 | `postgresql` | PostgreSQL | endoflife.date | none published |
 | `redpanda` | Redpanda | GitHub releases | GitHub |
 | `metrics-server` | metrics-server | GitHub releases (`v` tags) | none published |
+| `eck-operator` | Elastic Cloud on Kubernetes (ECK) operator | GitHub releases | none published |
+| `elasticsearch` | Elasticsearch | endoflife.date | OSV (Maven) |
+| `kibana` | Kibana | endoflife.date | none published |
+| `logstash` | Logstash | endoflife.date | none published |
+| `elastic-beats` | Elastic Beats | GitHub releases | none published |
+| `elastic-agent` | Elastic Agent | GitHub releases | none published |
+| `elastalert2` | ElastAlert 2 | GitHub releases | none published |
+| `traefik` | Traefik *(RKE2/k3s builds marked)* | endoflife.date | GitHub |
+| `cilium` | Cilium *(RKE2/k3s builds marked)* | endoflife.date | OSV |
+| `hubble-ui` | Hubble UI *(RKE2/k3s builds marked)* | GitHub releases | none published |
+| `cilium-certgen` | Cilium certgen *(RKE2/k3s builds marked)* | GitHub releases | none published |
+| `envoy` | Envoy *(RKE2/k3s builds marked)* | endoflife.date | GitHub |
+| `calico` | Calico *(RKE2/k3s builds marked)* | endoflife.date | OSV |
+| `tigera-operator` | Tigera operator (Calico) | GitHub releases | none published |
+| `flannel` | flannel *(RKE2/k3s builds marked)* | GitHub releases | OSV |
+| `flannel-cni-plugin` | flannel CNI plugin | GitHub releases | none published |
+| `metallb` | MetalLB | endoflife.date | none published |
+| `frr` | FRRouting (FRR) | GitHub releases (`frr-` tags) | none published |
+| `external-dns` | ExternalDNS | GitHub releases (`v` tags) | none published |
+| `cert-manager` | cert-manager | endoflife.date | OSV |
+| `external-secrets` | External Secrets Operator | GitHub releases (`v` tags) | OSV |
+| `sealed-secrets` | Sealed Secrets | GitHub releases (`v` tags) | OSV |
+| `prometheus` | Prometheus | endoflife.date | OSV |
+| `alertmanager` | Alertmanager | GitHub releases | OSV |
+| `prometheus-operator` | Prometheus Operator | GitHub releases | none published |
+| `node-exporter` | Prometheus node exporter | GitHub releases | none published |
+| `kube-state-metrics` | kube-state-metrics | GitHub releases | none published |
+| `loki` | Grafana Loki | endoflife.date | OSV |
+| `alloy` | Grafana Alloy | GitHub releases | OSV |
+| `tempo` | Grafana Tempo | GitHub releases | OSV |
+| `mimir` | Grafana Mimir | GitHub releases (`mimir-` tags) | none published |
+| `rollout-operator` | Grafana rollout-operator | GitHub releases | none published |
+| `thanos` | Thanos | GitHub releases | none published |
+| `opentelemetry-collector` | OpenTelemetry Collector | GitHub releases (`v` tags) | none published |
+| `opentelemetry-operator` | OpenTelemetry Operator | GitHub releases | GitHub |
+| `fluent-bit` | Fluent Bit | endoflife.date | GitHub |
+
+Images RKE2 or k3s ship themselves (`rancher/hardened-*`, `rancher/mirrored-*`) are listed under the
+component with `bundledWith` — see Settings → Catalog for the full image lists.
 
 "None published" means the project doesn't publish GitHub security advisories; Owl shows **no
 advisory data** for it rather than implying it's clean.

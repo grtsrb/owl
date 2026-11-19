@@ -190,9 +190,30 @@ type ghRelease struct {
 // prefix, with the tag minus that prefix (nginx "release-1.27.4" → "1.27.4"). stale: a page came from
 // the cache after an upstream failure.
 func (c *Client) githubReleases(ctx context.Context, comp *catalog.Component, fn func(r ghRelease, tag string)) (stale bool, err error) {
-	for page := 1; page <= 3; page++ {
-		u := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", comp.GitHub, page)
-		res, err := c.F.get(ctx, fmt.Sprintf("gh-releases:%s:%d", comp.GitHub, page), u)
+	seen := map[string]bool{} // each release once, also when the fallback re-reads pages
+	once := func(r ghRelease, tag string) {
+		if !seen[r.Tag] {
+			seen[r.Tag] = true
+			fn(r, tag)
+		}
+	}
+	stale, err = c.githubReleasePages(ctx, comp, 100, once)
+	if gatewayTimeout(err) {
+		// GitHub times out building 100 releases with very large notes (opentelemetry-collector-releases):
+		// the same 300 newest, 30 at a time.
+		return c.githubReleasePages(ctx, comp, 30, once)
+	}
+	return stale, err
+}
+
+func (c *Client) githubReleasePages(ctx context.Context, comp *catalog.Component, size int, fn func(r ghRelease, tag string)) (stale bool, err error) {
+	for page := 1; page <= 300/size; page++ {
+		u := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=%d&page=%d", comp.GitHub, size, page)
+		key := fmt.Sprintf("gh-releases:%s:%d", comp.GitHub, page) // the original key for 100 per page
+		if size != 100 {
+			key = fmt.Sprintf("gh-releases:%s:%dx%d", comp.GitHub, size, page)
+		}
+		res, err := c.F.get(ctx, key, u)
 		if err != nil {
 			return stale, err
 		}
@@ -207,7 +228,7 @@ func (c *Client) githubReleases(ctx context.Context, comp *catalog.Component, fn
 			}
 			fn(r, strings.TrimPrefix(r.Tag, comp.ReleaseTagPrefix))
 		}
-		if len(rels) < 100 {
+		if len(rels) < size {
 			break
 		}
 	}

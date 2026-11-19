@@ -2,9 +2,11 @@ package upstream
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -255,5 +257,38 @@ func TestPatchedListMajorLines(t *testing.T) {
 		if got := len(ms) == 1 && ms[0].Certain; got != tc.affected {
 			t.Errorf("lines %v, %s: affected=%v, want %v (%+v)", tc.lines, tc.version, got, tc.affected, ms)
 		}
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// GitHub times out (504) building 100 releases with very large notes: the same releases are read 30 per
+// page, each once.
+func TestGitHubReleasesSmallerPagesOnTimeout(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var sizes []string
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		size := r.URL.Query().Get("per_page")
+		sizes = append(sizes, size)
+		if size == "100" {
+			return &http.Response{StatusCode: 504, Body: http.NoBody, Header: http.Header{}, Request: r}, nil
+		}
+		body := `[{"tag_name":"v0.165.0","published_at":"2026-11-10T00:00:00Z"},{"tag_name":"cmd/builder/v0.165.0"},{"tag_name":"v0.164.0","published_at":"2026-10-20T00:00:00Z"}]`
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}, Request: r}, nil
+	})
+	c := &Client{F: &Fetcher{HTTP: &http.Client{Transport: rt}, Cache: db, TTL: time.Hour, now: time.Now}}
+	comp := &catalog.Component{ID: "otel", GitHub: "open-telemetry/opentelemetry-collector-releases", ReleaseTagPrefix: "v"}
+	var tags []string
+	if _, err := c.githubReleases(context.Background(), comp, func(r ghRelease, tag string) { tags = append(tags, tag) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || tags[0] != "0.165.0" || len(sizes) != 2 || sizes[0] != "100" || sizes[1] != "30" {
+		t.Errorf("tags %v, page sizes %v", tags, sizes)
 	}
 }

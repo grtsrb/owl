@@ -329,7 +329,9 @@ var (
 	versionRe = regexp.MustCompile(`^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)$`)
 	// prereleaseRe recognises real pre-releases in the suffix; anything else (hardened3, build2024…,
 	// debian-12-r20, alpine, k3s1) is a vendor build suffix and ignored.
-	prereleaseRe = regexp.MustCompile(`^[-.]?((?:alpha|beta|rc|pre|dev)[.-]?\d*)`)
+	// Pre-releases, including Elastic's SNAPSHOT and OpenTelemetry's nightly builds (0.166.0-nightly.c02ef6a
+	// comes before the 0.166.0 release, it isn't one).
+	prereleaseRe = regexp.MustCompile(`^[-.]?((?:alpha|beta|rc|pre|dev|snapshot|nightly)(?:[.-]?\d+)?)`)
 )
 
 // ParseVersion extracts the upstream version from an image tag, ignoring vendor build suffixes.
