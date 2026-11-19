@@ -1,7 +1,9 @@
 package notify
 
 import (
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"owl/internal/report"
@@ -34,7 +36,7 @@ func criticalPairs(rep *report.Report) map[pair]*critical {
 				cr = &critical{pair: k, Name: c.Name, Stage: in.Stage, Action: in.Action.Text, Why: why(in)}
 				out[k] = cr
 			}
-			if in.Version != "" && !contains(cr.Versions, in.Version) {
+			if in.Version != "" && !slices.Contains(cr.Versions, in.Version) {
 				cr.Versions = append(cr.Versions, in.Version)
 			}
 		}
@@ -174,7 +176,7 @@ func levelCounts(cs []compIn) string {
 	var parts []string
 	for _, l := range levelOrder {
 		if n[l] > 0 {
-			parts = append(parts, itoa(n[l])+" "+levelName(l))
+			parts = append(parts, strconv.Itoa(n[l])+" "+levelName(l))
 		}
 	}
 	if len(parts) == 0 {
@@ -199,11 +201,3 @@ func levelOn(rep *report.Report, component, cluster string) report.Level {
 	return lvl
 }
 
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}

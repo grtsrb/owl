@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -140,7 +141,7 @@ func (e *env) cluster(name, tenant string, images ...string) {
 	}
 	snap := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, Cluster: snapshot.Cluster{KubernetesVersion: "v1.31.2"}}
 	for i, img := range images {
-		snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "ns", Name: "w" + itoa(i),
+		snap.Workloads = append(snap.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "ns", Name: "w" + strconv.Itoa(i),
 			DesiredReplicas: 1, Containers: []snapshot.Container{{Name: "c", Image: img}}})
 	}
 	if _, err := e.db.Ingest(ctx, c.ID, snap); err != nil {

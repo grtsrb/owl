@@ -47,18 +47,10 @@ func C(s string) Span                { return Span{Text: s, Code: true} }
 func L(text, link string) Span       { return Span{Text: text, Link: link} }
 func D(s string) Span                { return Span{Text: s, Dim: true} }
 func Ln(spans ...Span) Line          { return Line(spans) }
-func (l Line) Plain() string         { return renderLine(l, plainSpan) }
 func (b Block) visible() bool        { return len(b.Items) > 0 || b.Empty != "" }
 func (d Doc) Markdown() string       { return d.render(mdFormat) }
 func (d Doc) Text() string           { return d.render(textFormat) }
-func capLines(n, max int) (int, int) { return min(n, max), max0(n - max) }
-
-func max0(n int) int {
-	if n < 0 {
-		return 0
-	}
-	return n
-}
+func capLines(n, limit int) (int, int) { return min(n, limit), max(n-limit, 0) }
 
 type format struct {
 	span           func(Span) string

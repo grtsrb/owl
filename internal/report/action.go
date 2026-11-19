@@ -63,7 +63,7 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 		why = append(why, e)
 	}
 	if sc.LinesBehind >= 1 && len(why) < 2 {
-		why = append(why, plural(sc.LinesBehind, "release line")+" behind")
+		why = append(why, Plural(sc.LinesBehind, "release line")+" behind")
 	}
 
 	if target == nil {
@@ -137,7 +137,8 @@ func firstReason(sc Score, l Level) string {
 	return "no upstream release data"
 }
 
-func plural(n int, word string) string {
+// Plural: "1 release line", "2 release lines".
+func Plural(n int, word string) string {
 	if n == 1 {
 		return "1 " + word
 	}
