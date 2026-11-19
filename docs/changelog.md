@@ -2,6 +2,22 @@
 
 What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
 
+## Milestone 13, batch 2 — CI runners, storage and backup (19 more)
+
+- **CI**: GitLab Runner and its helper (release lines and support dates from endoflife.date — it's
+  developed on gitlab.com), Actions Runner Controller (scale sets and the legacy summerwind mode), the
+  GitHub Actions runner image.
+- **Backup**: Velero and its AWS, Azure and GCP plugins.
+- **Storage**: Rook, Ceph, Ceph CSI, Local Path Provisioner (k3s-managed in k3s clusters), and the
+  Kubernetes CSI sidecars — snapshotter/snapshot-controller, provisioner, attacher, resizer,
+  node-driver-registrar, livenessprobe, health monitor — including Longhorn's `longhornio/csi-*` copies
+  and RKE2's snapshot controller.
+- Medium on a supported line: the newest patch of the line first; on it, "Plan the move to <target>" (a
+  new `plan` action kind in the API), which never replaces a real step in the component's summary.
+- RKE2's older snapshot-controller copies are RKE2-managed; Rancher's `mirrored-longhornio-csi-*` copies
+  are recognized. GitLab Runner release candidates stay pre-releases.
+- Not included: Tekton (image names carry build hashes), MinIO (date tags, no community images).
+
 ## Milestone 13, batch 1 — 36 more built-in components
 
 - **Elastic**: ECK operator, Elasticsearch (OSV advisories via Maven), Kibana, Logstash, Beats, Elastic

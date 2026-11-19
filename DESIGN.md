@@ -304,6 +304,17 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   node-exporter, kube-state-metrics, Loki, Alloy/Promtail, Tempo, Mimir, Thanos, OpenTelemetry Collector,
   Fluent Bit. Later batches: GitOps/CI/storage, then data/policy/ops. Tools the user names later go into the
   next open batch (or a small branch of their own) with the same checks.
+- **Status** (2026-11-19): batch 1 merged (also ECK stack variants, Logstash, Beats, Elastic Agent, Envoy,
+  Hubble, Tigera operator, flannel CNI plugin, FRR, rollout-operator, OTel operator). Batch 2 = **CI runners +
+  storage/backup only** (user's choice): GitLab Runner (endoflife.date lines: no GitHub releases), ARC (scale
+  sets + legacy), Actions runner, Velero + plugins, Rook, Ceph, Ceph CSI, local-path-provisioner, CSI sidecars
+  (incl. Longhorn's and Rancher's copies). **GitOps (Argo/Flux) and Harbor deferred** by the user. **Left out**:
+  Tekton (ko image names carry build hashes; v1.x image names unverified), MinIO (date tags, no community
+  images since 2025). Next: batch 3 (data/policy/ops).
+- **`plan` action** (agreed with the supported-line rule): an instance on the newest patch of a line upstream
+  still supports, but 2+ lines behind (Medium), gets "Plan the move to <target>" (kind `plan`). It isn't a
+  step: a component summary prefers any real patch/upgrade step, and shows the plan only when nothing else
+  is to do. Shipped images read "Comes with RKE2 — plan the RKE2 upgrade that ships <target> or newer".
 
 ## Catalog from the UI (agreed 2026-11-17, milestone 11)
 - **New component** form, opened from a cluster's Unrecognized images card, Settings → Catalog, or the link in

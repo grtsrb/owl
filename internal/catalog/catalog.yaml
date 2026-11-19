@@ -526,3 +526,141 @@ components:
     github: fluent/fluent-bit
     releaseTagPrefix: "v"                  # not wasm-browser-…
     eol: fluent-bit
+
+  # ---------------------------------------------------------------------------------------------
+  # Milestone 13, batch 2: CI runners, storage and backup (verified 2026-11-19).
+  # ---------------------------------------------------------------------------------------------
+
+  # CI runners
+  - id: gitlab-runner
+    name: GitLab Runner
+    images:
+      - gitlab/gitlab-runner
+      - gitlab/gitlab-runner-helper           # same version as the runner
+      - registry.gitlab.com/gitlab-org/gitlab-runner
+      - registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper
+    # Tags: v18.5.0, alpine-v18.5.0, ubuntu-v18.5.0; helper x86_64-v18.5.0, alpine3.21-x86_64-v18.5.0.
+    versionPattern: 'v(\d+\.\d+\.\d+(?:-rc\d+)?)'   # keeps a release candidate one (v18.6.0-rc1)
+    github: gitlabhq/gitlab-runner             # read-only mirror (no releases): archived status only
+    eol: gitlab-runner                         # release lines and support dates
+    notes: Developed on gitlab.com — release lines and dates come from endoflife.date, not GitHub releases.
+
+  - id: actions-runner-controller
+    name: Actions Runner Controller (scale sets)
+    images: [ghcr.io/actions/gha-runner-scale-set-controller]
+    github: actions/actions-runner-controller
+    releaseTagPrefix: "gha-runner-scale-set-"
+
+  - id: actions-runner-controller-legacy
+    name: Actions Runner Controller (legacy, summerwind)
+    images: [summerwind/actions-runner-controller]   # its gha-runner-scale-set-* tags don't parse: unpinned
+    github: actions/actions-runner-controller
+    releaseTagPrefix: "v"
+    notes: The legacy mode, superseded by runner scale sets (actions-runner-controller). Shares the GitHub repository's advisories with the scale-set controller.
+    # Same repo as actions-runner-controller: repo advisories apply to both version series (none published
+    # as of 2026-11-19); check the ranges if that changes.
+
+  - id: actions-runner
+    name: GitHub Actions runner
+    images: [ghcr.io/actions/actions-runner, summerwind/actions-runner]   # v2.338.2-ubuntu-24.04 = 2.338.2
+    github: actions/runner
+    releaseTagPrefix: "v"
+
+  # Backup
+  - id: velero
+    name: Velero
+    images: [velero/velero]
+    github: vmware-tanzu/velero
+    osv: {ecosystem: Go, name: github.com/vmware-tanzu/velero}
+
+  - id: velero-plugin-for-aws
+    name: Velero plugin for AWS
+    images: [velero/velero-plugin-for-aws]
+    github: vmware-tanzu/velero-plugin-for-aws
+
+  - id: velero-plugin-for-microsoft-azure
+    name: Velero plugin for Microsoft Azure
+    images: [velero/velero-plugin-for-microsoft-azure]
+    github: vmware-tanzu/velero-plugin-for-microsoft-azure
+
+  - id: velero-plugin-for-gcp
+    name: Velero plugin for GCP
+    images: [velero/velero-plugin-for-gcp]
+    github: vmware-tanzu/velero-plugin-for-gcp
+
+  # Storage
+  - id: rook
+    name: Rook (Ceph operator)
+    images: [rook/ceph]
+    github: rook/rook
+
+  - id: ceph
+    name: Ceph
+    images: [quay.io/ceph/ceph]
+    github: ceph/ceph                          # no GitHub releases: lines and dates from endoflife.date
+    eol: ceph
+
+  - id: ceph-csi
+    name: Ceph CSI
+    images: [quay.io/cephcsi/cephcsi]
+    github: ceph/ceph-csi
+
+  - id: local-path-provisioner
+    name: Local Path Provisioner
+    images: [rancher/local-path-provisioner]
+    bundledWith:
+      rancher/local-path-provisioner: k3s      # k3s ships it (same image name: only in k3s clusters)
+    github: rancher/local-path-provisioner
+    osv: {ecosystem: Go, name: github.com/rancher/local-path-provisioner}
+
+  # Kubernetes CSI sidecars (each repository has its own versions). Longhorn and RKE2 ship copies.
+  - id: csi-snapshotter
+    name: CSI snapshotter and snapshot controller
+    images:
+      - registry.k8s.io/sig-storage/csi-snapshotter
+      - registry.k8s.io/sig-storage/snapshot-controller
+      - registry.k8s.io/sig-storage/snapshot-validation-webhook
+      - longhornio/csi-snapshotter
+      - rancher/hardened-csi-snapshotter
+      - rancher/hardened-snapshot-controller
+      - rancher/mirrored-sig-storage-snapshot-controller
+      - rancher/mirrored-sig-storage-snapshot-validation-webhook
+      - rancher/mirrored-longhornio-csi-snapshotter
+    bundledWith:
+      rancher/hardened-csi-snapshotter: rke2
+      rancher/hardened-snapshot-controller: rke2
+      rancher/mirrored-sig-storage-snapshot-controller: rke2           # older RKE2 releases
+      rancher/mirrored-sig-storage-snapshot-validation-webhook: rke2
+    github: kubernetes-csi/external-snapshotter
+    releaseTagPrefix: "v"                      # not client/vx.y.z
+
+  - id: csi-provisioner
+    name: CSI external-provisioner
+    images: [registry.k8s.io/sig-storage/csi-provisioner, longhornio/csi-provisioner, rancher/mirrored-longhornio-csi-provisioner]
+    github: kubernetes-csi/external-provisioner
+
+  - id: csi-attacher
+    name: CSI external-attacher
+    images: [registry.k8s.io/sig-storage/csi-attacher, longhornio/csi-attacher, rancher/mirrored-longhornio-csi-attacher]
+    github: kubernetes-csi/external-attacher
+
+  - id: csi-resizer
+    name: CSI external-resizer
+    images: [registry.k8s.io/sig-storage/csi-resizer, longhornio/csi-resizer, rancher/mirrored-longhornio-csi-resizer]
+    github: kubernetes-csi/external-resizer
+
+  - id: csi-node-driver-registrar
+    name: CSI node-driver-registrar
+    images: [registry.k8s.io/sig-storage/csi-node-driver-registrar, longhornio/csi-node-driver-registrar,
+      rancher/mirrored-longhornio-csi-node-driver-registrar]
+    github: kubernetes-csi/node-driver-registrar
+
+  - id: csi-livenessprobe
+    name: CSI livenessprobe
+    images: [registry.k8s.io/sig-storage/livenessprobe, longhornio/livenessprobe, rancher/mirrored-longhornio-livenessprobe]
+    github: kubernetes-csi/livenessprobe
+
+  - id: csi-external-health-monitor
+    name: CSI external-health-monitor
+    images: [registry.k8s.io/sig-storage/csi-external-health-monitor-controller]
+    github: kubernetes-csi/external-health-monitor

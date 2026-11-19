@@ -303,3 +303,57 @@ func TestVendorRegistriesArePublic(t *testing.T) {
 		}
 	}
 }
+
+// Batch 2 (milestone 13): CI runners, storage and backup — real image references from the registries.
+func TestBatch2Images(t *testing.T) {
+	cat, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ image, comp, version, bundled string }{
+		{"gitlab/gitlab-runner:v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"gitlab/gitlab-runner:alpine-v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"gitlab/gitlab-runner:ubuntu-v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"gitlab/gitlab-runner-helper:x86_64-v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"gitlab/gitlab-runner-helper:alpine3.21-x86_64-v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"registry.gitlab.com/gitlab-org/gitlab-runner:v18.5.0", "gitlab-runner", "18.5.0", ""},
+		{"ghcr.io/actions/gha-runner-scale-set-controller:0.15.1", "actions-runner-controller", "0.15.1", ""},
+		{"summerwind/actions-runner-controller:v0.27.6", "actions-runner-controller-legacy", "0.27.6", ""},
+		{"ghcr.io/actions/actions-runner:2.336.0", "actions-runner", "2.336.0", ""},
+		{"summerwind/actions-runner:v2.338.2-ubuntu-24.04", "actions-runner", "2.338.2", ""},
+		{"velero/velero:v1.18.4", "velero", "1.18.4", ""},
+		{"velero/velero:v1.19.0-rc.2", "velero", "1.19.0-rc.2", ""},
+		{"velero/velero-plugin-for-aws:v1.14.4", "velero-plugin-for-aws", "1.14.4", ""},
+		{"rook/ceph:v1.18.4", "rook", "1.18.4", ""},
+		{"quay.io/ceph/ceph:v20.2.5", "ceph", "20.2.5", ""},
+		{"quay.io/cephcsi/cephcsi:v3.17.2", "ceph-csi", "3.17.2", ""},
+		{"rancher/local-path-provisioner:v0.0.37", "local-path-provisioner", "0.0.37", "k3s"}, // applies in k3s clusters only (inventory)
+		{"registry.k8s.io/sig-storage/snapshot-controller:v8.2.0", "csi-snapshotter", "8.2.0", ""},
+		{"longhornio/csi-snapshotter:v8.7.0-20261111", "csi-snapshotter", "8.7.0", ""},
+		{"rancher/hardened-snapshot-controller:v8.7.0-build20261021", "csi-snapshotter", "8.7.0", "rke2"},
+		{"longhornio/csi-provisioner:v6.4.0-20261111", "csi-provisioner", "6.4.0", ""},
+		{"registry.k8s.io/sig-storage/csi-attacher:v4.11.0", "csi-attacher", "4.11.0", ""},
+		{"longhornio/csi-resizer:v2.3.0", "csi-resizer", "2.3.0", ""},
+		{"rancher/mirrored-longhornio-csi-attacher:v4.13.0-20261028", "csi-attacher", "4.13.0", ""},
+		{"rancher/mirrored-sig-storage-snapshot-controller:v8.2.0", "csi-snapshotter", "8.2.0", "rke2"},
+		{"registry.gitlab.com/gitlab-org/gitlab-runner:v18.6.0-rc1", "gitlab-runner", "18.6.0-rc1", ""},
+		{"longhornio/csi-node-driver-registrar:v2.18.0", "csi-node-driver-registrar", "2.18.0", ""},
+		{"registry.k8s.io/sig-storage/livenessprobe:v2.15.0", "csi-livenessprobe", "2.15.0", ""},
+		{"registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v0.15.0", "csi-external-health-monitor", "0.15.0", ""},
+	} {
+		id := cat.Identify(c.image)
+		got := ""
+		if id.Version != nil {
+			got = id.Version.String()
+		}
+		if id.Component == nil || id.Component.ID != c.comp || id.Status != StatusIdentified || got != c.version || id.BundledWith != c.bundled {
+			t.Errorf("%s: %v %s %q bundled %q (%s), want %s %s %q", c.image, id.Component, id.Status, got, id.BundledWith, id.Reason, c.comp, c.version, c.bundled)
+		}
+	}
+	// Not a version: the legacy controller image's scale-set tags, GitLab's pre-release builds, floating tags.
+	for _, img := range []string{"summerwind/actions-runner-controller:gha-runner-scale-set-0.15.1", "gitlab/gitlab-runner:latest", "quay.io/ceph/ceph:v20.2"} {
+		if id := cat.Identify(img); id.Status != StatusUnpinned {
+			t.Errorf("%s: want unpinned, got %s %v", img, id.Status, id.Version)
+		}
+	}
+}

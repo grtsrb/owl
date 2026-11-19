@@ -23,6 +23,7 @@ const (
 	ActionPin     ActionKind = "pin"     // unpinned tag: pin a version first
 	ActionCheck   ActionKind = "check"   // no data to decide on
 	ActionUpdate  ActionKind = "update"  // component level: bring every instance to the target
+	ActionPlan    ActionKind = "plan"    // on the newest patch of a line upstream still supports: plan the move
 )
 
 // Action is the recommended next step as one sentence: Text says what ("Upgrade to 1.14.7"), Why the
@@ -39,8 +40,12 @@ type Action struct {
 // distribution ships itself (BundledWith) a patch or upgrade means upgrading the distribution.
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
 	a := scoreAction(in, sc, target, info)
-	if in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade) {
+	switch {
+	case in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade):
 		a.Text = bundledText(bundledName(in), a.To)
+	case in.BundledWith != "" && a.Kind == ActionPlan:
+		d := bundledName(in)
+		a.Text = "Comes with " + d + " — plan the " + d + " upgrade that ships " + a.To + " or newer"
 	}
 	return a
 }
@@ -106,7 +111,7 @@ func scoreAction(in inventory.Instance, sc Score, target *policy.Target, info *u
 		if lv, ok := catalog.ParseVersion(sc.LatestInLine, ""); okV && ok && lv.Compare(v) > 0 {
 			return Action{ActionPatch, "Patch to " + sc.LatestInLine, strings.Join(why, "; "), sc.LatestInLine}
 		}
-		return Action{ActionUpgrade, "Plan the move to " + target.Version, strings.Join(why, "; "), target.Version}
+		return Action{ActionPlan, "Plan the move to " + target.Version, strings.Join(why, "; "), target.Version}
 	}
 	if sc.LinesBehind == 0 {
 		to := target.Version
@@ -212,6 +217,8 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 	case needs[ActionReplace]:
 		return Action{ActionReplace, "Replace", worst.Action.Why, ""}
 	case needs[ActionPatch] || needs[ActionUpgrade]:
+		// Planning steps (instances on the newest patch of a supported line) aren't counted as steps: the
+		// summary is what to do now.
 		if target == nil {
 			break
 		}
@@ -251,6 +258,12 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 		return Action{ActionPin, "Pin an exact version", worst.Action.Why, ""}
 	case needs[ActionCheck]:
 		return Action{ActionCheck, worst.Action.Text, worst.Action.Why, ""}
+	case needs[ActionPlan]:
+		for _, in := range insts { // only planning left (nothing to do now): one target
+			if in.Action.Kind == ActionPlan {
+				return Action{ActionPlan, in.Action.Text, worst.Action.Why, in.Action.To}
+			}
+		}
 	}
 	return worst.Action
 }
