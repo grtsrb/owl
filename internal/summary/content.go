@@ -200,7 +200,11 @@ func clean(s string, max int) string {
 	// injection in upstream notes could plant one) would be auto-linked by Mattermost and mail clients.
 	s = stripLinks(s)
 	if r := []rune(s); len(r) > max {
-		s = strings.TrimSpace(string(r[:max-1])) + "…"
+		// Again after cutting: "evil.example.yaml" (kept as a file name) cut to "evil.example" is a host.
+		s = strings.TrimSpace(stripLinks(string(r[:max-1]))) + "…"
+		if r := []rune(s); len(r) > max {
+			s = string(r[:max-1]) + "…"
+		}
 	}
 	return s
 }

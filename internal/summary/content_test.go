@@ -17,3 +17,17 @@ func TestCleanRemovesLinks(t *testing.T) {
 		}
 	}
 }
+
+// A kept file name cut by the length cap must not leave a host behind.
+func TestCleanTruncatedFileNameIsNotALink(t *testing.T) {
+	in := "edit evil.example.yaml"
+	for max := 10; max <= len(in)+1; max++ {
+		got := clean(in, max)
+		if strings.Contains(got, "evil.example") && !strings.Contains(got, "evil.example.yaml") {
+			t.Errorf("max %d: %q", max, got)
+		}
+		if n := len([]rune(got)); n > max {
+			t.Errorf("max %d: %d runes", max, n)
+		}
+	}
+}
