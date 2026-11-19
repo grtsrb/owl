@@ -39,7 +39,7 @@ type Action struct {
 // ActionFor turns a score into the recommended action for one instance. For an image the cluster's
 // distribution ships itself (BundledWith) a patch or upgrade means upgrading the distribution.
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
-	a := scoreAction(in, sc, target, info)
+	a := coverFixes(scoreAction(in, sc, target, info), in, sc, target, info)
 	switch {
 	case in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade):
 		a.Text = bundledText(bundledName(in), a.To)
@@ -67,6 +67,72 @@ func bundledText(d, to string) string {
 		return "Comes with " + d + " — upgrade " + d + " to a newer release"
 	}
 	return "Comes with " + d + " — upgrade " + d + " to a release that ships " + to + " or newer"
+}
+
+// coverFixes makes sure a patch/upgrade step (or "Review advisories") actually fixes the instance's
+// advisories: when one is fixed only above the step (a later line than the policy target, e.g. Velero
+// 1.17.1 with a fix only in 1.18.1), the step becomes the newest patch of the line that has the fix —
+// security wins over the policy target, as it does for the level. EOL lines keep "Move to a supported
+// release line"; retired, unpinned and unknown aren't steps.
+func coverFixes(a Action, in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
+	if len(sc.Advisories) == 0 || sc.EOL != nil || info == nil ||
+		a.Kind != ActionPatch && a.Kind != ActionUpgrade && a.Kind != ActionCheck {
+		return a
+	}
+	v, ok := catalog.ParseVersion(in.Version, "")
+	if !ok {
+		return a
+	}
+	var step *catalog.Version
+	if s, ok := catalog.ParseVersion(a.To, ""); ok {
+		step = &s
+	}
+	var need *catalog.Version // highest fix the step doesn't reach
+	var missed []string
+	for _, m := range sc.Advisories {
+		fix, ok := fixAbove(m, v)
+		if !ok || step != nil && fix.Compare(*step) <= 0 {
+			continue
+		}
+		missed = append(missed, advisoryLabel(m.Advisory)+" ("+m.Severity+") fixed in "+fix.String())
+		if need == nil || fix.Compare(*need) > 0 {
+			f := fix
+			need = &f
+		}
+	}
+	if need == nil {
+		return a
+	}
+	to := need.String()
+	lines := policy.UsableLines(info.Lines)
+	if pos, exact := policy.Position(*need, lines); exact {
+		if lv, ok := catalog.ParseVersion(lines[pos].Latest, ""); ok && lv.Compare(*need) >= 0 {
+			to = lines[pos].Latest // the newest patch of the line with the fix
+		}
+	}
+	why := missed
+	if target != nil && to != target.Version {
+		why = append(why, "beyond the policy target "+target.Version+" ("+target.Policy+"), which doesn't include the fix")
+	}
+	return Action{ActionUpgrade, "Upgrade to " + to, strings.Join(why, "; "), to}
+}
+
+// fixAbove: the fix that matters for v (RelevantFix, else the lowest listed fix above v).
+func fixAbove(m upstream.Match, v catalog.Version) (catalog.Version, bool) {
+	if f, ok := catalog.ParseVersion(m.RelevantFix, ""); ok && f.Compare(v) > 0 {
+		return f, true
+	}
+	var best *catalog.Version
+	for _, s := range m.FixedIn {
+		if f, ok := catalog.ParseVersion(s, ""); ok && f.Compare(v) > 0 && (best == nil || f.Compare(*best) < 0) {
+			b := f
+			best = &b
+		}
+	}
+	if best == nil {
+		return catalog.Version{}, false
+	}
+	return *best, true
 }
 
 func scoreAction(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
