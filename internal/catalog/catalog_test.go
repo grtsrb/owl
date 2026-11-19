@@ -205,6 +205,9 @@ func TestBatch1Images(t *testing.T) {
 		{"elasticsearch:9.5.5", "elasticsearch", "9.5.5", ""},
 		{"bitnamilegacy/elasticsearch:9.1.2-debian-12-r0", "elasticsearch", "9.1.2", ""},
 		{"docker.elastic.co/kibana/kibana:9.5.5", "kibana", "9.5.5", ""},
+		{"docker.elastic.co/kibana/kibana-ubi:9.5.5", "kibana", "9.5.5", ""},
+		{"docker.elastic.co/logstash/logstash-wolfi:9.5.5", "logstash", "9.5.5", ""},
+		{"docker.elastic.co/eck/eck-operator-fips:3.5.0", "eck-operator", "3.5.0", ""},
 		{"docker.elastic.co/logstash/logstash:8.19.25", "logstash", "8.19.25", ""},
 		{"docker.elastic.co/beats/filebeat:8.19.25", "elastic-beats", "8.19.25", ""},
 		{"docker.elastic.co/elastic-agent/elastic-agent:9.5.5", "elastic-agent", "9.5.5", ""},
@@ -218,7 +221,7 @@ func TestBatch1Images(t *testing.T) {
 		{"rancher/mirrored-cilium-cilium:v1.20.5", "cilium", "1.20.5", "rke2"},
 		{"quay.io/cilium/hubble-ui-backend:v0.13.6", "hubble-ui", "0.13.6", ""},
 		{"quay.io/cilium/certgen:v0.4.14", "cilium-certgen", "0.4.14", ""},
-		{"quay.io/cilium/cilium-envoy:v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc", "envoy", "1.36.9", ""},
+		{"quay.io/cilium/cilium-envoy:v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc", "envoy", "1.36.9", "cilium"},
 		{"rancher/mirrored-cilium-cilium-envoy:v1.39.6-1794557904-dee711ff0e84b106edd0abcdd71961af1b870359", "envoy", "1.39.6", "rke2"},
 		{"envoyproxy/envoy:v1.36.4", "envoy", "1.36.4", ""},
 		{"calico/node:v3.32.4", "calico", "3.32.4", ""},
@@ -286,6 +289,17 @@ func TestBuiltinImagesUnique(t *testing.T) {
 				t.Errorf("%s is in %s and %s", r.Name(), o, c.ID)
 			}
 			owner[r.Name()] = c.ID
+		}
+	}
+}
+
+// Vendor registries are public: a longer path there is someone else's image, not a mirror.
+func TestVendorRegistriesArePublic(t *testing.T) {
+	cat, _ := Builtin()
+	for _, img := range []string{"docker.elastic.co/team/elasticsearch/elasticsearch:8.19.25", "cr.fluentbit.io/acme/fluent/fluent-bit:5.1.5",
+		"oci.external-secrets.io/fork/external-secrets/external-secrets:v2.15.0"} {
+		if id := cat.Identify(img); id.Status != StatusUnrecognized {
+			t.Errorf("%s: %s (%v)", img, id.Status, id.Component)
 		}
 	}
 }

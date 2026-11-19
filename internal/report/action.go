@@ -40,20 +40,24 @@ type Action struct {
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
 	a := scoreAction(in, sc, target, info)
 	if in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade) {
-		a.Text = bundledText(in.BundledWith, a.To)
+		a.Text = bundledText(bundledName(in), a.To)
 	}
 	return a
 }
 
-// distroNames: how the distributions are written in sentences.
-var distroNames = map[string]string{"rke2": "RKE2", "k3s": "k3s"}
+// bundledName: how what ships the image is written in sentences ("RKE2", "Cilium").
+func bundledName(in inventory.Instance) string {
+	switch {
+	case in.BundledName != "":
+		return in.BundledName
+	case in.BundledWith == "rke2":
+		return "RKE2"
+	}
+	return in.BundledWith
+}
 
 // bundledText: "Comes with RKE2 — upgrade RKE2 to a release that ships 1.11.3 or newer".
-func bundledText(distro, to string) string {
-	d := distroNames[distro]
-	if d == "" {
-		d = distro
-	}
+func bundledText(d, to string) string {
 	if to == "" {
 		return "Comes with " + d + " — upgrade " + d + " to a newer release"
 	}
@@ -96,6 +100,14 @@ func scoreAction(in inventory.Instance, sc Score, target *policy.Target, info *u
 	}
 	v, okV := catalog.ParseVersion(in.Version, "")
 	tv, okT := catalog.ParseVersion(target.Version, "")
+	if sc.Supported != "" && len(sc.Advisories) == 0 {
+		// Far behind on a line upstream still supports: take its newest patch now, plan the move.
+		why = append(why, sc.Supported, "plan the move to "+target.Version+" ("+target.Policy+")")
+		if lv, ok := catalog.ParseVersion(sc.LatestInLine, ""); okV && ok && lv.Compare(v) > 0 {
+			return Action{ActionPatch, "Patch to " + sc.LatestInLine, strings.Join(why, "; "), sc.LatestInLine}
+		}
+		return Action{ActionUpgrade, "Plan the move to " + target.Version, strings.Join(why, "; "), target.Version}
+	}
 	if sc.LinesBehind == 0 {
 		to := target.Version
 		if okV && okT && v.Compare(tv) >= 0 {
@@ -212,8 +224,8 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 				steps[in.Action.Text] = in.Action
 				toTarget = toTarget || in.Action.To == target.Version
 				if first {
-					bundled, first = in.BundledWith, false
-				} else if in.BundledWith != bundled {
+					bundled, first = bundledName(in.Instance), false
+				} else if in.BundledWith == "" || bundledName(in.Instance) != bundled {
 					bundled = ""
 				}
 			}

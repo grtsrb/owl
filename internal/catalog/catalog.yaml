@@ -166,7 +166,7 @@ components:
   # Elastic (ECK and the stack it deploys). Stack images share the Elasticsearch version.
   - id: eck-operator
     name: Elastic Cloud on Kubernetes (ECK) operator
-    images: [docker.elastic.co/eck/eck-operator, docker.elastic.co/eck/eck-operator-ubi]
+    images: [docker.elastic.co/eck/eck-operator, docker.elastic.co/eck/eck-operator-ubi, docker.elastic.co/eck/eck-operator-fips]
     github: elastic/cloud-on-k8s
 
   - id: elasticsearch
@@ -187,6 +187,7 @@ components:
     images:
       - docker.elastic.co/kibana/kibana
       - docker.elastic.co/kibana/kibana-wolfi
+      - docker.elastic.co/kibana/kibana-ubi
       - kibana
       - bitnami/kibana
       - bitnamilegacy/kibana
@@ -195,7 +196,8 @@ components:
 
   - id: logstash
     name: Logstash
-    images: [docker.elastic.co/logstash/logstash, logstash, bitnamilegacy/logstash]
+    images: [docker.elastic.co/logstash/logstash, docker.elastic.co/logstash/logstash-wolfi, docker.elastic.co/logstash/logstash-ubi,
+      logstash, bitnamilegacy/logstash]
     github: elastic/logstash
     eol: logstash
 
@@ -207,11 +209,13 @@ components:
       - docker.elastic.co/beats/heartbeat
       - docker.elastic.co/beats/auditbeat
       - docker.elastic.co/beats/packetbeat
+      - docker.elastic.co/beats/filebeat-wolfi
     github: elastic/beats
 
   - id: elastic-agent
     name: Elastic Agent
-    images: [docker.elastic.co/elastic-agent/elastic-agent, docker.elastic.co/beats/elastic-agent]
+    images: [docker.elastic.co/elastic-agent/elastic-agent, docker.elastic.co/elastic-agent/elastic-agent-wolfi,
+      docker.elastic.co/beats/elastic-agent]
     github: elastic/elastic-agent
 
   - id: elastalert2
@@ -284,6 +288,7 @@ components:
       - quay.io/cilium/cilium-envoy               # Cilium's Envoy build: v1.36.4-<timestamp>-<sha> = Envoy 1.36.4
       - rancher/mirrored-cilium-cilium-envoy
     bundledWith:
+      quay.io/cilium/cilium-envoy: cilium        # pinned by the Cilium release: upgrade Cilium, not Envoy
       rancher/mirrored-cilium-cilium-envoy: rke2
     github: envoyproxy/envoy
     eol: envoy
@@ -505,6 +510,7 @@ components:
       - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
     github: open-telemetry/opentelemetry-collector-releases
     releaseTagPrefix: "v"                  # not cmd/builder/vx.y.z
+    notes: A new 0.x minor about every two weeks, so "2 release lines behind" is a month — consider an n-2 or pin policy.
 
   - id: opentelemetry-operator
     name: OpenTelemetry Operator
@@ -512,6 +518,7 @@ components:
       - ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
       - ghcr.io/open-telemetry/opentelemetry-operator/target-allocator
     github: open-telemetry/opentelemetry-operator
+    notes: Follows the Collector's 0.x minors (about every two weeks) — consider an n-2 or pin policy.
 
   - id: fluent-bit
     name: Fluent Bit

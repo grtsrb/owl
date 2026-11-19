@@ -13,7 +13,12 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
   kube-state-metrics (incl. Rancher monitoring mirrors), Grafana Loki (+ Promtail), Alloy, Tempo, Mimir,
   rollout-operator, Thanos, OpenTelemetry Collector and Operator, Fluent Bit.
 - Elastic `-SNAPSHOT` and OpenTelemetry `-nightly` tags read as pre-releases, not as the release.
-- GitHub releases are read 30 per page when GitHub times out on 100 (very large release notes).
+- GitHub releases are read 30 per page when GitHub times out on 100 (very large release notes); a repo
+  that needed it goes there directly next time.
+- `bundledWith` can name a component: Cilium's Envoy build says "Comes with Cilium — upgrade Cilium …".
+- Medium on a supported line: the action is the newest patch of that line, then "plan the move".
+- docker.elastic.co, cr.fluentbit.io and oci.external-secrets.io are public registries (no mirror
+  matching there); Elastic `-ubi`/`-wolfi`/`-fips` image variants are recognized.
 - After the upgrade, already running ones are announced once ("Owl now recognizes N more components").
 - **Priority**: 2+ release lines behind is **Medium**, not High, when endoflife.date says the line is still
   supported and doesn't end within 90 days (Elasticsearch/Kibana 8.19, a supported Kubernetes minor).

@@ -34,9 +34,10 @@ type Component struct {
 	// VersionPattern (custom components): a regexp whose groups, joined with ".", are the version in an
 	// image tag — for tags ParseVersion can't read, like 9.7_p1-r4-ls163.
 	VersionPattern string `json:"versionPattern,omitempty"`
-	// BundledWith (built-in only): image name -> distribution ("rke2" | "k3s") that ships and upgrades
-	// that image itself, e.g. rancher/hardened-coredns -> rke2. In a cluster of that distribution the
-	// recommended action is "upgrade RKE2", not "upgrade CoreDNS"; levels are unchanged.
+	// BundledWith (built-in only): image name -> what ships and upgrades that image itself: a distribution
+	// ("rke2" | "k3s", e.g. rancher/hardened-coredns -> rke2; applies in clusters of that distribution) or
+	// another built-in component's id (quay.io/cilium/cilium-envoy -> cilium; applies everywhere). The
+	// recommended action is then "upgrade RKE2/Cilium", not "upgrade CoreDNS/Envoy"; levels are unchanged.
 	BundledWith map[string]string `json:"bundledWith,omitempty"`
 	// Custom: added in the UI (stored in the database), not part of the built-in catalog.
 	Custom bool `json:"custom,omitempty"`
@@ -90,13 +91,20 @@ func Builtin() (*Catalog, error) {
 		if comp.Custom {
 			return nil, fmt.Errorf("builtin catalog: %s: custom is only for components added in the UI", comp.ID)
 		}
-		for img, d := range comp.BundledWith {
-			if !slices.Contains(Distributions, d) || !slices.Contains(comp.Images, img) {
-				return nil, fmt.Errorf("builtin catalog: %s: bundledWith %s: %s must be one of its images and rke2 or k3s", comp.ID, img, d)
+		for img := range comp.BundledWith {
+			if !slices.Contains(comp.Images, img) {
+				return nil, fmt.Errorf("builtin catalog: %s: bundledWith %s must be one of its images", comp.ID, img)
 			}
 		}
 		if err := comp.prepare(); err != nil {
 			return nil, fmt.Errorf("builtin catalog: %s: %w", comp.ID, err)
+		}
+	}
+	for _, comp := range c.Components { // a distribution or another built-in component
+		for img, by := range comp.BundledWith {
+			if by == comp.ID || !slices.Contains(Distributions, by) && !seen[by] {
+				return nil, fmt.Errorf("builtin catalog: %s: bundledWith %s: %q is neither rke2/k3s nor another component", comp.ID, img, by)
+			}
 		}
 	}
 	return &c, nil
@@ -119,8 +127,8 @@ type Identification struct {
 	Status    Status
 	Version   *Version // parsed upstream version; nil if unpinned/unknown
 	Reason    string   // why unpinned/unrecognized, human readable
-	// BundledWith: the distribution that ships this image ("rke2" | "k3s"), from the catalog entry that
-	// matched. Whether it applies depends on the cluster (the inventory checks).
+	// BundledWith: what ships this image (a distribution or a component id), from the catalog entry that
+	// matched. For a distribution, whether it applies depends on the cluster (the inventory checks).
 	BundledWith string
 }
 

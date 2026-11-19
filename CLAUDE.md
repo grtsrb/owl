@@ -93,8 +93,8 @@ make dev-down
   `ParseVersion` strips vendor suffixes (`-hardened3`, `-build…`, `-debian-12-r20`) but keeps real
   pre-releases (`-rc.1`). Tags with fewer parts than `versionParts` (e.g. `postgres:16`) are
   "unpinned (floating)". `source: cluster` components (kubernetes, rke2, k3s) come from the node
-  version, not images. `bundledWith` (image → rke2|k3s, built-in only) sets `Instance.BundledWith` only in
-  a cluster of that distribution; `ActionFor` then says "Comes with RKE2 — upgrade RKE2…" (level
+  version, not images. `bundledWith` (image → rke2|k3s|component id, built-in only) sets `Instance.BundledWith`
+  (+ `BundledName`) — a distribution only in a cluster of it, a component (cilium-envoy → cilium) always; `ActionFor` then says "Comes with RKE2 — upgrade RKE2…" (level
   unchanged). Built-in entries may use `versionPattern` and OSV packages of any ecosystem.
 - Custom catalog components (milestone 11): `catalog.ValidateCustom` / `Merge` (built-in always wins;
   `CustomState` says why one isn't in effect); stored as JSON in `custom_components` (**restored** with

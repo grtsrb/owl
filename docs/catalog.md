@@ -93,7 +93,7 @@ components:
 | `tagPrefix` | Prefix stripped from image tags before parsing (`controller-v1.10.4`). |
 | `releaseTagPrefix` | Only GitHub release tags with this prefix count (repositories that release several things). |
 | `osv` | `{ecosystem: Go, name: <module>}` — use OSV.dev for advisories instead of the repository's. Any OSV ecosystem works (`PyPI`, `Maven`, `npm` …); set it only when the package is the same project **and** its versions match the image tags. |
-| `bundledWith` | `{<image>: rke2 \| k3s}` — images the distribution ships and upgrades itself (`rancher/hardened-*`, `rancher/mirrored-*`). In a cluster of that distribution the recommended action is "Comes with RKE2 — upgrade RKE2 …" and the UI tags it *RKE2-managed*; the level is unchanged. Each image must also be in `images`. |
+| `bundledWith` | `{<image>: rke2 \| k3s \| <component id>}` — what ships and upgrades that image itself: a distribution (`rancher/hardened-*`, `rancher/mirrored-*`; applies in clusters of that distribution) or another built-in component (`quay.io/cilium/cilium-envoy: cilium`; applies everywhere). The recommended action becomes "Comes with RKE2 — upgrade RKE2 …" and the UI tags it *RKE2-managed* / *Cilium-managed*; the level is unchanged. Each image must also be in `images`. |
 | `source: cluster` | Not matched by image: the version comes from the cluster's nodes. |
 | `notes` | Shown with the component. |
 | `versionPattern` | A regular expression for tags `ParseVersion` can't read: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). Also for tags with two versions: `-kafka-(\d+\.\d+\.\d+)$` reads Strimzi's `0.45.0-kafka-3.9.0` as Kafka 3.9.0. |

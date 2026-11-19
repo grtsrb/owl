@@ -55,7 +55,7 @@ func ParseRef(image string) Ref {
 var publicRegistries = map[string]bool{
 	"docker.io": true, "ghcr.io": true, "quay.io": true, "registry.k8s.io": true, "k8s.gcr.io": true,
 	"gcr.io": true, "public.ecr.aws": true, "mcr.microsoft.com": true, "registry.gitlab.com": true,
-	"docker.redpanda.com": true,
+	"docker.redpanda.com": true, "docker.elastic.co": true, "cr.fluentbit.io": true, "oci.external-secrets.io": true,
 }
 
 // mirrorOf reports whether r is pattern p served from a mirror/pull-through cache, i.e. p's path is a

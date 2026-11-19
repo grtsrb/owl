@@ -162,6 +162,27 @@ func TestBundledWith(t *testing.T) {
 	if want := []string{"rke/rancher/hardened-coredns:v1.11.1-build20240305/rke2"}; !slices.Equal(got, want) {
 		t.Errorf("bundled instances: %v, want %v", got, want)
 	}
+
+	// Bundled with a component (Cilium pins its Envoy build): everywhere, with the component's name.
+	c, _ := db.GetCluster(ctx, "eks")
+	snap := &snapshot.Snapshot{SchemaVersion: 1, Cluster: snapshot.Cluster{KubernetesVersion: "v1.31.2-eks-7f9249a"}}
+	snap.Workloads = []snapshot.Workload{{Kind: "DaemonSet", Namespace: "kube-system", Name: "cilium-envoy",
+		Containers: []snapshot.Container{{Name: "c", Image: "quay.io/cilium/cilium-envoy:v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc"}}}}
+	if _, err := db.Ingest(ctx, c.ID, snap); err != nil {
+		t.Fatal(err)
+	}
+	inv, _ = Build(ctx, db, cat)
+	found := false
+	for _, cv := range inv.Components {
+		for _, in := range cv.Instances {
+			if cv.ID == "envoy" && in.Cluster == "eks" {
+				found = in.BundledWith == "cilium" && in.BundledName == "Cilium"
+			}
+		}
+	}
+	if !found {
+		t.Error("cilium-envoy on a non-RKE2 cluster must be bundled with Cilium")
+	}
 }
 
 // A custom component claiming a repository beats an in-house/ignore override on it: adding the component

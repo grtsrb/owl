@@ -122,7 +122,7 @@ function Instances({ c }: { c: ComponentReport }) {
                   {(i.running?.length ?? 0) > 1 && <Tag tone="warn" title={i.running!.map((r) => `${r.image}: ${r.ready}/${r.pods} ready`).join("\n")}>rollout in progress</Tag>}
                 </td>
                 <td className="mono">{i.version || "?"}<div className="subtle mono" title={i.image}>{i.image.length > 48 ? "…" + i.image.slice(-46) : i.image}</div>
-                  {i.bundledWith && <BundledTag distro={i.bundledWith} />}</td>
+                  {i.bundledWith && <BundledTag by={i.bundledName || distroName(i.bundledWith)} />}</td>
                 <td><b>{i.action.text}</b><div className="subtle">{i.action.why}</div></td>
                 <td>
                   {i.score.reasons.length === 0 ? <span className="muted">At target, latest patch.</span> : <Reasons reasons={i.score.reasons} />}
@@ -139,9 +139,9 @@ function Instances({ c }: { c: ComponentReport }) {
 
 export const distroName = (d: string) => (d === "rke2" ? "RKE2" : d);
 
-/** An image the cluster's distribution ships and upgrades itself (bundledWith in the catalog). */
-export function BundledTag({ distro }: { distro: string }) {
-  const d = distroName(distro);
+/** An image something else ships and upgrades (bundledWith in the catalog): RKE2, k3s or a component like Cilium. */
+export function BundledTag({ by }: { by: string }) {
+  const d = by;
   return <Tag tone="info" title={`${d} ships this image and upgrades it with ${d} itself — upgrade ${d} to get a newer one.`}>{d}-managed</Tag>;
 }
 
