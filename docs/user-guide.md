@@ -31,8 +31,11 @@ you're signed in as, your role, and **Sign out**. The UI follows your OS light/d
 something are disabled and admin-only sections (users, backups, logs, audit log, summary spending)
 say so.
 
-**Cluster picker** (Overview and Changes only): choose which clusters to look at. Presets select a
-whole tenant or stage. The selection is kept in the URL (`?clusters=…`), so you can bookmark or share
+**Cluster picker** (Overview and Changes only): choose which clusters to look at. The stage tabs
+(**All**, then your stages in order) switch to one whole stage. The clusters button on the right shows
+what's selected and opens a list grouped by stage: tick single clusters, click a stage name for only
+that stage, or pick a **tenant** (when there's more than one); a filter box appears once you have many
+clusters. The button is highlighted when the selection is a custom one. The selection is kept in the URL (`?clusters=…`), so you can bookmark or share
 a view. Other pages always show every cluster.
 
 **Tables** show 10 rows per page by default (10 / 25 / 50 / All — remembered per browser). Filters,
