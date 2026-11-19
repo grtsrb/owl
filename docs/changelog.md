@@ -16,6 +16,13 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
   saved counts as a failure (backs off instead of paying again); release-note fetch errors show a
   plain message, details in the log.
 - The `lts` policy keeps its "no supported LTS line" note when it falls back to the oldest line.
+- Per-line fix lists on components whose release lines are majors ("17"): 16.5 is no longer reported
+  affected when the 16 line's fix is 16.4.
+- Overview level tiles sum over the selected clusters (a component Critical in staging and in live
+  counts 2), with the number of distinct components underneath when it differs.
+- Sidebar: your account as one row (avatar, email, role) with a sign-out button.
+- Known-CVE regression test: real advisory data for IngressNightmare, RediShell, CoreDNS DoQ,
+  Kubernetes gitRepo and Grafana SQL expressions, replayed offline.
 
 ## Milestone 12 — CLI and personal API tokens
 

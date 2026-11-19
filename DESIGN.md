@@ -93,7 +93,7 @@ cluster (each)                               server (Docker locally, later one E
     Go module versions (ingress-nginx `controller-v1.x`, Grafana) that query returns every advisory
     regardless of version (verified: latest ingress-nginx "had" CVE-2025-1974).
   - Open-ended repo ranges (`>= 7.0.0`, `All`) are decided by the patched list (one fix per release
-    line). Open range + `TBD`/no patch → **needs review**, not affected (Redis rarely closes ranges).
+    line — major or major.minor, as the component's own lines are named). Open range + `TBD`/no patch → **needs review**, not affected (Redis rarely closes ranges).
     OSV ranges are exact: `introduced` without a `fixed` event = affected, no fix listed (not review).
   - Affected with no fixed version → shown as "no fix listed", not counted for priority.
   - Repos that publish no GitHub advisories (postgres, nginx, haproxy, haproxytech ingress,

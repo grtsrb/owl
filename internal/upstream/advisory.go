@@ -84,6 +84,7 @@ func AdvisoriesFor(info *Info, version string) []Match {
 	if !ok || info == nil {
 		return out
 	}
+	majorLines := info.majorLines()
 	for _, a := range info.Advisories {
 		affected, certain := false, true
 		var fixed []string
@@ -98,7 +99,7 @@ func AdvisoriesFor(info *Info, version string) []Match {
 				// patched list decides. Without one we can't tell -> needs review, not affected.
 				if len(patched) == 0 {
 					in, known = false, false
-				} else if fixedByPatches(v, patched) {
+				} else if fixedByPatches(v, patched, majorLines) {
 					in = false
 				}
 			}
@@ -182,20 +183,31 @@ func parsePatched(s string) []catalog.Version {
 	return out
 }
 
-// fixedByPatches: patched lists name one fixed version per release line ("7.2.11, 7.4.6, 8.0.4").
-// v is fixed if its own line has a patched version <= v, or if v's line is newer than every
-// patched line (the fix predates that line).
-func fixedByPatches(v catalog.Version, patched []catalog.Version) bool {
+// fixedByPatches: patched lists name one fixed version per release line ("7.2.11, 7.4.6, 8.0.4", or
+// "16.4, 17.2" when lines are majors). v is fixed if its own line has a patched version <= v, or if
+// v's line is newer than every patched line (the fix predates that line).
+func fixedByPatches(v catalog.Version, patched []catalog.Version, majorLines bool) bool {
 	newestLine := false
 	for _, p := range patched {
-		if p.Major == v.Major && p.Minor == v.Minor {
+		if p.Major == v.Major && (majorLines || p.Minor == v.Minor) {
 			return compareToBound(v, p) >= 0
 		}
-		if p.Major > v.Major || (p.Major == v.Major && p.Minor > v.Minor) {
+		if p.Major > v.Major || (!majorLines && p.Major == v.Major && p.Minor > v.Minor) {
 			newestLine = true // a newer line got a fix, so v's line is affected and unpatched
 		}
 	}
 	return !newestLine
+}
+
+// majorLines: the component's release lines are named by major ("17", Postgres) rather than
+// major.minor ("7.2"). Same rule as policy.Position: a line name's own part count says which.
+func (info *Info) majorLines() bool {
+	for _, l := range info.Lines {
+		if lv, ok := catalog.ParseVersion(l.Name, ""); ok {
+			return lv.Parts == 1
+		}
+	}
+	return false
 }
 
 // compareToBound compares v with an advisory bound. A bound without build metadata ("1.30.4") refers

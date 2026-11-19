@@ -226,3 +226,34 @@ func TestOSVOpenRangeIsAffectedNoFix(t *testing.T) {
 		t.Fatalf("below introduced: %+v", ms)
 	}
 }
+
+// Per-line patch lists on a component whose lines are majors ("17", like Postgres): 16.5 is past the
+// 16 line's fix even though no "16.5" line exists; 16.3 and the unpatched older 15 line are affected.
+func TestPatchedListMajorLines(t *testing.T) {
+	adv := Advisory{ID: "GHSA-x", Ranges: []AffectedRange{{Range: "All", Patched: "16.4, 17.2"}}}
+	for _, tc := range []struct {
+		lines    []string
+		version  string
+		affected bool
+	}{
+		{[]string{"17", "16", "15"}, "16.5", false},
+		{[]string{"17", "16", "15"}, "16.4", false},
+		{[]string{"17", "16", "15"}, "16.3", true},
+		{[]string{"17", "16", "15"}, "17.1", true},
+		{[]string{"17", "16", "15"}, "15.9", true},
+		{[]string{"17", "16", "15"}, "18.0", false},
+		// major.minor lines (the default): 16.5 is its own line, and no fix is listed for it while a
+		// newer line got one — affected (same rule as Redis 7.4 when only 7.2 and 8.2 are patched).
+		{[]string{"17.2", "16.5", "16.4"}, "16.5", true},
+		{[]string{"17.2", "16.5", "16.4"}, "16.3", true},
+	} {
+		info := &Info{Advisories: []Advisory{adv}}
+		for _, l := range tc.lines {
+			info.Lines = append(info.Lines, ReleaseLine{Name: l})
+		}
+		ms := AdvisoriesFor(info, tc.version)
+		if got := len(ms) == 1 && ms[0].Certain; got != tc.affected {
+			t.Errorf("lines %v, %s: affected=%v, want %v (%+v)", tc.lines, tc.version, got, tc.affected, ms)
+		}
+	}
+}
