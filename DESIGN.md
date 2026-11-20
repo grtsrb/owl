@@ -195,8 +195,11 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   icons (strict CSP stays: no CDNs, no inline styles).
   - **Cluster picker** (multi-select, in the URL, default all, presets per tenant and stage) on **Overview
     and Changes** only; Clusters always lists every cluster, Settings isn't filtered.
-  - **Overview**: level tiles (component × selected cluster, worst level per cluster, summed), **Top actions** (top 5 by level → runs in live → clusters affected), cluster
-    cards; one cluster selected = detailed component list, several = components × clusters matrix. One
+  - **Overview** (redesigned 2026-11-20): one summary line (components needing attention, by worst level in the
+    selected clusters), **Top actions** (top 5 by level → runs in live → clusters affected), cluster
+    cards (per-cluster level counts live only there); level **chips** above the Components table filter by the
+    row's worst level and show exactly that row count (the summed tiles were dropped: their numbers never
+    matched the list they filtered); one cluster selected = detailed component list, several = matrix. One
     **"Recommended action"** column: the **component's goal**, identical whatever clusters are selected
     ("Update to 1.14.7 — fixes 11 high advisories", "Replace — retired upstream", "Pin an exact
     version"), then one line per cluster group saying what it needs ("it-hetzner 1.14.6 → patch",
