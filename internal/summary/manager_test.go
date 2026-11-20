@@ -499,3 +499,66 @@ func TestCustomComponentSendsOnlyTheRepo(t *testing.T) {
 		t.Errorf("the typed name reached Claude, or the repo is missing:\n%s", fc.sends[0].User)
 	}
 }
+
+// The model chosen in Settings decides the request's model, its fallback, the price and the worst case
+// checked against the caps; a count made on another model is no longer "exact".
+func TestChosenModel(t *testing.T) {
+	m, fc, _, db := setup(t, ModeManual)
+	ctx := context.Background()
+	_ = m.Refresh(ctx)
+	if err := m.Generate(ctx, jump, false); err != nil {
+		t.Fatal(err)
+	}
+	if r := fc.sends[0]; r.Model != "claude-sonnet-5-5" || r.Fallback != "claude-sonnet-5" {
+		t.Fatalf("default: model %q fallback %q", r.Model, r.Fallback)
+	}
+	ov, _ := m.List(ctx)
+	if !ov.Jumps[0].Exact {
+		t.Fatal("counted on the model in use: exact")
+	}
+
+	_ = db.SetSetting(ctx, KeyModel, "claude-haiku-5-5")
+	ov, _ = m.List(ctx)
+	if ov.Jumps[0].Exact {
+		t.Error("a count made on Sonnet isn't exact for Haiku")
+	}
+	haikuWorst, _ := worstCase("claude-haiku-5-5", 5_000, 4_000)
+	if ov.Jumps[0].MaxCost != haikuWorst {
+		t.Errorf("max cost %s, want Haiku's %s", USD(ov.Jumps[0].MaxCost), USD(haikuWorst))
+	}
+	st, err := m.Status(ctx)
+	if err != nil || st.Model != "claude-haiku-5-5" || st.Fallback != "" || st.DefaultModel != DefaultModel || len(st.Models) != 3 {
+		t.Fatalf("status: %v %+v", err, st)
+	}
+	if err := m.Generate(ctx, Jump{Component: "grafana", From: "1.2.0", To: "1.2.2"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if r := fc.sends[1]; r.Model != "claude-haiku-5-5" || r.Fallback != "" {
+		t.Errorf("Haiku: model %q fallback %q (Haiku has no server-side fallback)", r.Model, r.Fallback)
+	}
+	reqs, _ := db.ListSummaryRequests(ctx, 5)
+	if reqs[0].Model != "claude-haiku-5-5" {
+		t.Errorf("request logged as %q", reqs[0].Model)
+	}
+
+	// An unknown name stored somehow never makes Owl send an unpriced request: the default applies.
+	_ = db.SetSetting(ctx, KeyModel, "claude-mystery-9")
+	if st, _ := m.Status(ctx); st.Model != DefaultModel {
+		t.Errorf("unknown stored model: %q", st.Model)
+	}
+	if err := (Settings{Mode: ModeManual, DailyCapMicros: 10_000, MonthlyCapMicros: 10_000, MaxInputTokens: 2_000,
+		MaxOutputTokens: 1_000, Model: "claude-mystery-9"}).Validate(); err == nil {
+		t.Error("an unpriced model must be refused")
+	}
+}
+
+func TestWorstCaseSonnetAndHaiku(t *testing.T) {
+	// Sonnet 5.5: 30k×$2 + 4k×$10 = $0.10, plus its fallback Sonnet 5 at the same price.
+	if w, _ := worstCase("claude-sonnet-5-5", 30_000, 4_000); w != 200_000 {
+		t.Errorf("Sonnet 5.5 worst case = %s, want $0.20", USD(w))
+	}
+	// Haiku 5.5: 30k×$0.10 + 4k×$0.50 = $0.005, no fallback.
+	if w, _ := worstCase("claude-haiku-5-5", 30_000, 4_000); w != 5_000 {
+		t.Errorf("Haiku 5.5 worst case = %s, want $0.005", USD(w))
+	}
+}

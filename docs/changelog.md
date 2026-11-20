@@ -2,6 +2,14 @@
 
 What each milestone shipped. Newest first.
 
+## Choose the summary model
+
+- Settings → Claude summaries → **Model**: Claude Haiku 5.5, Sonnet 5.5 or Opus 5.5, each shown with its
+  price and the most one summary can cost. Prices, the refusal fallback and the cap checks follow the
+  choice; it's audited and kept across restores.
+- The default is now **Claude Sonnet 5.5** (was Opus 5.5): about $0.20 at most per summary instead of
+  $0.45. `OWL_CLAUDE_MODEL` still sets the server default.
+
 ## Docs in Owl
 
 - **Docs** in the sidebar: this documentation, built into Owl — always the docs of the version you run.

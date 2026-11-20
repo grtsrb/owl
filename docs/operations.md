@@ -160,11 +160,23 @@ Before **every** request Owl:
 2. refuses if it's above the input limit (default 30k) — such upgrades show **Too large** and are only
    written when an admin clicks **Generate anyway** (hard ceiling 200k),
 3. prices the **worst case**: all input plus the full output limit (default 4k), plus the same again
-   on the refusal-fallback model (Opus 5.5 → Opus 5),
+   on the refusal-fallback model if the chosen model has one (Sonnet 5.5 → Sonnet 5, Opus 5.5 → Opus 5),
 4. sends it only if that worst case fits what's left of the **daily** ($5) and **monthly** ($20) caps
    (UTC). Afterwards the actual cost from the API's usage report is recorded.
 
-With the defaults one summary costs at most about **$0.45**. A paid request is never retried
+**Which model** (Settings → Claude summaries → Model; the choice is audited and kept across restores):
+
+| Model | Per million tokens (in / out) | One summary at most, default limits | Refusal fallback |
+|---|---|---|---|
+| Claude Haiku 5.5 | $0.10 / $0.50 | about $0.005 | none — a refused request fails and is retried the next day |
+| Claude Sonnet 5.5 *(default)* | $2 / $10 | about $0.20 | Claude Sonnet 5 |
+| Claude Opus 5.5 | $4 / $20 | about $0.45 | Claude Opus 5 |
+
+Changing the model changes the price used for every check above at once; spending so far, the caps and
+existing summaries stay as they are (each summary shows which model wrote it). Token counts are redone
+for the new model before its first request.
+
+With the defaults one summary costs at most about **$0.20**. A paid request is never retried
 automatically. One whose outcome is unknown (timeout, dropped connection) is booked at its worst case,
 so the caps never undercount.
 

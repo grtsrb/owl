@@ -152,7 +152,9 @@ export interface JumpView {
   tokens?: number; exact?: boolean; maxCostMicros?: number; sources?: NoteSource[]; error?: string; summary?: SummaryView;
 }
 export interface SummaryOverview { mode: SummaryMode; enabled: boolean; paused: boolean; jumps: JumpView[] }
-export interface SummarySettings { mode: SummaryMode; dailyCapMicros: number; monthlyCapMicros: number; maxInputTokens: number; maxOutputTokens: number }
+export interface SummarySettings { mode: SummaryMode; dailyCapMicros: number; monthlyCapMicros: number; maxInputTokens: number; maxOutputTokens: number; model?: string }
+/** A model admins can choose for summaries, priced with the saved limits ("" model = the server default). */
+export interface SummaryModel { id: string; label: string; price: { Input: number; Output: number }; fallback?: string; maxPerSummaryMicros: number }
 export interface SummaryRequestLog {
   id: number; at: string; component: string; from: string; to: string; model: string;
   inputTokens: number; outputTokens: number; costMicros: number; result: "ok" | "failed" | "resumed"; error?: string;
@@ -160,7 +162,7 @@ export interface SummaryRequestLog {
 export interface SummaryStatus {
   settings: SummarySettings; enabled: boolean; model: string; fallback?: string; price?: { Input: number; Output: number };
   paused?: string; spentTodayMicros: number; spentMonthMicros: number; spentTotalMicros: number; summaries: number;
-  requests: SummaryRequestLog[]; maxPerSummaryMicros: number;
+  requests: SummaryRequestLog[]; maxPerSummaryMicros: number; defaultModel: string; models: SummaryModel[];
 }
 
 /** Micro-dollars as money: $0.0123 below a cent, else cents. */

@@ -31,7 +31,7 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 | — | `GITHUB_TOKEN` | — | GitHub token **with no scopes**. Without it: 60 requests/hour, incomplete data. |
 | — | `OWL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. A level saved in the UI overrides it. |
 | — | `ANTHROPIC_API_KEY` | — | Claude API key for [upgrade summaries](operations.md#claude-upgrade-summaries). Without it summaries can only run in *estimate* mode. Never logged. |
-| — | `OWL_CLAUDE_MODEL` | `claude-opus-5-5` | Model for summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
+| — | `OWL_CLAUDE_MODEL` | `claude-sonnet-5-5` | The *default* model for summaries; admins choose another in Settings → Claude summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
 
 ### Sign-in
 
@@ -132,6 +132,7 @@ See [CLI](cli.md).
 | Log file retention | 〃 | 5 days (1–365) |
 | Audit log retention | 〃 | 365 days (1–3650) |
 | Summary mode: off / estimate / manual / automatic | Settings → Claude summaries | **off** |
+| Summary model: Claude Haiku 5.5, Sonnet 5.5 or Opus 5.5 | 〃 | the server default (`OWL_CLAUDE_MODEL`, else Sonnet 5.5) |
 | Daily / monthly spending cap (UTC) | 〃 | $5 / $20 ($0.01–$1000; daily ≤ monthly) |
 | Max input / output tokens per summary | 〃 | 30,000 / 4,000 (2k–200k / 1k–16k) |
 | Weekly digest, Critical alert, unrecognized image alert, new cluster message | Settings → Notifications | all **off** |

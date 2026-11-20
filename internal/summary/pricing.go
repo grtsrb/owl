@@ -22,12 +22,19 @@ var prices = map[string]Price{
 
 // fallbacks: the server-side refusal fallback used per model (release notes describing CVEs can trip
 // the cyber classifier). The fallback attempt bills at its own model's price.
+// Claude Haiku 5.5 has no server-side fallback: a refused request fails (and is retried the next day).
 var fallbacks = map[string]string{
-	"claude-opus-5-5": "claude-opus-5",
+	"claude-opus-5-5":   "claude-opus-5",
+	"claude-sonnet-5-5": "claude-sonnet-5", // the only fallback Sonnet 5.5's array form accepts
 }
 
-// DefaultModel is used when OWL_CLAUDE_MODEL is unset.
-const DefaultModel = "claude-opus-5-5"
+// DefaultModel is used when neither Settings → Claude summaries nor OWL_CLAUDE_MODEL picks one.
+// Summarizing given text is not hard reasoning: Sonnet 5.5 does it well at half Opus 5.5's price.
+const DefaultModel = "claude-sonnet-5-5"
+
+// SelectableModels are offered in Settings → Claude summaries, cheapest first. OWL_CLAUDE_MODEL may
+// name any priced model as the server default.
+var SelectableModels = []string{"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"}
 
 func priceFor(model string, inputTokens int64) (Price, bool) {
 	p, ok := prices[model]

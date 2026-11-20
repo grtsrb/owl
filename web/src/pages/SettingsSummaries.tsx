@@ -28,7 +28,7 @@ function Inner() {
         {!s.enabled && <div className="callout warn"><Icon.warn /><span>ANTHROPIC_API_KEY is not set on the server: only Off and Estimate only work.</span></div>}
         {s.paused && <PausedNotice reason={s.paused} onResumed={st.reload} />}
         <div className="kv-grid">
-          <div><span>Model</span><span>{s.model}{s.fallback && <span className="subtle"> (refusal fallback: {s.fallback})</span>}</span></div>
+          <div><span>Model</span><span>{label(s, s.model)}{s.fallback ? <span className="subtle"> (refusal fallback: {label(s, s.fallback)})</span> : <span className="subtle"> (no refusal fallback)</span>}</span></div>
           <div><span>Price per million tokens</span><span>{s.price ? `$${s.price.Input} in / $${s.price.Output} out` : "unknown"}</span></div>
           <div><span>Summaries stored</span><span>{s.summaries}</span></div>
         </div>
@@ -86,6 +86,17 @@ function PausedNotice({ reason, onResumed }: { reason: string; onResumed: () => 
   );
 }
 
+// What each offered model is good for here (summarizing given release notes, not open-ended reasoning).
+const MODEL_NOTES: Record<string, string> = {
+  "claude-haiku-5-5": "cheapest; fine for short, plain release notes",
+  "claude-sonnet-5-5": "good summaries at a moderate price",
+  "claude-opus-5-5": "most thorough; for long or tricky upgrades",
+};
+
+function label(s: SummaryStatus, id: string): string {
+  return s.models.find((m) => m.id === id)?.label ?? id;
+}
+
 // Money is edited in dollars and stored in micro-dollars; tokens as numbers.
 function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void }) {
   const [v, setV] = useState<SummarySettings>(s.settings);
@@ -95,13 +106,32 @@ function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void })
   const dollars = (m: number) => String(m / 1e6);
   const micros = (d: string) => Math.round(Number(d) * 1e6);
   return (
-    <Card title="Mode & limits">
+    <Card title="Model, mode & limits">
       <form className="stack" onSubmit={async (e) => {
         e.preventDefault(); setBusy(true); setMsg(null);
         try { await api.saveSummarySettings(v); setMsg({ ok: true, text: "Saved." }); onSaved(); }
         catch (err) { setMsg({ ok: false, text: writeErrorText(err) }); }
         finally { setBusy(false); }
       }}>
+        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend className="subtle" style={{ marginBottom: 4 }}>Model</legend>
+          {s.models.map((o) => {
+            const chosen = (v.model || s.defaultModel) === o.id;
+            return (
+              <label key={o.id} className="check-row">
+                <input type="radio" name="model" checked={chosen} onChange={() => setV({ ...v, model: o.id === s.defaultModel ? undefined : o.id })} />
+                <span>
+                  <b>{o.label}</b>{o.id === s.defaultModel && <span className="subtle"> · default</span>}{" "}
+                  <span className="subtle">
+                    ${o.price.Input} in / ${o.price.Output} out per million tokens · at most {usd(o.maxPerSummaryMicros)} per summary with the saved limits
+                    {o.fallback ? ` (incl. a refusal fallback to ${label(s, o.fallback)})` : " · no refusal fallback: a refused request fails and is retried the next day"}
+                    {MODEL_NOTES[o.id] ? ` — ${MODEL_NOTES[o.id]}` : ""}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
         <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="subtle" style={{ marginBottom: 4 }}>Mode</legend>
           {MODES.map(([id, label, desc]) => (
