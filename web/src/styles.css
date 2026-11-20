@@ -173,14 +173,6 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px
 .lvl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .lvl-chips .chip:disabled { opacity: .45; cursor: default; }
 .lvl-chips .chip.on .dot { box-shadow: 0 0 0 2px var(--panel); }
-.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-.tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; min-height: 76px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); font: inherit; color: var(--text); cursor: pointer; }
-.tile:hover { border-color: var(--faint); }
-.tile.active { outline: 2px solid var(--accent); outline-offset: -1px; }
-.tile-n { font-size: 26px; font-weight: 650; line-height: 1.1; }
-.tile-s { font-size: 12px; color: var(--muted); }
-.tile-l { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
 
 .lvbar { display: flex; gap: 3px; height: 10px; border-radius: 999px; overflow: hidden; background: var(--panel-3); }
 .lvbar.thin { height: 7px; }
@@ -317,7 +309,7 @@ a.cc2:hover { box-shadow: var(--shadow); }
 .narrow { max-width: 620px; }
 
 @media (max-width: 1000px) {
-  .tiles, .lvtiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lvtiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-top { grid-template-columns: minmax(0, 1fr); }
 }
 /* ---------- settings ---------- */

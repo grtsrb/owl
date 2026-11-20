@@ -69,9 +69,11 @@ export default function Overview() {
   }
 
   const cols = reporting.filter((c) => sel.selected.includes(c.name));
-  // One number per level everywhere on this page: components, at their worst level in the selected
-  // clusters (the level each row shows). Per-cluster counts are on the cluster cards.
+  // Every count on this page counts components at their worst level in the selected clusters (the level
+  // each row shows); per-cluster counts are on the cluster cards. The summary line covers the whole
+  // selection; the chips also follow the search box, so each chip's number is the rows it gives.
   const counts = tally(rows.map((r) => r.level));
+  const need = attention(counts);
   const searched = rows.filter((r) => r.c.name.toLowerCase().includes(query.toLowerCase()));
   const shown = searched.filter((r) => filter === "all" || r.level === filter);
   const pg = paginate(shown, Number(qs.get("page")), pageSize);
@@ -89,11 +91,16 @@ export default function Overview() {
           <h1>Overview<DocHelp to={DOC_HELP.overview} label="the Overview" /></h1>
           <p className="muted">{rows.length} components in {cols.length} {cols.length === 1 ? "cluster" : "clusters"} · generated {ago(report.data.generatedAt)}</p>
           <p className="ov-summary">
-            {attention(counts) === 0 ? <span>Nothing needs attention above Low.</span> : (
-              <><b>{attention(counts)} {attention(counts) === 1 ? "component needs" : "components need"} attention</b>
+            {need === 0 ? <span>Nothing needs attention above Low.</span> : (
+              <><b>{need} {need === 1 ? "component needs" : "components need"} attention</b>
                 {(["critical", "high", "medium"] as Level[]).filter((l) => counts[l]).map((l) => (
                   <span key={l} className={`ov-sum-item lvl-${l}`}><span className="dot" aria-hidden />{counts[l]} {levelLabel[l]}</span>
                 ))}</>
+            )}
+            {(counts.unknown ?? 0) > 0 && (
+              <span className="ov-sum-item lvl-unknown" title="No upstream release data yet, so these can't be judged">
+                <span className="dot" aria-hidden />{counts.unknown} Unknown (no upstream data)
+              </span>
             )}
           </p>
         </div>
