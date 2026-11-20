@@ -29,7 +29,7 @@ function Inner() {
         {s.paused && <PausedNotice reason={s.paused} onResumed={st.reload} />}
         <div className="kv-grid">
           <div><span>Model</span><span>{label(s, s.model)}{s.fallback ? <span className="subtle"> (refusal fallback: {label(s, s.fallback)})</span> : <span className="subtle"> (no refusal fallback)</span>}</span></div>
-          <div><span>Price per million tokens</span><span>{s.price ? `$${s.price.Input} in / $${s.price.Output} out` : "unknown"}</span></div>
+          <div><span>Price per million tokens</span><span>{s.price ? `${perM(s.price.Input)} in / ${perM(s.price.Output)} out` : "unknown"}</span></div>
           <div><span>Summaries stored</span><span>{s.summaries}</span></div>
         </div>
         <div className="kv-grid">
@@ -93,9 +93,16 @@ const MODEL_NOTES: Record<string, string> = {
   "claude-opus-5-5": "most thorough; for long or tricky upgrades",
 };
 
+/** "claude-sonnet-5" → "Claude Sonnet 5" (the server's label when it sent one). */
 function label(s: SummaryStatus, id: string): string {
-  return s.models.find((m) => m.id === id)?.label ?? id;
+  const known = s.models.find((m) => m.id === id)?.label;
+  if (known) return known;
+  const [name, ...ver] = id.replace(/^claude-/, "").split("-");
+  return name ? `Claude ${name.charAt(0).toUpperCase()}${name.slice(1)} ${ver.join(".")}`.trim() : id;
 }
+
+/** $ per million tokens: "$2", "$0.10". */
+const perM = (n: number) => `$${n < 1 ? n.toFixed(2) : n}`;
 
 // Money is edited in dollars and stored in micro-dollars; tokens as numbers.
 function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void }) {
@@ -123,7 +130,7 @@ function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void })
                 <span>
                   <b>{o.label}</b>{o.id === s.defaultModel && <span className="subtle"> · default</span>}{" "}
                   <span className="subtle">
-                    ${o.price.Input} in / ${o.price.Output} out per million tokens · at most {usd(o.maxPerSummaryMicros)} per summary with the saved limits
+                    {perM(o.price.Input)} in / {perM(o.price.Output)} out per million tokens · at most {usd(o.maxPerSummaryMicros)} per summary with the saved limits
                     {o.fallback ? ` (incl. a refusal fallback to ${label(s, o.fallback)})` : " · no refusal fallback: a refused request fails and is retried the next day"}
                     {MODEL_NOTES[o.id] ? ` — ${MODEL_NOTES[o.id]}` : ""}
                   </span>
