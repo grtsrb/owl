@@ -19,8 +19,6 @@ export interface Row {
   notes: NoteItem[];
   clusters: string[];
   inLive: boolean;
-  /** Worst level in each selected cluster it runs in (the tiles count these, summed over clusters). */
-  perCluster: Level[];
 }
 
 export function rowsFor(components: ComponentReport[], selected: string[], lastStage: string): Row[] {
@@ -30,12 +28,9 @@ export function rowsFor(components: ComponentReport[], selected: string[], lastS
     const insts = c.instances.filter((i) => sel.has(i.cluster));
     const worst = worstInstance(insts);
     if (!worst) continue;
-    const byCluster = new Map<string, Level[]>();
-    for (const i of insts) byCluster.set(i.cluster, [...(byCluster.get(i.cluster) ?? []), i.score.level]);
     out.push({
       c, insts, worst, level: worstLevel(insts.map((i) => i.score.level)), notes: notesFor(c, insts, selected),
       clusters: [...new Set(insts.map((i) => i.cluster))], inLive: insts.some((i) => i.stage === lastStage),
-      perCluster: [...byCluster.values()].map(worstLevel),
     });
   }
   return out.sort((a, b) => levelRank[b.level] - levelRank[a.level] || a.c.name.localeCompare(b.c.name));
@@ -74,11 +69,11 @@ export default function Overview() {
   }
 
   const cols = reporting.filter((c) => sel.selected.includes(c.name));
-  // Tiles: a component counts once per selected cluster, at its worst level there — Critical in staging
-  // and in live is 2. A tile lists the components with that level in at least one selected cluster.
-  const counts = tally(rows.flatMap((r) => r.perCluster));
-  const compCounts = tally(rows.flatMap((r) => [...new Set(r.perCluster)]));
-  const shown = rows.filter((r) => (filter === "all" || r.perCluster.includes(filter)) && r.c.name.toLowerCase().includes(query.toLowerCase()));
+  // One number per level everywhere on this page: components, at their worst level in the selected
+  // clusters (the level each row shows). Per-cluster counts are on the cluster cards.
+  const counts = tally(rows.map((r) => r.level));
+  const searched = rows.filter((r) => r.c.name.toLowerCase().includes(query.toLowerCase()));
+  const shown = searched.filter((r) => filter === "all" || r.level === filter);
   const pg = paginate(shown, Number(qs.get("page")), pageSize);
   const top = [...rows]
     .filter((r) => levelRank[r.level] >= levelRank.medium)
@@ -93,21 +88,16 @@ export default function Overview() {
         <div>
           <h1>Overview<DocHelp to={DOC_HELP.overview} label="the Overview" /></h1>
           <p className="muted">{rows.length} components in {cols.length} {cols.length === 1 ? "cluster" : "clusters"} · generated {ago(report.data.generatedAt)}</p>
+          <p className="ov-summary">
+            {attention(counts) === 0 ? <span>Nothing needs attention above Low.</span> : (
+              <><b>{attention(counts)} {attention(counts) === 1 ? "component needs" : "components need"} attention</b>
+                {(["critical", "high", "medium"] as Level[]).filter((l) => counts[l]).map((l) => (
+                  <span key={l} className={`ov-sum-item lvl-${l}`}><span className="dot" aria-hidden />{counts[l]} {levelLabel[l]}</span>
+                ))}</>
+            )}
+          </p>
         </div>
         <button className="btn" onClick={report.reload}>Refresh</button>
-      </div>
-
-      <div className="tiles">
-        {LEVELS.map((l) => (
-          <button key={l} className={`tile lvl-${l}${filter === l ? " active" : ""}`} aria-pressed={filter === l}
-            onClick={() => setFilter(filter === l ? "all" : l)}>
-            <span className="tile-n">{counts[l] ?? 0}</span>
-            <span className="tile-l"><span className="dot" aria-hidden />{levelLabel[l]}</span>
-            {(compCounts[l] ?? 0) !== (counts[l] ?? 0) && (
-              <span className="tile-s">{compCounts[l]} {compCounts[l] === 1 ? "component" : "components"}</span>
-            )}
-          </button>
-        ))}
       </div>
 
       <div className="grid-top">
@@ -138,10 +128,21 @@ export default function Overview() {
       <Card
         title={<>Components <span className="subtle" style={{ fontWeight: 400 }}>{single ? "One cluster selected: detailed list" : "Side by side. Click a name for details."}</span></>}
         actions={<>
-          {filter !== "all" && <button className="btn small" onClick={() => setFilter("all")}>Level: {levelLabel[filter]} ✕</button>}
           <input className="input wide" placeholder="Filter components…" aria-label="Filter components" value={query} onChange={(e) => qs.set({ q: e.target.value })} />
         </>}
       >
+        <div className="lvl-chips" role="group" aria-label="Filter by level">
+          <button className={`chip small${filter === "all" ? " on" : ""}`} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>All {searched.length}</button>
+          {LEVELS.map((l) => {
+            const n = searched.filter((r) => r.level === l).length;
+            return (
+              <button key={l} className={`chip small lvl-${l}${filter === l ? " on" : ""}`} aria-pressed={filter === l}
+                disabled={n === 0 && filter !== l} onClick={() => setFilter(filter === l ? "all" : l)}>
+                <span className="dot" aria-hidden />{levelLabel[l]} {n}
+              </button>
+            );
+          })}
+        </div>
         {shown.length === 0 ? <Empty>No components match in the selected clusters.</Empty> : single ? (
           <SingleTable rows={pg.items} onOpen={setPanel} />
         ) : (
@@ -225,6 +226,11 @@ function SingleTable({ rows, onOpen }: { rows: Row[]; onOpen: (id: string) => vo
       </table>
     </div>
   );
+}
+
+/** Components that need something done soon: Critical, High or Medium. */
+function attention(c: Partial<Record<Level, number>>): number {
+  return (c.critical ?? 0) + (c.high ?? 0) + (c.medium ?? 0);
 }
 
 function tally(levels: Level[]): Partial<Record<Level, number>> {

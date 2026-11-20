@@ -47,15 +47,17 @@ goes back to page 1.
 
 ## Overview
 
-- **Level tiles** — how many problems are Critical, High, Medium, Low, Unknown, OK across the selected
-  clusters: a component counts once **per cluster**, at its worst level there (Critical in staging and
-  in live = 2). When that differs from the number of components, the tile says so ("1 component").
-  Click one to list the components with that level in at least one selected cluster.
+- **Summary** under the title — how many components need attention (Critical, High or Medium) across
+  the selected clusters, per level. A component counts once, at its worst level in those clusters.
 - **Top actions** — the five most urgent components: highest level first, then those running in your
   last (live) stage, then those affecting the most clusters.
-- **Cluster cards** — per cluster: Kubernetes version and its EOL status, last report, counts per level.
+- **Cluster cards** — per cluster: Kubernetes version and its EOL status, last report, and how many
+  components are at each level *in that cluster*.
 - **Components** — one cluster selected: a detailed list with versions and reasons. Several clusters:
   a components × clusters matrix, one cell per cluster with its version and level.
+  - **Level chips** above the table (All, Critical, High, …) filter it: a chip lists the components
+    whose level — the worst across the selected clusters, the dot next to the name — is that level, and
+    its number is exactly how many rows you get.
   - **Recommended action** column: the component's goal ("Update to 1.14.7 — fixes 11 high
     advisories") and what each group of clusters needs to get there.
   - Note icons (retired, archived, drift, unpinned, needs review, no advisory data, stale data) are

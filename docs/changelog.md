@@ -2,6 +2,14 @@
 
 What each milestone shipped. Newest first.
 
+## Overview: one set of numbers
+
+- The level tiles are gone. Under the title: how many components need attention (Critical, High,
+  Medium); per-cluster numbers stay on the cluster cards.
+- The level filter is a row of chips right above the Components table. A chip shows the components
+  whose (worst) level is that level, and its number matches the rows you get — before, choosing Low
+  listed every component that was Low in *any* cluster, which was almost all of them.
+
 ## Docs in Owl
 
 - **Docs** in the sidebar: this documentation, built into Owl — always the docs of the version you run.
