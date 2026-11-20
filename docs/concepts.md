@@ -34,6 +34,8 @@ share a stage. A stage can only be deleted when no cluster uses it.
 drift: Owl only compares clusters of the **same tenant**. Renaming a tenant renames it on every
 cluster; deleting needs it to be unused.
 
+> **Why:** environments don't all run the same things, and different teams move at different speeds. Comparing only clusters of the same tenant, along the promotion path you define, keeps drift about real promotion problems instead of differences between teams. Names can't change because the change history and exports refer to them.
+
 ## Workloads, images and instances
 
 The agent reports every top-level **workload**: Deployments, StatefulSets, DaemonSets, CronJobs,
@@ -50,6 +52,8 @@ container). A component's level is the worst level of its instances.
 
 Kubernetes, RKE2 and k3s are special: their version comes from the cluster's nodes
 (`kubeletVersion`, e.g. `v1.30.4+rke2r1`), not from an image.
+
+> **Why:** the pod template says what *should* run and is there even when a workload is scaled to 0; the pods say what *does* run, so a rollout that is stuck halfway is visible. The agent sends a complete snapshot every time, so a missed report fixes itself with the next one.
 
 ## Components and the catalog
 
@@ -76,6 +80,8 @@ k3s's `rancher/mirrored-coredns-coredns`. In a cluster of that distribution they
 *RKE2-managed* (*k3s-managed*), and the recommended action is to upgrade RKE2 rather than the component.
 Their level is computed exactly like any other.
 
+> **Why:** the catalog is compiled into Owl — there is no remote catalog to reach or trust, and every built-in entry was checked against real published images. Your own choices (in-house, ignore) are kept in the database and win over the built-in catalog, so upgrading Owl never undoes them.
+
 ## Image statuses
 
 | Status | Meaning | Scored? |
@@ -89,6 +95,8 @@ Their level is computed exactly like any other.
 Vendor suffixes are stripped when reading a version (`-hardened3`, `-build…`, `-debian-12-r20`,
 `-alpine`), but real pre-releases are kept (`-rc.1`). The exact image is always shown.
 
+> **Why:** a floating tag (`redis:7`, `latest`) can change under you without anyone deploying, and Owl can't know which exact version runs. So it can't call it safe, and it doesn't check advisories against a guess.
+
 ## Versions and release lines
 
 A **release line** is a series of versions that get patches together:
@@ -101,6 +109,8 @@ For each line Owl knows the latest stable version, whether it's LTS, and its end
 published. "**N lines behind**" counts these lines. Note that projects differ: Grafana and Redpanda
 ship a new minor roughly monthly, so "1 line behind" there is much less dramatic than for Kubernetes
 — use a per-component policy if the default is too strict.
+
+> **Why:** endoflife.date publishes support and end-of-life dates, which say far more than tags do; GitHub releases are the fallback when a project has no lifecycle data. "Lines" are counted the way each project names them, which is why the same distance means different things for different projects.
 
 ## Version policies and targets
 
@@ -116,6 +126,8 @@ A **policy** decides which version a component *should* run — its **target**.
 
 Policies are set globally and optionally per component (Settings → Version policy, or the
 component page). A per-component policy overrides the global one.
+
+> **Why:** the newest release is rarely what production should run on day one. The default asks for a supported line — LTS where the project has one, otherwise one line behind the newest — and per-component policies cover projects with a different rhythm. Policies are explicit settings, so everyone sees the same target.
 
 ## Upstream data
 
@@ -136,6 +148,8 @@ A project is **retired** when its GitHub repository is archived *and* it hasn't 
 days (e.g. ingress-nginx). Archived but still releasing (e.g. Redpanda) only gets a note:
 development moved somewhere — check where.
 
+> **Why:** fetching only what runs keeps GitHub's rate limit for what matters and the data fresh where you need it. Every answer is cached, so an upstream outage shows *stale* data with a warning instead of an empty page.
+
 ## Advisories
 
 For each running version Owl lists advisories that affect it and the version that fixes them.
@@ -154,6 +168,8 @@ Grafana), that query returns every advisory regardless of version.
 
 Blind spot: vulnerabilities in OS packages or libraries bundled into the image are not covered
 (a later version may ingest Trivy Operator reports).
+
+> **Why:** silence would read as "no vulnerabilities", which is the one thing Owl must never claim without data. Matching ranges locally gives the same result for every project, whatever its tag format; a range Owl can't decide is shown for review rather than guessed.
 
 ## Priority levels
 
@@ -174,6 +190,8 @@ behind target 9.4.9 (lts-or-n-1); 8.19 supported until 2027-07-15" for Elasticse
 Without lifecycle data (release lines from GitHub tags) Owl can't tell a supported line from an abandoned
 one, so 2+ lines behind stays High.
 
+> **Why:** a level has to be something you can predict and audit — the same versions and upstream data always give the same level, with the rule that fired written next to it. Claude may explain an upgrade but never sets or changes a level. "Far behind" is High because it usually means unsupported; when lifecycle data says the old line is still supported, it's only Medium.
+
 ## Notes
 
 Notes are shown next to an instance but **never change its level**:
@@ -184,6 +202,8 @@ Notes are shown next to an instance but **never change its level**:
 - archived but still releasing,
 - drift between stages,
 - upstream data stale.
+
+> **Why:** notes are uncertain (an open advisory range) or not something you can act on (no fix listed, no data). Letting them raise the level would make levels noisy, so they stay visible without changing the priority.
 
 ## Recommended action
 
@@ -196,6 +216,8 @@ On a line upstream still supports but far behind (Medium), it's the newest patch
 one line per group of clusters says what each needs ("it-hetzner 1.14.6 → patch", "it-aws-test,
 it-aws-prod 1.13.1 → 1 line behind"). The action is derived from the level and its reasons, never
 the other way round.
+
+> **Why:** one sentence per component that is the same in every view, so teams agree on the goal; the per-cluster lines say who still has work to do. The action always follows from the level and its reasons, never the other way round. Security beats the policy target: if the target version doesn't contain an advisory's fix, the action goes to the newest patch of the line that does, and says so ("beyond the policy target …").
 
 ## Drift between stages
 
@@ -211,12 +233,16 @@ in both:
 
 When you select a subset of clusters in the UI, drift involving unselected clusters is hidden.
 
+> **Why:** promotion means versions move from earlier stages to later ones. A later stage running something newer means a step was skipped; a component missing somewhere is normal (environments differ), so it's information, not a warning.
+
 ## Change history
 
 On every report Owl compares the new intended images with the previous ones and records:
 `added`, `removed`, `image_changed` and `kubernetes_version_changed`. The first report from a cluster
 is a single `first_snapshot` event rather than hundreds of "added" ones. Replica counts and running
 pods are not recorded as changes (too noisy) — only the templates.
+
+> **Why:** the history should answer "what changed and when", not repeat every scaling event. Templates change only when someone deploys; replicas and pods change all the time. One `first_snapshot` event keeps a new cluster from flooding the history.
 
 ## Upgrade summaries
 
@@ -246,3 +272,5 @@ Claude reads the upstream release notes of an upgrade and summarizes what it inv
 - **Verify before acting.** Summaries are written from text published on the internet. Owl treats the
   notes as untrusted (Claude is told to ignore instructions in them), validates the output, shows it as
   plain text, and links each point to the release notes it came from.
+
+> **Why:** reading release notes across many versions is slow, and Claude does it well — but it costs money and the text comes from the internet. So it's off until an admin turns it on, every request is priced before it's sent and stays within daily and monthly caps, only public data leaves the server, and the result explains an upgrade without ever influencing its priority.

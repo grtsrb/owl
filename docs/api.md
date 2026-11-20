@@ -123,6 +123,13 @@ All under `/api/v1/auth/` except the two Google redirects.
 | `GET /cli` | `{version, files: [{os, arch, sha256, size}]}` — empty without the image's `/cli` directory |
 | `GET /cli/{os}-{arch}` | The client binary (`application/octet-stream`, `X-Checksum-Sha256`) |
 
+## Docs
+
+| Endpoint | |
+|---|---|
+| `GET /docs` | `{version, pages: [{id, title, description}], sections: [{page, anchor, heading, level, text}]}` — the built-in docs and their search index; `404` when the server was built without them |
+| `GET /docs/{page}` | `{id, title, description, html}` — one page, rendered when Owl was built |
+
 ## Inventory and reports (read)
 
 | Endpoint | Returns |
@@ -149,7 +156,7 @@ Levels: `critical`, `high`, `medium`, `low`, `unknown`, `ok`.
 
 | Endpoint | |
 |---|---|
-| `POST /snapshots` | Agent token. Body: a snapshot (`internal/snapshot`), optionally `Content-Encoding: gzip`. `schemaVersion` must match the server's (currently `1`). Returns `202 {cluster, changes}`. |
+| `POST /snapshots` | Agent token. Body: a snapshot as the agent sends it (see `owl agent --print`), optionally `Content-Encoding: gzip`. `schemaVersion` must match the server's (currently `1`). Returns `202 {cluster, changes}`. |
 
 The snapshot carries no cluster identity — the server derives it from the token.
 

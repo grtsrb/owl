@@ -12,13 +12,15 @@ Secrets (GitHub token, Google client secret, SMTP password, S3 keys, Claude API 
 **only** ever read from the environment — never from flags (visible in `ps`), the UI or the database.
 With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they all live in `.env`.
 
+> **Why:** secrets in flags show up in `ps`, secrets in the database end up in every backup, and secrets in the UI can be read back by anyone who gets an admin session. The environment keeps them in one place you control (`.env`, a Kubernetes Secret). Everything that isn't secret lives in the UI so it's audited and backed up.
+
 ## Server — `owl server`
 
 | Flag | Environment | Default | Meaning |
 |---|---|---|---|
 | `--listen` | `OWL_LISTEN` | `127.0.0.1:8080` | Listen address. Use `0.0.0.0:8080` in a container. |
 | `--db` | `OWL_DB` | `owl.db` (image: `/data/owl.db`) | SQLite database file. |
-| — | `OWL_CLI_DIR` | `/cli` | Where the downloadable CLI builds are (`owl-<os>-<arch>.gz` or plain binaries from `make cli`, + `SHA256SUMS`; the image has them). Missing = no downloads in Account. |
+| — | `OWL_CLI_DIR` | `/cli` | Where the downloadable CLI builds are (`owl-<os>-<arch>.gz` or plain binaries, + `SHA256SUMS`; the image has them). Missing = no downloads in Account. |
 | `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated extra host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1` and the `OWL_PUBLIC_URL` host. Ports are ignored. |
 | `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. |
 | `--log-dir` | `OWL_LOG_DIR` | `<db dir>/logs` | Rotated log files. `-` = stderr only. |
@@ -82,6 +84,8 @@ Backups go to a bucket when `OWL_BACKUP_S3_BUCKET` is set; otherwise they stay l
 Endpoint, bucket, access key and secret key are all required once the bucket is set; the server
 refuses to start with a partial configuration.
 
+> **Why:** a partly configured feature (a bucket without keys, mail without a sender, a webhook over plain HTTP) would fail later and quietly — at 3 a.m. during the backup, or when someone needs a reset link. Refusing to start makes the mistake visible at once.
+
 ## Agent — `owl agent`
 
 | Flag | Environment | Default | Meaning |
@@ -97,6 +101,8 @@ refuses to start with a partial configuration.
 
 The agent tries a push up to 4 times (waiting 2 s, 4 s, 8 s in between) on network errors, `5xx`
 and `429`; if all fail, the next interval tries again. It never retries `4xx` (bad or revoked token, incompatible schema) — those need a fix.
+
+> **Why:** retrying a `4xx` can't help — a revoked token or an incompatible version needs a person — and hammering the server with it would only fill its logs. Network errors and `5xx` are usually brief, so those are retried.
 
 ## CLI — `owl login` and friends
 
@@ -132,6 +138,8 @@ See [CLI](cli.md).
 | Digest day, time, time zone | 〃 | Monday 09:00 Europe/Belgrade |
 | Digest by email (per user, for yourself) | Account (your name in the sidebar) | off |
 
+> **Why:** settings that are about *what* Owl tracks and how (stages, policies, schedules) belong to the people using it, so they're in the UI, audited and included in backups. Settings about the host and every secret stay in the environment.
+
 ## Data directory
 
 ```
@@ -165,3 +173,5 @@ consistent while the server runs. See [Operations](operations.md).
 | One Claude summary | the input/output token limits above, priced before sending (hard ceiling 200k input) |
 | Cluster / stage names | `a-z`, `0-9`, `-`; 1–63 characters; starts and ends with a letter or digit |
 | Tenant names | letters, digits, space, `_ . -`; 1–40 characters |
+
+> **Why:** limits keep one bad client from exhausting memory or guessing passwords. They're generous for normal use; hitting one almost always means something is wrong.

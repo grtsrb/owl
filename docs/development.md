@@ -173,3 +173,52 @@ The docs describe what's on `main`. With every change that users or operators ca
 | a CLI command | [cli.md](cli.md) |
 | a new error people will hit | [troubleshooting.md](troubleshooting.md) |
 | a milestone is merged | [changelog.md](changelog.md), README status |
+
+
+**The docs are served inside Owl** (Docs in the sidebar), rendered when Owl is built (`make docs`, part
+of `make build`), so they're written for the people who host, run and use Owl:
+
+- Every page in `docs/` except this one is served. A new page goes into `render.Order` (or `Excluded`)
+  in `internal/docs/render`, or the build fails.
+- No links into the repository (they become plain text in Owl); a file readers need goes into the page
+  with `<!-- include <path> -->` on a line of its own.
+- No raw HTML (write placeholders as `` `<target>` ``) and no images — the build fails on both, and on a
+  link to a heading that doesn't exist. Renaming a heading breaks its anchor: fix the links (and
+  `web/src/dochelp.ts`, checked by a test).
+- Each feature says what it does, how it works, and why: a `> **Why:** …` note at the end of its section.
+- Repository-only material (k3d, `make` targets, catalog contributions) stays on this page.
+
+## Adding a built-in catalog component
+
+What gets a built-in entry: it runs as a container image in the cluster, has a public GitHub repository
+with tagged releases, and its image names and tag format were checked against real published images.
+Anything else is better added from the UI.
+
+1. Add an entry to `catalog.yaml` with **every** image the tool ships — upstream, Bitnami
+   (`bitnami/*` and `bitnamilegacy/*`), vendor mirrors, and its helper images. Helpers that share the
+   tool's version (cert-manager's webhook) belong to the same entry; helpers with their own release cycle
+   (CSI sidecars) get their own. A standard install should leave no unrecognized images.
+2. Check the endoflife.date product (and the OSV package) is the same project before setting `eol` (`osv`).
+3. Check it against the live upstreams:
+   ```bash
+   make catalog-check COMPONENTS=<id>[,<id>…]    # needs GITHUB_TOKEN in .env
+   ./bin/owl upstream --component <id> --version <a version you run>
+   ```
+   `catalog-check` fails on a missing repository, endoflife.date product or release data, and warns
+   about an archived repository, endoflife.date and GitHub disagreeing about the newest release line,
+   and an OSV package without advisories. Warnings need a human look (ingress-nginx *is* archived);
+   it's a manual check, not part of CI.
+4. Add real image references to `internal/catalog/catalog_test.go` (image → component and version).
+5. `make test`, rebuild, and check the component in the UI.
+
+The format is in [Catalog → Format](catalog.md#format). A component added in the UI can be turned into
+an entry with **Copy as YAML**.
+
+## Troubleshooting the dev stack
+
+**`make stack-up` fails to connect agents.**
+Check the k3d clusters exist (`k3d cluster list`; create with `make dev-up`) and Docker is running.
+Re-running `make stack-up` is safe; it rotates the dev agent tokens and keeps the database volume.
+
+**GitHub rate limit locally.**
+Put `GITHUB_TOKEN=<token with no scopes>` in `.env` and re-run `make stack-up`.

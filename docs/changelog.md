@@ -1,6 +1,17 @@
 # Changelog
 
-What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.md](../DESIGN.md).
+What each milestone shipped. Newest first.
+
+## Docs in Owl
+
+- **Docs** in the sidebar: this documentation, built into Owl — always the docs of the version you run.
+  Signed-in users only. A **Topics** drawer on the right with search and the page list; the arrow hides
+  it. Every heading has a link to share; code blocks have **Copy**. A **?** next to the Overview,
+  Changes, Clusters and Settings → Catalog / Notifications / Backups / Users titles, and on the level
+  legend, opens the matching section.
+- The docs now explain **why** each feature works the way it does, include the Compose and Kubernetes
+  deployment files of this version, and give every troubleshooting entry its own heading.
+- `GET /api/v1/docs` and `/api/v1/docs/{page}` (signed in; readable with API tokens).
 
 ## Fix: actions that fix the advisories
 

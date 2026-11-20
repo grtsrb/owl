@@ -5,11 +5,13 @@ Running Owl day to day: backups, restore, logs, the audit log, monitoring and ma
 - [Backups](#backups)
 - [Restore](#restore)
 - [Claude upgrade summaries](#claude-upgrade-summaries)
+- [Notifications](#notifications)
 - [Bringing back one deleted cluster](#bringing-back-one-deleted-cluster)
 - [Logs](#logs)
 - [Audit log](#audit-log)
 - [Monitoring](#monitoring)
 - [Agent tokens](#agent-tokens)
+- [API tokens](#api-tokens)
 - [Background jobs](#background-jobs)
 
 ## Backups
@@ -74,6 +76,8 @@ safe"**. Backups older than the configured days (default 15) are deleted; the ne
 | No backup has been taken yet | Click **Back up now**. |
 | The newest backup is more than 36 hours old | Scheduled backups aren't running or failing — check the logs for `backup failed`. |
 
+> **Why:** a backup on the same disk as the database is lost with it, so Owl warns until there's a bucket. Owl never deletes in the bucket, and its credentials shouldn't allow it: if the server is ever compromised, the attacker still can't destroy your backups. A local copy is only removed once it's confirmed uploaded.
+
 ### Off-site copy by hand
 
 **Download** any backup from the list, or copy files from `backups/` on the host. A backup is a
@@ -118,6 +122,8 @@ After a restore:
 - if the restore went wrong, restore the `…-pre-restore` safety backup.
 
 A file that isn't an Owl backup is rejected with `400` and changes nothing.
+
+> **Why:** a restore should bring back your *data*, not undo security decisions made since — who may sign in, which tokens were revoked, what was audited, and what has already been spent. The safety backup makes every restore reversible.
 
 ## Claude upgrade summaries
 
@@ -173,6 +179,8 @@ Settings → Claude summaries shows spending today, this month and in total, and
 versions, tokens, cost, result). Mode and limit changes, generated and failed summaries and resumes are
 in the audit log.
 
+> **Why:** two independent limits: Owl's caps can only protect against Owl's own mistakes, the workspace limit protects against everything else. Pricing the worst case before sending — and never retrying a paid request silently — means the caps can't be overshot, even if a request times out.
+
 ## Notifications
 
 What and when: [User guide → Notifications](user-guide.md#notifications). How it behaves:
@@ -198,6 +206,8 @@ What and when: [User guide → Notifications](user-guide.md#notifications). How 
 - Mattermost's "Enable integrations to override usernames" setting decides whether posts show as **Owl**
   or as the webhook's creator.
 - **Never** spends on Claude: the digest only shows summaries that already exist.
+
+> **Why:** a notification is only useful when it's news. Recording quietly after a start, a restore or a catalog upgrade means an alert always means something changed in your clusters or upstream — not that Owl restarted.
 
 ## Bringing back one deleted cluster
 
@@ -233,6 +243,8 @@ Useful messages:
 | `upstream refreshed` / `upstream refresh incomplete` | Upstream data refresh results and per-component errors. |
 | `push failed, retrying` (agent) | The agent couldn't reach the server; it retries. |
 
+> **Why:** logs are copied to many places (Docker, log shippers, support tickets), so they must never contain secrets. The request id ties what a user saw to the matching log line without logging anything about the request itself.
+
 ## Audit log
 
 Every admin action is written to the audit log (in the database, viewable in Settings → Logs &
@@ -247,13 +259,16 @@ in `OWL_TRUSTED_PROXIES`).
 Entries older than the retention (default 365 days) are deleted daily. The audit log is part of
 backups but survives a restore unchanged.
 
+> **Why:** the audit log answers "who changed this, and when" — so a restore never rewrites it, and every entry names a person, also when the change came through an API token.
+
 ## Monitoring
 
 - `GET /healthz` → `200 ok` (no authentication, no host check) — for Docker/Kubernetes health
   checks and uptime monitors.
 - Watch for: a cluster's **last report** older than ~2 intervals (agent down or token revoked),
   backup warnings, `backup failed` and `audit log write failed` in the logs.
-- Notifications (Mattermost digest and critical alerts) are planned for milestone 10.
+- Turn on the Critical alert and the weekly digest (Settings → Notifications): the digest lists clusters
+  that haven't reported for over 24 hours.
 
 ## Agent tokens
 
@@ -262,6 +277,8 @@ backups but survives a restore unchanged.
   leaves: the old token stops working immediately; apply the new Secret and restart the agent.
 - An agent with a bad token logs `401` and doesn't retry. It recovers by itself once the Secret is
   fixed and the pod restarted.
+
+> **Why:** a token stored as a hash is useless to someone who reads the database or a backup. Rotating cuts off a leaked token at once without losing the cluster's history.
 
 ## API tokens
 

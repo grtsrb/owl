@@ -44,13 +44,14 @@ For a real installation (Docker Compose with automatic HTTPS on one host, or ins
 | [Operations](docs/operations.md) | Backups, restore, logs, audit log, upgrades, monitoring |
 | [Security](docs/security.md) | Sign-in, what Owl can and cannot see, tokens, hardening |
 | [Catalog](docs/catalog.md) | How images are recognized; adding components |
-| [CLI](docs/cli.md) | `owl agent`, `owl server`, `owl cluster`, `owl user`, `owl upstream` |
+| [CLI](docs/cli.md) | The `owl` command line: tokens, reports, clusters, users, server-side commands |
 | [HTTP API](docs/api.md) | Endpoint reference |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and fixes |
 | [Development](docs/development.md) | Local setup, tests, conventions, architecture |
 | [Changelog](docs/changelog.md) | What each milestone shipped |
 
-Design decisions and the roadmap live in [DESIGN.md](DESIGN.md).
+The same documentation (all but Development) is built into Owl: **Docs** in the sidebar, always for the
+version you run. Design decisions and the roadmap live in [DESIGN.md](DESIGN.md).
 
 ## Status
 

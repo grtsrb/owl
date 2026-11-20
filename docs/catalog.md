@@ -1,7 +1,8 @@
 # Catalog
 
 The catalog tells Owl which images belong to which upstream project and where to look up releases,
-end-of-life dates and advisories. It's `internal/catalog/catalog.yaml`, compiled into the binary.
+end-of-life dates and advisories. The built-in catalog is compiled into Owl; components you add in the
+UI extend it, and overrides tell Owl what to do with images neither knows.
 
 ## Built-in components
 
@@ -90,6 +91,8 @@ component added in the UI), so a long catalog costs nothing until you deploy som
 Catalog lists every built-in component with a green dot (running, and in how many clusters) or a grey
 one (not running).
 
+> **Why:** fetching only what runs keeps the long catalog free: no requests, no rate limit spent, until you deploy something from it.
+
 ## Format
 
 ```yaml
@@ -115,11 +118,13 @@ components:
 | `bundledWith` | `{<image>: rke2 \| k3s \| <component id>}` — what ships and upgrades that image itself: a distribution (`rancher/hardened-*`, `rancher/mirrored-*`; applies in clusters of that distribution) or another built-in component (`quay.io/cilium/cilium-envoy: cilium`; applies everywhere). The recommended action becomes "Comes with RKE2 — upgrade RKE2 …" and the UI tags it *RKE2-managed* / *Cilium-managed*; the level is unchanged. Each image must also be in `images`. |
 | `source: cluster` | Not matched by image: the version comes from the cluster's nodes. |
 | `notes` | Shown with the component. |
-| `versionPattern` | A regular expression for tags `ParseVersion` can't read: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). Also for tags with two versions: `-kafka-(\d+\.\d+\.\d+)$` reads Strimzi's `0.45.0-kafka-3.9.0` as Kafka 3.9.0. |
-| `releaseNotes` | Where [upgrade summaries](concepts.md#upgrade-summaries) read release notes when the GitHub releases don't carry them: `kubernetes-changelog`, `redis-releasenotes`, `haproxy-changelog`, `postgres-release-notes`. Empty = GitHub release notes. A new source needs code in `internal/upstream/notes.go`. |
+| `versionPattern` | A regular expression for tags Owl can't read on its own: its groups, joined with ".", are the version (`^(\d+\.\d+)_p(\d+)`: `9.7_p1-r4-ls163` → 9.7.1). Also for tags with two versions: `-kafka-(\d+\.\d+\.\d+)$` reads Strimzi's `0.45.0-kafka-3.9.0` as Kafka 3.9.0. |
+| `releaseNotes` | Where [upgrade summaries](concepts.md#upgrade-summaries) read release notes when the GitHub releases don't carry them: `kubernetes-changelog`, `redis-releasenotes`, `haproxy-changelog`, `postgres-release-notes`. Empty = GitHub release notes. A new source needs a change in Owl itself. |
 
 `releaseTagPrefix` is also stripped before reading a version from a GitHub release tag (nginx tags
 releases `release-1.27.4`).
+
+> **Why:** a wrong `eol` or `osv` would put another project's end-of-life dates or vulnerabilities on yours — worse than no data. That's why they're set only after checking it's the same project, and why "no advisory data" is said out loud.
 
 ## How tags become versions
 
@@ -130,31 +135,19 @@ releases `release-1.27.4`).
 
 ## Adding a component
 
-What gets a built-in entry: it runs as a container image in the cluster, has a public GitHub repository
-with tagged releases, and its image names and tag format were checked against real published images.
-Anything else is better added from the UI.
+**From the UI** (Settings → Catalog → **+ Add component**, or **New component** on a cluster's
+unrecognized image) — see [User guide → Catalog](user-guide.md#catalog). Such components live in the
+database (restored with backups) and work like built-in ones, except that they can't set `osv` or
+`releaseNotes`. A built-in component with the same id or image always wins; Settings then marks yours
+*Replaced by built-in*.
 
-1. Add an entry to `catalog.yaml` with **every** image the tool ships — upstream, Bitnami
-   (`bitnami/*` and `bitnamilegacy/*`), vendor mirrors, and its helper images. Helpers that share the
-   tool's version (cert-manager's webhook) belong to the same entry; helpers with their own release cycle
-   (CSI sidecars) get their own. A standard install should leave no unrecognized images.
-2. Check the endoflife.date product (and the OSV package) is the same project before setting `eol` (`osv`).
-3. Check it against the live upstreams:
-   ```bash
-   make catalog-check COMPONENTS=<id>[,<id>…]    # needs GITHUB_TOKEN in .env
-   ./bin/owl upstream --component <id> --version <a version you run>
-   ```
-   `catalog-check` fails on a missing repository, endoflife.date product or release data, and warns
-   about an archived repository, endoflife.date and GitHub disagreeing about the newest release line,
-   and an OSV package without advisories. Warnings need a human look (ingress-nginx *is* archived);
-   it's a manual check, not part of CI.
-4. Add real image references to `internal/catalog/catalog_test.go` (image → component and version).
-5. `make test`, rebuild, and check the component in the UI.
+**As a built-in entry**: what gets one is software that runs as a container image in the cluster, has a
+public GitHub repository with tagged releases, and whose image names and tag format were checked against
+real published images. **Copy as YAML** on a component you added turns it into an entry in the format
+above, ready to propose for the next Owl release (the steps for that are in the source's developer
+docs).
 
-Or add a component **from the UI** (Settings → Catalog, or **New component** on an unrecognized image):
-see [User guide → Catalog](user-guide.md#catalog). Those live in the database (restored with backups),
-can't set `osv` or `releaseNotes`, and a built-in component with the same id or image always wins.
-**Copy as YAML** turns one into an entry for this file.
+> **Why:** built-in entries are checked against real images and upstream data before they ship, so they win over a hand-made one for the same image. A component you add is never lost: if a release covers it, you're told and decide when to delete yours.
 
 ## Overrides (in the UI)
 
@@ -174,3 +167,5 @@ recognizes this as …"); only a component you add yourself for that repository 
 applies only while the catalog doesn't recognize the image; once a component covers it, that one wins
 and Settings shows "Now covered by … — remove?". Registries passed
 in `--internal-registries` are in-house without any override.
+
+> **Why:** overrides record a decision about your own environment ("this is ours", "we don't care about this"), so a newer Owl must not quietly undo them. A *map* only fills a gap in the catalog, so it gives way once the catalog covers the image.
