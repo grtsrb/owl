@@ -37,7 +37,9 @@ export default function Docs() {
   const { page } = useParams();
   const index = useApi(api.docs);
   const [topics, setTopicsState] = useState(() => load(TOPICS_KEY) !== "closed" && !narrow());
-  const setTopics = (open: boolean) => { setTopicsState(open); save(TOPICS_KEY, open ? "open" : "closed"); };
+  // The arrow is a choice to remember; closing after picking a topic on a phone is not (it would
+  // collapse the drawer on the desktop too).
+  const setTopics = (open: boolean, remember = true) => { setTopicsState(open); if (remember) save(TOPICS_KEY, open ? "open" : "closed"); };
 
   if (index.error) {
     if (index.error instanceof ApiError && index.error.status === 404) {
@@ -83,7 +85,7 @@ function DocView({ ix, id }: { ix: DocsIndex; id: string }) {
   const meta = ix.pages.find((p) => p.id === id);
   const doc = useApi(() => (meta ? api.docPage(id) : Promise.reject(new ApiError(404, "no such docs page"))), [id, meta]);
   const body = useRef<HTMLDivElement>(null);
-  const { hash } = useLocation();
+  const { hash, key } = useLocation();
   const navigate = useNavigate();
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -115,11 +117,13 @@ function DocView({ ix, id }: { ix: DocsIndex; id: string }) {
     const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
     if (target) target.scrollIntoView({ block: "start" });
     else window.scrollTo({ top: 0 });
-  }, [html, hash]);
+  }, [html, hash, key]); // key: clicking the section already in the URL scrolls back to it
 
   const flash = (what: string) => { setCopied(what); window.setTimeout(() => setCopied((c) => (c === what ? null : c)), 1500); };
-  const copy = (text: string, what: string) => {
-    void navigator.clipboard?.writeText(text).then(() => flash(what), () => flash("failed"));
+  /** Resolves true once the text is on the clipboard; false where it can't be (plain http://, denied). */
+  const copy = (text: string, what: string): Promise<boolean> => {
+    if (!navigator.clipboard) { flash("failed"); return Promise.resolve(false); }
+    return navigator.clipboard.writeText(text).then(() => { flash(what); return true; }, () => { flash("failed"); return false; });
   };
 
   // One click handler for the inserted HTML: section links, links between pages, copy buttons.
@@ -127,9 +131,10 @@ function DocView({ ix, id }: { ix: DocsIndex; id: string }) {
     const t = e.target as HTMLElement;
     const btn = t.closest<HTMLButtonElement>("button[data-copy]");
     if (btn) {
-      copy(btn.parentElement?.querySelector("pre")?.textContent ?? "", "code");
-      btn.textContent = "Copied";
-      window.setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+      void copy(btn.parentElement?.querySelector("pre")?.textContent ?? "", "code").then((ok) => {
+        btn.textContent = ok ? "Copied" : "Couldn’t copy";
+        window.setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+      });
       return;
     }
     const a = t.closest<HTMLAnchorElement>("a");
@@ -138,7 +143,7 @@ function DocView({ ix, id }: { ix: DocsIndex; id: string }) {
     if (a.classList.contains("anchor")) {
       e.preventDefault();
       navigate({ hash: href }, { replace: true });
-      copy(`${window.location.origin}/docs/${id}${href}`, "link");
+      void copy(`${window.location.origin}/docs/${id}${href}`, "link");
     } else if (href.startsWith("#")) {
       e.preventDefault();
       navigate({ hash: href });
@@ -158,17 +163,17 @@ function DocView({ ix, id }: { ix: DocsIndex; id: string }) {
         // eslint-disable-next-line react/no-danger -- Owl's own build output, raw HTML refused by docsgen
         <div ref={body} className="doc-body" onClick={onClick} dangerouslySetInnerHTML={{ __html: doc.data.html }} />
       )}
-      {copied && <div className="doc-toast" role="status">{copied === "failed" ? "Couldn’t copy" : copied === "link" ? "Link copied" : "Copied"}</div>}
+      {copied && <div className="doc-toast" role="status">{copied === "failed" ? "Couldn’t copy — the browser allows it only over HTTPS" : copied === "link" ? "Link copied" : "Copied"}</div>}
     </article>
   );
 }
 
-function Topics({ ix, current, open, setOpen }: { ix: DocsIndex; current?: string; open: boolean; setOpen: (o: boolean) => void }) {
+function Topics({ ix, current, open, setOpen }: { ix: DocsIndex; current?: string; open: boolean; setOpen: (o: boolean, remember?: boolean) => void }) {
   const [q, setQ] = useState("");
   const hits = useMemo(() => search(ix, q), [ix, q]);
   const sectionsOf = (id: string) => ix.sections.filter((s) => s.page === id && s.level === 2);
   const title = (id: string) => ix.pages.find((p) => p.id === id)?.title ?? id;
-  const picked = () => { if (narrow()) setOpen(false); };
+  const picked = () => { if (narrow()) setOpen(false, false); };
 
   if (!open) {
     return (

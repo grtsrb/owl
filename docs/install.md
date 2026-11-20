@@ -84,7 +84,8 @@ capped at 3 × 10 MB.
 Check it: `curl -s https://owl.example.com/healthz` prints `ok`. The first start can take a minute
 while Caddy gets the certificate.
 
-The three files, exactly as shipped with this version:
+The three files, exactly as shipped with this version (in the source:
+[`deploy/compose/`](../deploy/compose)):
 
 <!-- include deploy/compose/compose.yaml -->
 
@@ -109,6 +110,9 @@ kubectl apply -f deploy/server/ingress.example.yaml   # edit host, issuer, class
 `OWL_TRUSTED_PROXIES` set to the ingress controller's pod network (RKE2 default `10.42.0.0/16`).
 The trade-off: Owl then runs inside one of the clusters it watches — if that cluster is down, so is
 Owl. Prefer a separate host for the production instance.
+
+The two files, exactly as shipped with this version (in the source:
+[`deploy/server/`](../deploy/server)):
 
 <!-- include deploy/server/server.yaml -->
 

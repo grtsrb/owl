@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -168,6 +169,8 @@ func renderPage(root, id string, src []byte, served map[string]bool, ids map[str
 				flush()
 				anchor := headingID(h)
 				cur = &docs.Section{Page: id, Anchor: anchor, Heading: title, Level: h.Level}
+			} else {
+				buf.WriteString(title + " ") // #### and deeper: searchable as part of their section
 			}
 			continue
 		}
@@ -201,6 +204,11 @@ func renderPage(root, id string, src []byte, served map[string]bool, ids map[str
 				if v.Level >= 2 {
 					headings = append(headings, v)
 				}
+			}
+		case *ast.AutoLink:
+			if u := string(v.URL(src)); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+				v.SetAttributeString("target", []byte("_blank"))
+				v.SetAttributeString("rel", []byte("noopener noreferrer"))
 			}
 		case *ast.Link:
 			dest, ok := rewriteLink(string(v.Destination), served)
@@ -279,14 +287,19 @@ func unwrap(l *ast.Link) {
 // its file name above it.
 func expandIncludes(root string, src []byte) ([]byte, error) {
 	var out bytes.Buffer
-	inFence := false
+	fence := "" // the open code fence ("```", "~~~~", …), "" outside one
 	for _, line := range strings.SplitAfter(string(src), "\n") {
 		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") {
-			inFence = !inFence
+		if f := fenceOf(t); f != "" {
+			switch {
+			case fence == "":
+				fence = f
+			case f[0] == fence[0] && len(f) >= len(fence) && strings.TrimLeft(t, f[:1]) == "":
+				fence = "" // a closing fence: same character, at least as long, nothing after it
+			}
 		}
 		m := includeRe.FindStringSubmatch(strings.TrimRight(line, "\n"))
-		if m == nil || inFence {
+		if m == nil || fence != "" {
 			out.WriteString(line)
 			continue
 		}
@@ -298,14 +311,29 @@ func expandIncludes(root string, src []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("include %q: %w", m[1], err)
 		}
-		fence := "```"
-		for strings.Contains(string(b), fence) {
-			fence += "`"
+		code := "```"
+		for strings.Contains(string(b), code) {
+			code += "`"
 		}
 		body := strings.TrimRight(string(b), "\n")
-		fmt.Fprintf(&out, "`%s`\n\n%s%s\n%s\n%s\n", path.Base(rel), fence, lang(rel), body, fence)
+		fmt.Fprintf(&out, "`%s`\n\n%s%s\n%s\n%s\n", path.Base(rel), code, lang(rel), body, code)
 	}
 	return out.Bytes(), nil
+}
+
+// fenceOf returns the code fence a (trimmed) line starts with — 3 or more ` or ~ — or "".
+func fenceOf(t string) string {
+	if t == "" || (t[0] != '`' && t[0] != '~') {
+		return ""
+	}
+	n := 0
+	for n < len(t) && t[n] == t[0] {
+		n++
+	}
+	if n < 3 {
+		return ""
+	}
+	return t[:n]
 }
 
 func lang(p string) string {
@@ -376,6 +404,9 @@ func clip(s string, n int) string {
 	cut := strings.LastIndex(s[:n], " ")
 	if cut < n/2 {
 		cut = n
+		for cut > 0 && !utf8.RuneStart(s[cut]) { // never split a character
+			cut--
+		}
 	}
 	return strings.TrimRight(s[:cut], " ,;:—-") + "…"
 }

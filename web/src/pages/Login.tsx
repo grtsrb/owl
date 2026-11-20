@@ -35,9 +35,26 @@ function AuthCard({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+const RETURN_KEY = "owl-return-to";
+
+/** Where the user was when they started a Google sign-in (path + query + #section), for this tab only. */
+function rememberReturn() {
+  const { pathname, search, hash } = window.location;
+  if (pathname === "/" || pathname === "/login" || pathname === "/invite" || pathname === "/reset") return;
+  try { sessionStorage.setItem(RETURN_KEY, pathname + search + hash); } catch { /* storage blocked: lands on Overview */ }
+}
+
+/** The page to go back to after a Google sign-in (the server always returns to "/"), once; null = none.
+ * Only a path inside Owl is ever followed (never "//host" or a URL). */
+export function takeReturn(): string | null {
+  let v: string | null = null;
+  try { v = sessionStorage.getItem(RETURN_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { return null; }
+  return v && v.length <= 1024 && /^\/(?![/\\])[^\s]*$/.test(v) ? v : null;
+}
+
 function GoogleButton() {
-  // A full-page navigation: the server redirects to Google and back.
-  return <a className="btn google-btn" href="/auth/google/start">Sign in with Google</a>;
+  // A full-page navigation: the server redirects to Google and back to "/".
+  return <a className="btn google-btn" href="/auth/google/start" onClick={rememberReturn}>Sign in with Google</a>;
 }
 
 export function LoginPage() {

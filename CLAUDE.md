@@ -9,8 +9,8 @@ version jumps. **`DESIGN.md` is the source of truth for decisions** — read it 
 and update it when a decision changes.
 
 **User/operator docs live in `README.md` + `docs/`** and describe what's on `main`. Every change users
-or operators can notice updates the matching page in the same branch (which page: table at the end of
-`docs/development.md`); each merged milestone adds a `docs/changelog.md` entry.
+or operators can notice updates the matching page in the same branch (which page: the table in
+`docs/development.md` → "Keeping the docs current"); each merged milestone adds a `docs/changelog.md` entry.
 
 ## Status
 Milestones 1–11 (agent, server core, catalog, upstream data, policy/scoring/drift, web UI, UI

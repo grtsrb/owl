@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, session, useMe, type Cluster, type StageInfo } from "./api";
 import { Icon } from "./icons";
 import { orderClusters } from "./model";
@@ -13,7 +13,7 @@ import ClusterDetail from "./pages/ClusterDetail";
 import Settings from "./pages/Settings";
 import Docs, { DocHelp, docsHome } from "./pages/Docs";
 import { DOC_HELP } from "./dochelp";
-import { AcceptPage, LoginPage } from "./pages/Login";
+import { AcceptPage, LoginPage, takeReturn } from "./pages/Login";
 import { AccountTab, signOut } from "./pages/SettingsUsers";
 import { ErrorBox, Loading } from "./ui";
 
@@ -37,7 +37,14 @@ export default function App() {
   const me = useMe();
   const { pathname } = useLocation();
   const [loadError, setLoadError] = useState<unknown>(null);
+  const navigate = useNavigate();
   useEffect(() => { if (me === undefined) session.load().catch(setLoadError); }, [me, setLoadError]);
+  // Back to the page (e.g. a shared docs section) a Google sign-in started from.
+  useEffect(() => {
+    if (!me) return;
+    const to = takeReturn();
+    if (to) navigate(to, { replace: true });
+  }, [me, navigate]);
   if (pathname === "/invite" || pathname === "/reset") return <AcceptPage />;
   if (loadError) return <main className="content"><ErrorBox error={loadError} retry={() => { setLoadError(null); void session.load().catch(setLoadError); }} /></main>;
   if (me === undefined) return <Loading />;

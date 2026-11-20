@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // The real docs must always build: a broken link, raw HTML or a page missing from Order fails here.
@@ -167,4 +168,48 @@ func TestRefused(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+// Review fixes: #### text is searchable, autolinks open in a new tab, includes inside any fence stay
+// literal, descriptions are cut at a character boundary.
+func TestRenderDetails(t *testing.T) {
+	long := strings.Repeat("→", 120) // no spaces, 3 bytes each: a byte cut would split one
+	root := repo(t, map[string]string{
+		"cli": "# CLI\n\n" + long + "\n\n## Env\n\n#### OWL_FOO\n\nSets foo.\n\nSee <https://example.com/x>.\n\n" +
+			"~~~\n<!-- include deploy/a.yaml -->\n~~~\n\n" +
+			"````markdown\n```\n<!-- include deploy/a.yaml -->\n```\n````\n\n" +
+			"<!-- include deploy/a.yaml -->\n",
+	}, map[string]string{"deploy/a.yaml": "a: 1\n"})
+	res, err := Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(res.HTML["cli"])
+	if !strings.Contains(html, `<a href="https://example.com/x" target="_blank" rel="noopener noreferrer">`) {
+		t.Errorf("autolink without target/rel:\n%s", html)
+	}
+	if n := strings.Count(html, "&lt;!-- include deploy/a.yaml --&gt;"); n != 2 {
+		t.Errorf("includes inside fences: %d left literal, want 2:\n%s", n, html)
+	}
+	if !strings.Contains(html, `<code class="language-yaml">a: 1`) {
+		t.Errorf("include after the fences not expanded:\n%s", html)
+	}
+	var found bool
+	for _, s := range res.Index.Sections {
+		if s.Page == "cli" && s.Anchor == "env" {
+			found = strings.Contains(s.Text, "OWL_FOO") && strings.Contains(s.Text, "Sets foo")
+		}
+	}
+	if !found {
+		t.Errorf("#### heading not searchable: %+v", res.Index.Sections)
+	}
+	var desc string
+	for _, p := range res.Index.Pages {
+		if p.ID == "cli" {
+			desc = p.Description
+		}
+	}
+	if !utf8.ValidString(desc) || !strings.HasSuffix(desc, "…") || len(desc) > 200+len("…") {
+		t.Errorf("description %q (%d bytes)", desc, len(desc))
+	}
 }

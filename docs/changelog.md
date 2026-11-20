@@ -12,6 +12,8 @@ What each milestone shipped. Newest first.
 - The docs now explain **why** each feature works the way it does, include the Compose and Kubernetes
   deployment files of this version, and give every troubleshooting entry its own heading.
 - `GET /api/v1/docs` and `/api/v1/docs/{page}` (signed in; readable with API tokens).
+- Signing in with Google now brings you back to the page you opened (e.g. a shared docs link) instead of
+  the Overview.
 
 ## Fix: actions that fix the advisories
 

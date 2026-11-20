@@ -159,6 +159,20 @@ Each milestone:
 
 ## Keeping the docs current
 
+**The docs are served inside Owl** (Docs in the sidebar), rendered when Owl is built (`make docs`, part
+of `make build`), so they're written for the people who host, run and use Owl:
+
+- Every page in `docs/` except this one is served. A new page goes into `render.Order` (or `Excluded`)
+  in `internal/docs/render`, or the build fails.
+- Links into the repository work on GitHub but become plain text in Owl, so never rely on one alone: a
+  file readers need goes into the page with `<!-- include <path> -->` on a line of its own (keep the
+  link next to it for GitHub readers).
+- No raw HTML (write placeholders as `` `<target>` ``) and no images — the build fails on both, and on a
+  link to a heading that doesn't exist. Renaming a heading breaks its anchor: fix the links (and
+  `web/src/dochelp.ts`, checked by a test).
+- Each feature says what it does, how it works, and why: a `> **Why:** …` note at the end of its section.
+- Repository-only material (k3d, `make` targets, catalog contributions) stays on this page.
+
 The docs describe what's on `main`. With every change that users or operators can notice:
 
 | You changed | Update |
@@ -173,20 +187,6 @@ The docs describe what's on `main`. With every change that users or operators ca
 | a CLI command | [cli.md](cli.md) |
 | a new error people will hit | [troubleshooting.md](troubleshooting.md) |
 | a milestone is merged | [changelog.md](changelog.md), README status |
-
-
-**The docs are served inside Owl** (Docs in the sidebar), rendered when Owl is built (`make docs`, part
-of `make build`), so they're written for the people who host, run and use Owl:
-
-- Every page in `docs/` except this one is served. A new page goes into `render.Order` (or `Excluded`)
-  in `internal/docs/render`, or the build fails.
-- No links into the repository (they become plain text in Owl); a file readers need goes into the page
-  with `<!-- include <path> -->` on a line of its own.
-- No raw HTML (write placeholders as `` `<target>` ``) and no images — the build fails on both, and on a
-  link to a heading that doesn't exist. Renaming a heading breaks its anchor: fix the links (and
-  `web/src/dochelp.ts`, checked by a test).
-- Each feature says what it does, how it works, and why: a `> **Why:** …` note at the end of its section.
-- Repository-only material (k3d, `make` targets, catalog contributions) stays on this page.
 
 ## Adding a built-in catalog component
 
