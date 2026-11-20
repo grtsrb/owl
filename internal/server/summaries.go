@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -76,12 +77,17 @@ func (s *Server) putSummarySettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.Summaries.AllowedModel(set.Model) {
+		httpError(w, http.StatusBadRequest, "model: choose one of the models offered in Settings → Claude summaries")
+		return
+	}
 	if err := s.saveSettings(r.Context(), set.Values()); err != nil {
 		s.fail(w, err)
 		return
 	}
 	s.audit(r, "summary settings changed", "mode", set.Mode, "dailyCap", summary.USD(set.DailyCapMicros),
-		"monthlyCap", summary.USD(set.MonthlyCapMicros), "maxInputTokens", set.MaxInputTokens, "maxOutputTokens", set.MaxOutputTokens)
+		"monthlyCap", summary.USD(set.MonthlyCapMicros), "maxInputTokens", set.MaxInputTokens, "maxOutputTokens", set.MaxOutputTokens,
+		"model", cmp.Or(set.Model, "server default"))
 	s.Summaries.Kick()
 	s.summaryStatus(w, r)
 }

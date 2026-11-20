@@ -196,6 +196,8 @@ for exactly what happens.
 
 ### Summaries
 
+- **Model** — Claude Haiku 5.5 (cheapest), Sonnet 5.5 (default) or Opus 5.5 (most thorough), each with
+  its price and the most one summary can cost with your limits.
 - **Mode** — Off (default), Estimate only, Manual, Automatic. Manual/Automatic need `ANTHROPIC_API_KEY`
   on the server.
 - **Daily / monthly cap** in USD and **max input / output tokens** per summary, with the resulting

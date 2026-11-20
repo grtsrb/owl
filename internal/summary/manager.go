@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,7 @@ const (
 	KeyMaxInput   = "summaryMaxInputTokens"
 	KeyMaxOutput  = "summaryMaxOutputTokens"
 	KeyPaused     = "summaryPaused" // non-empty = paused, with the reason
+	KeyModel      = "summaryModel"  // "" = the server default (OWL_CLAUDE_MODEL, else DefaultModel)
 )
 
 type Settings struct {
@@ -47,6 +49,9 @@ type Settings struct {
 	MonthlyCapMicros int64 `json:"monthlyCapMicros"`
 	MaxInputTokens   int64 `json:"maxInputTokens"`
 	MaxOutputTokens  int64 `json:"maxOutputTokens"`
+	// Model chosen in the UI; "" = the server default. Prices, the fallback and the caps' worst case all
+	// follow it.
+	Model string `json:"model,omitempty"`
 }
 
 var Defaults = Settings{Mode: ModeOff, DailyCapMicros: 5_000_000, MonthlyCapMicros: 20_000_000, MaxInputTokens: 30_000, MaxOutputTokens: 4_000}
@@ -72,6 +77,8 @@ func (s Settings) Validate() error {
 		return fmt.Errorf("max input tokens: %d–%d", MinMaxInput, HardMaxInput)
 	case s.MaxOutputTokens < MinMaxOutput || s.MaxOutputTokens > HardMaxOutput:
 		return fmt.Errorf("max output tokens: %d–%d", MinMaxOutput, HardMaxOutput)
+	case s.Model != "" && !KnownModel(s.Model):
+		return fmt.Errorf("model: Owl has no price for %q, so it couldn't enforce the caps", s.Model)
 	}
 	return nil
 }
@@ -79,7 +86,7 @@ func (s Settings) Validate() error {
 func (s Settings) Values() map[string]string {
 	return map[string]string{KeyMode: string(s.Mode), KeyDailyCap: strconv.FormatInt(s.DailyCapMicros, 10),
 		KeyMonthlyCap: strconv.FormatInt(s.MonthlyCapMicros, 10), KeyMaxInput: strconv.FormatInt(s.MaxInputTokens, 10),
-		KeyMaxOutput: strconv.FormatInt(s.MaxOutputTokens, 10)}
+		KeyMaxOutput: strconv.FormatInt(s.MaxOutputTokens, 10), KeyModel: s.Model}
 }
 
 // ParseSettings falls back to the defaults for anything missing or invalid (a bad value never widens
@@ -100,6 +107,9 @@ func ParseSettings(m map[string]string) Settings {
 	num(KeyMaxOutput, MinMaxOutput, HardMaxOutput, &s.MaxOutputTokens)
 	if s.DailyCapMicros > s.MonthlyCapMicros {
 		s.DailyCapMicros = s.MonthlyCapMicros
+	}
+	if KnownModel(m[KeyModel]) { // an unknown name falls back to the server default, never unpriced
+		s.Model = m[KeyModel]
 	}
 	return s
 }
@@ -150,11 +160,35 @@ type jumpState struct {
 	noNotes   bool
 	tokens    int64 // exact (counted) or estimated input tokens
 	exact     bool
+	countedOn string // the model tokens were counted for (counts differ per model)
 	failedAt  time.Time
+	failedOn  string // the model that failed: another model may try the same day
 	lastErr   string
 	// collectedAt: when the notes were last read (re-read after notesMaxAge).
 	collectedAt time.Time
 }
+
+// model is the one requests use: the UI's choice, else the server default.
+func (m *Manager) model(set Settings) string {
+	if set.Model != "" {
+		return set.Model
+	}
+	return m.Model
+}
+
+// failedToday: this model already failed on the jump today (it's retried tomorrow; switching to another
+// model — e.g. one with a refusal fallback — may try at once).
+func (m *Manager) failedToday(st *jumpState, model string) bool {
+	return !st.failedAt.IsZero() && sameDay(st.failedAt, m.now()) && (st.failedOn == "" || st.failedOn == model)
+}
+
+// AllowedModel: what Settings may choose — the offered models and this server's default.
+func (m *Manager) AllowedModel(id string) bool {
+	return id == "" || id == m.Model || slices.Contains(SelectableModels, id)
+}
+
+// exactFor: a count is exact only for the model it was made on.
+func (st *jumpState) exactFor(model string) bool { return st.exact && st.countedOn == model }
 
 func (m *Manager) cat() *catalog.Catalog {
 	if m.CatalogFn != nil {
@@ -366,7 +400,7 @@ var (
 	ErrTooLarge     = errors.New("the release notes are larger than the input limit")
 	ErrBudget       = errors.New("this request could exceed the remaining daily or monthly budget")
 	ErrNoNotes      = errors.New("no release notes available for this upgrade")
-	ErrUnknownPrice = errors.New("unknown price for the configured model: set OWL_CLAUDE_MODEL to a listed model")
+	ErrUnknownPrice = errors.New("unknown price for the chosen model: pick another in Settings → Claude summaries (or set OWL_CLAUDE_MODEL to a listed model)")
 	ErrNotReady     = errors.New("release notes are still being collected — try again in a moment")
 	// ErrNotesUnavailable: fetching the release notes failed (nothing was sent to Claude).
 	ErrNotesUnavailable = errors.New("release notes couldn't be fetched")
@@ -415,7 +449,8 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 	case paused != "":
 		return ErrPaused
 	}
-	if _, ok := priceFor(m.Model, 0); !ok {
+	model := m.model(set)
+	if _, ok := priceFor(model, 0); !ok {
 		return ErrUnknownPrice
 	}
 	m.mu.Lock()
@@ -439,7 +474,7 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 	if comp.Custom {
 		name = comp.GitHub
 	}
-	req := Request{Model: m.Model, Fallback: fallbacks[m.Model], System: systemPrompt,
+	req := Request{Model: model, Fallback: fallbacks[model], System: systemPrompt,
 		User: userMessage(name, comp.GitHub, st.Jump, notes), MaxTokens: set.MaxOutputTokens, Schema: Schema()}
 
 	in, err := m.Claude.CountTokens(ctx, req) // free
@@ -447,12 +482,12 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 		return m.fail(ctx, st, req, 0, 0, 0, "token count failed: "+err.Error())
 	}
 	m.mu.Lock()
-	st.tokens, st.exact = in, true
+	st.tokens, st.exact, st.countedOn = in, true, model
 	m.mu.Unlock()
 	if in > HardMaxInput || (in > set.MaxInputTokens && !force) {
 		return fmt.Errorf("%w (%d tokens; limit %d)", ErrTooLarge, in, set.MaxInputTokens)
 	}
-	worst, _ := worstCase(m.Model, in, set.MaxOutputTokens)
+	worst, _ := worstCase(model, in, set.MaxOutputTokens)
 	now := m.now()
 	day, err1 := m.Store.SummarySpend(ctx, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC))
 	month, err2 := m.Store.SummarySpend(ctx, time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC))
@@ -464,7 +499,7 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 			USD(worst), USD(day), USD(set.DailyCapMicros), USD(month), USD(set.MonthlyCapMicros))
 	}
 
-	m.Log.Info("summary request", "component", st.Component, "from", st.From, "to", st.To, "model", m.Model,
+	m.Log.Info("summary request", "component", st.Component, "from", st.From, "to", st.To, "model", model,
 		"inputTokens", in, "worstCase", USD(worst))
 	resp, err := m.Claude.Send(ctx, req)
 	if err != nil {
@@ -496,7 +531,7 @@ func (m *Manager) generate(ctx context.Context, st *jumpState, force bool) error
 	}
 	body, _ := json.Marshal(Stored{Content: content, Sources: sources})
 	if err := m.Store.PutSummary(ctx, store.Summary{Component: st.Component, FromVersion: st.From, ToVersion: st.To,
-		Model: m.Model, PromptVersion: PromptVersion, CreatedAt: now, Content: body}); err != nil {
+		Model: model, PromptVersion: PromptVersion, CreatedAt: now, Content: body}); err != nil {
 		// Paid but not saved: a failure like any other, so automatic mode backs off and repeated
 		// failures pause it — instead of paying for the same jump again every cycle.
 		m.Log.Error("saving a paid summary failed", "err", err)
@@ -525,7 +560,7 @@ func (m *Manager) fail(ctx context.Context, st *jumpState, req Request, in, out,
 		m.Log.Error("summary request log write failed", "err", err)
 	}
 	m.mu.Lock()
-	st.failedAt, st.lastErr = m.now(), msg
+	st.failedAt, st.failedOn, st.lastErr = m.now(), req.Model, msg
 	m.mu.Unlock()
 	if recent, err := m.Store.ListSummaryRequests(ctx, failuresToPause); err == nil && len(recent) == failuresToPause {
 		all := true
@@ -554,7 +589,8 @@ func (m *Manager) Resume(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	m.Kick()
-	return m.Store.AddSummaryRequest(ctx, store.SummaryRequest{At: m.now(), Model: m.Model, Result: "resumed"})
+	set, _ := m.settings(ctx)
+	return m.Store.AddSummaryRequest(ctx, store.SummaryRequest{At: m.now(), Model: m.model(set), Result: "resumed"})
 }
 
 // runAuto writes missing summaries, most urgent component first, until one can't be afforded or
@@ -578,8 +614,8 @@ func (m *Manager) runAuto(ctx context.Context) {
 		m.mu.Lock()
 		st := m.jumps[k]
 		skip := st == nil || have[k] || !st.collected || st.noNotes || st.notesErr != "" ||
-			(!st.failedAt.IsZero() && sameDay(st.failedAt, m.now())) ||
-			(st.tokens > set.MaxInputTokens && st.exact)
+			m.failedToday(st, m.model(set)) ||
+			(st.tokens > set.MaxInputTokens && st.exactFor(m.model(set)))
 		m.mu.Unlock()
 		if skip {
 			continue
@@ -693,7 +729,7 @@ func (m *Manager) List(ctx context.Context) (Overview, error) {
 	for _, k := range m.order {
 		st := m.jumps[k]
 		// The public view never carries raw API/store error text (admins see it in the request log).
-		v := JumpView{Jump: st.Jump, Name: st.name, Tokens: st.tokens, Exact: st.exact, Error: st.notesErr}
+		v := JumpView{Jump: st.Jump, Name: st.name, Tokens: st.tokens, Exact: st.exactFor(m.model(set)), Error: st.notesErr}
 		if st.lastErr != "" {
 			v.Error = "The last attempt failed — details in Settings → Claude summaries (admin)."
 		}
@@ -701,7 +737,7 @@ func (m *Manager) List(ctx context.Context) (Overview, error) {
 			v.Sources = append(v.Sources, upstream.Note{Version: n.Version, URL: n.URL})
 		}
 		if st.collected && !st.noNotes {
-			v.MaxCost, _ = worstCase(m.Model, st.tokens, set.MaxOutputTokens)
+			v.MaxCost, _ = worstCase(m.model(set), st.tokens, set.MaxOutputTokens)
 		}
 		if s, ok := saved[k]; ok {
 			var stored Stored
@@ -734,9 +770,9 @@ func (m *Manager) state(st *jumpState, v JumpView, set Settings, paused string, 
 		return StateNoKey
 	case paused != "":
 		return StatePaused
-	case st.tokens > set.MaxInputTokens && (st.exact || st.tokens > set.MaxInputTokens*2):
+	case st.tokens > set.MaxInputTokens && (st.exactFor(m.model(set)) || st.tokens > set.MaxInputTokens*2):
 		return StateTooLarge
-	case !st.failedAt.IsZero() && sameDay(st.failedAt, m.now()):
+	case m.failedToday(st, m.model(set)):
 		return StateFailed
 	case remaining >= 0 && v.MaxCost > remaining:
 		return StateBudget
@@ -761,16 +797,43 @@ type Status struct {
 	Requests         []store.SummaryRequest `json:"requests"`
 	// MaxPerSummaryMicros is the most one summary can cost with the saved limits (incl. fallback).
 	MaxPerSummaryMicros int64 `json:"maxPerSummaryMicros"`
+	// DefaultModel is what an empty Settings.Model means on this server; Models what the UI offers.
+	DefaultModel string        `json:"defaultModel"`
+	Models       []ModelOption `json:"models"`
+}
+
+// ModelOption is one model the admin can choose, priced with the saved limits.
+type ModelOption struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Price    Price  `json:"price"`
+	Fallback string `json:"fallback,omitempty"`
+	// MaxPerSummaryMicros: the worst case of one summary on this model with the saved limits.
+	MaxPerSummaryMicros int64 `json:"maxPerSummaryMicros"`
 }
 
 func (m *Manager) Status(ctx context.Context) (Status, error) {
 	set, paused := m.settings(ctx)
 	now := m.now()
-	st := Status{Settings: set, Enabled: m.Claude != nil, Model: m.Model, Fallback: fallbacks[m.Model], Paused: paused}
-	if p, ok := priceFor(m.Model, 0); ok {
+	model := m.model(set)
+	st := Status{Settings: set, Enabled: m.Claude != nil, Model: model, Fallback: fallbacks[model], Paused: paused,
+		DefaultModel: m.Model, Models: []ModelOption{}}
+	if p, ok := priceFor(model, 0); ok {
 		st.Price = &p
 	}
-	st.MaxPerSummaryMicros, _ = worstCase(m.Model, set.MaxInputTokens, set.MaxOutputTokens)
+	st.MaxPerSummaryMicros, _ = worstCase(model, set.MaxInputTokens, set.MaxOutputTokens)
+	options := append([]string(nil), SelectableModels...)
+	if !slices.Contains(options, m.Model) {
+		options = append(options, m.Model) // OWL_CLAUDE_MODEL named another priced model
+	}
+	for _, id := range options {
+		p, ok := priceFor(id, 0)
+		if !ok {
+			continue
+		}
+		worst, _ := worstCase(id, set.MaxInputTokens, set.MaxOutputTokens)
+		st.Models = append(st.Models, ModelOption{ID: id, Label: ModelLabel(id), Price: p, Fallback: fallbacks[id], MaxPerSummaryMicros: worst})
+	}
 	var errs []error
 	var err error
 	st.SpentTodayMicros, err = m.Store.SummarySpend(ctx, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC))
