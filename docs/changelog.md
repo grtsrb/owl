@@ -18,7 +18,7 @@ What each milestone shipped. Newest first. The roadmap is at the end of [DESIGN.
   Kubernetes CSI sidecars — snapshotter/snapshot-controller, provisioner, attacher, resizer,
   node-driver-registrar, livenessprobe, health monitor — including Longhorn's `longhornio/csi-*` copies
   and RKE2's snapshot controller.
-- Medium on a supported line: the newest patch of the line first; on it, "Plan the move to <target>" (a
+- Medium on a supported line: the newest patch of the line first; on it, "Plan the move to `<target>`" (a
   new `plan` action kind in the API), which never replaces a real step in the component's summary.
 - RKE2's older snapshot-controller copies are RKE2-managed; Rancher's `mirrored-longhornio-csi-*` copies
   are recognized. GitLab Runner release candidates stay pre-releases.
@@ -80,8 +80,8 @@ Groundwork for a much longer built-in catalog; the new entries follow in batches
 - Argo Rollouts and other ReplicaSet-based controllers: after a rollback the intended image is the
   rolled-back revision (revision annotation), not the newest ReplicaSet.
 - A release line upstream doesn't list yet is no longer called end-of-life because of much older lines.
-- Newest patch of a line that ends soon: "Plan the move off <line>" instead of "Review advisories".
-- Clusters ahead of the policy target that need only a patch no longer show "Update to <older target>".
+- Newest patch of a line that ends soon: "Plan the move off `<line>`" instead of "Review advisories".
+- Clusters ahead of the policy target that need only a patch no longer show "Update to `<older target>`".
 - OSV advisories without a fix are "affected, no fix listed" instead of "needs review".
 - GitHub-derived release lines honour the catalog's release tag prefix (e.g. nginx `release-`).
 - Custom components: version parts 1–3 (4 was never parsed).

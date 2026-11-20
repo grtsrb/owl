@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/anthropics/anthropic-sdk-go/v2 v2.10.0
 	github.com/minio/minio-go/v7 v7.4.1
+	github.com/yuin/goldmark v1.7.13
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
 	golang.org/x/term v0.46.0

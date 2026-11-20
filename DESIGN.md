@@ -310,7 +310,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   sets + legacy), Actions runner, Velero + plugins, Rook, Ceph, Ceph CSI, local-path-provisioner, CSI sidecars
   (incl. Longhorn's and Rancher's copies). **GitOps (Argo/Flux) and Harbor deferred** by the user. **Left out**:
   Tekton (ko image names carry build hashes; v1.x image names unverified), MinIO (date tags, no community
-  images since 2025). Next: batch 3 (data/policy/ops).
+  images since 2025). Batch 3 (data/policy/ops) parked by the user on 2026-11-20, see "Later".
 - **Actions cover advisory fixes** (2026-11-19): a patch/upgrade step that doesn't reach an advisory's fix becomes
   "Upgrade to" the newest patch of the fix's line — security beats the policy target, as for the level.
 - **`plan` action** (agreed with the supported-line rule): an instance on the newest patch of a line upstream
@@ -495,3 +495,32 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
     `users plan`; the old database commands keep working for one release with a warning.
 13. **Bigger built-in catalog** (designed 2026-11-19, see "Bigger built-in catalog"): refresh only running
     components, overrides that survive upgrades, quiet recognition, `bundledWith`, then catalog batches.
+
+## Docs in the app (agreed 2026-11-20)
+- **What**: `docs/*.md` (all but `development.md`, which is for contributors; README stays the GitHub landing page)
+  served inside Owl, for the people who host, run and use it: what each feature does, how it works and **why**.
+  The docs are those of the **running build** (version in the header), never "latest".
+- **Signed in only**: `GET /api/v1/docs` (pages, search index, version) and `/api/v1/docs/{page}` (HTML) sit
+  behind the normal session check; API tokens may read them. No new public path.
+- **Rendered at build time** (`internal/docs/docsgen`, goldmark; run by `make build` and the Dockerfile) into
+  `internal/docs/dist`, embedded. The server binary has no Markdown parser (~0.4 MB of HTML + index).
+  The build **fails** on raw HTML, images, a link to a heading that doesn't exist, or a page in `docs/` that
+  isn't listed in `render.Order`/`Excluded`.
+- **No links into the repository**: links between served pages become `/docs/<page>#anchor`; links to other
+  repo paths become plain text. Files a reader needs (compose, Caddyfile, env example, server manifests) are
+  copied into the page with `<!-- include <path> -->`, so they always match the build.
+- **UI (layout B)**: sidebar "Docs" → the page in the main area, a **topics drawer** on its right (search + page
+  list, the current page's sections) that an arrow collapses to a thin tab and brings back; open/closed and the
+  last page read are remembered per browser. On narrow screens the drawer covers the page.
+  Search: a build-time index of sections (`##`/`###`), matched in the browser (every word must appear;
+  heading hits first), no library. Every heading has a `#` link that copies a shareable full-page link.
+- **"?" help links** only where they lead to a whole feature: the Overview, Changes, Clusters headers; Settings →
+  Catalog / Notifications / Backups / Users and Account; the level legend. Targets live in `web/src/dochelp.ts`
+  and are checked against the built docs by a test.
+
+## Later (TODO, parked by the user)
+- **Catalog batch 3** (parked 2026-11-20; confirm the list with the user before starting):
+  data: MySQL/MariaDB, MongoDB, RabbitMQ, Kafka/Strimzi, OpenSearch, Memcached, etcd, CloudNativePG;
+  policy: Kyverno, Gatekeeper, Trivy Operator, Falco; ops: Keycloak, KEDA, cluster-autoscaler, Rancher, Reloader.
+- **GitOps (Argo CD, Flux) and Harbor** catalog entries (deferred 2026-11-19). Tekton and MinIO stay left out
+  (reasons in "Bigger built-in catalog").

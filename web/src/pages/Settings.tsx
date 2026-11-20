@@ -10,6 +10,8 @@ import NotificationsTab from "./SettingsNotifications";
 import SummariesTab from "./SettingsSummaries";
 import CatalogComponents from "./SettingsCatalog";
 import { UsersTab } from "./SettingsUsers";
+import { DocHelp } from "./Docs";
+import { DOC_HELP } from "../dochelp";
 
 type M = { ok: boolean; text: string } | null;
 
@@ -21,6 +23,13 @@ const GROUPS: { title: string; items: Section[] }[] = [
   { title: "System", items: [{ id: "users", label: "Users", admin: true }, { id: "backups", label: "Backups & restore", admin: true },
     { id: "logs", label: "Logs & audit", admin: true }] },
 ];
+// The "?" next to the title for the sections that are a whole feature of their own.
+const TAB_HELP: Record<string, { to: string; label: string } | undefined> = {
+  catalog: { to: DOC_HELP.catalog, label: "the catalog" },
+  notifications: { to: DOC_HELP.notifications, label: "notifications" },
+  backups: { to: DOC_HELP.backups, label: "backups and restore" },
+  users: { to: DOC_HELP.users, label: "users and sign-in" },
+};
 // Sections that moved (old links and bookmarks keep working).
 const MOVED: Record<string, string> = { tenants: "/settings/stages", overrides: "/settings/catalog", account: "/account" };
 
@@ -37,7 +46,7 @@ export default function Settings() {
     <>
       <div className="page-head">
         <div>
-          <h1>Settings</h1>
+          <h1>Settings{current && TAB_HELP[current.id] && <DocHelp to={TAB_HELP[current.id]!.to} label={TAB_HELP[current.id]!.label} />}</h1>
           <p className="muted">{admin ? "You're an admin: you can change everything here." : "You're a viewer: settings are read-only. Ask an admin to make changes."}</p>
         </div>
       </div>

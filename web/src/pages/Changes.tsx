@@ -2,6 +2,8 @@ import { api, type Change } from "../api";
 import { useReporting } from "../App";
 import { useClusterSelection } from "../model";
 import { ago, Card, Empty, ErrorBox, Loading, Tag, useApi } from "../ui";
+import { DocHelp } from "./Docs";
+import { DOC_HELP } from "../dochelp";
 
 const typeLabel: Record<string, [string, string]> = {
   image_changed: ["changed", "info"],
@@ -23,7 +25,7 @@ export default function Changes() {
     <>
       <div className="page-head">
         <div>
-          <h1>Changes</h1>
+          <h1>Changes<DocHelp to={DOC_HELP.changes} label="change history" /></h1>
           <p className="muted">Image and Kubernetes version changes reported by the agents (template changes only), for the clusters selected above.</p>
         </div>
       </div>

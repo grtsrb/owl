@@ -18,8 +18,8 @@ redesign + cluster management, backups/restore/logging/audit, Claude summaries, 
 Mattermost notifications, catalog from the UI + Settings reorganised, CLI + personal API tokens + users
 from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Milestone 13 (bigger built-in
 catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (Elastic, networking, certs,
-monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) next,
-GitOps (Argo/Flux) deferred by the user. Keep this file's commands and
+monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) and
+GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -27,6 +27,7 @@ layout in sync as milestones land.
 make build test lint        # bin/owl, go test ./..., go vet + gofmt check
 make cli                    # client-only `owl` (-tags owlclient) for 4 platforms into bin/cli (the image builds the same)
 make ui                     # build web/ (React) into web/dist, embedded by the next `make build`
+make docs                   # docs/*.md → internal/docs/dist (HTML + search index); `make build` runs it
 make ui-dev                 # Vite dev server :5173 with /api proxied to :8080 (needs make stack-up)
 cd web && npm run typecheck # TypeScript check only
 go test ./internal/agent -run TestCollect -v    # single test
@@ -186,6 +187,11 @@ make dev-down
   (never the reverse). `Build` combines inventory + upstream + policies + drift: per **tenant**, along
   the configured stage order; entries carry the clusters involved so the UI hides drift between
   clusters that aren't selected; `only_in` is info, not an anomaly.
+- `internal/docs` — built-in docs (DESIGN.md "Docs in the app"): `render` (goldmark, build time only — never
+  imported by the server) turns `docs/*.md` into HTML + a search index, `docsgen` writes them to `dist/`
+  (gitignored), `docs.Dist()` embeds them; served signed-in at `/api/v1/docs[/{page}]` (`server/docs.go`).
+  A new page in `docs/` must go into `render.Order` or `Excluded`; raw HTML, images and broken anchors fail
+  the build (and `TestRealDocsBuild`). UI: `pages/Docs.tsx`; "?" targets in `web/src/dochelp.ts` (tested).
 - `web/` — Vite + React + TS UI. `App` gates on `session` (`api.ts`: `useMe`/`useIsAdmin`; any 401 signs
   the UI out); `/invite#…` and `/reset#…` (`pages/Login.tsx`) work signed in or not; Settings → Users /
   Account in `pages/SettingsUsers.tsx`. Logo = `Icon.logo` (even-odd path) + `web/public/favicon.svg`,

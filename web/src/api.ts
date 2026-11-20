@@ -171,6 +171,12 @@ export function usd(micros: number | undefined): string {
 
 export interface Policies { global: string; overrides: Record<string, string>; presets: string[] }
 
+/** Built-in docs (rendered at build time; GET /api/v1/docs). Section level 1 = top of a page. */
+export interface DocPage { id: string; title: string; description: string }
+export interface DocSection { page: string; anchor: string; heading: string; level: number; text: string }
+export interface DocsIndex { version: string; pages: DocPage[]; sections: DocSection[] }
+export interface DocPageView extends DocPage { html: string }
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -203,6 +209,8 @@ async function parse<T>(res: Response, path: string): Promise<T> {
 }
 
 export const api = {
+  docs: () => request<DocsIndex>("GET", "/api/v1/docs"),
+  docPage: (id: string) => request<DocPageView>("GET", `/api/v1/docs/${encodeURIComponent(id)}`),
   report: () => request<Report>("GET", "/api/v1/report"),
   component: (id: string) => request<ComponentDetail>("GET", `/api/v1/components/${encodeURIComponent(id)}`),
   clusters: () => request<Cluster[]>("GET", "/api/v1/clusters"),

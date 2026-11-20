@@ -19,6 +19,7 @@ export const Icon = {
   clusters: () => <Svg size={18}><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></Svg>,
   changes: () => <Svg size={18}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Svg>,
   settings: () => <Svg size={18}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></Svg>,
+  docs: () => <Svg size={18}><path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z" /><path d="M4 21V5M8 7h6M8 11h6" /></Svg>,
   signout: () => <Svg size={18}><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" /></Svg>,
   close: () => <Svg size={18}><path d="M6 6l12 12M18 6 6 18" /></Svg>,
   chevron: () => <Svg size={14}><path d="m6 9 6 6 6-6" /></Svg>,

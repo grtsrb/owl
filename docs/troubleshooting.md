@@ -33,8 +33,9 @@ same browser.
 The client's *Authorized redirect URI* in the Google Cloud console must be exactly
 `<OWL_PUBLIC_URL>/auth/google/callback` (Settings → Users shows it).
 
-<a id="locked-out"></a>
-**Locked out (no admin can sign in).**
+### Locked out
+
+No admin can sign in.
 On the server: `docker compose exec owl /owl db user reset-link --email you@example.com` prints a link
 that sets a new password and signs you in — it works even with password sign-in turned off. No users
 at all yet: `owl db user invite --admin you@example.com`.
