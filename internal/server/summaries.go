@@ -77,6 +77,10 @@ func (s *Server) putSummarySettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.Summaries.AllowedModel(set.Model) {
+		httpError(w, http.StatusBadRequest, "model: choose one of the models offered in Settings → Claude summaries")
+		return
+	}
 	if err := s.saveSettings(r.Context(), set.Values()); err != nil {
 		s.fail(w, err)
 		return

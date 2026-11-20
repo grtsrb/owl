@@ -562,3 +562,29 @@ func TestWorstCaseSonnetAndHaiku(t *testing.T) {
 		t.Errorf("Haiku 5.5 worst case = %s, want $0.005", USD(w))
 	}
 }
+
+// A failure blocks only the model that failed for the rest of the day: switching (e.g. from Haiku, which
+// has no refusal fallback, to Sonnet) may try at once. Settings only take offered models.
+func TestFailurePerModelAndAllowedModels(t *testing.T) {
+	m, fc, _, db := setup(t, ModeManual)
+	ctx := context.Background()
+	_ = m.Refresh(ctx)
+	_ = db.SetSetting(ctx, KeyModel, "claude-haiku-5-5")
+	fc.stop = "refusal"
+	if err := m.Generate(ctx, jump, false); err == nil {
+		t.Fatal("a refusal must fail")
+	}
+	if ov, _ := m.List(ctx); ov.Jumps[0].State != StateFailed {
+		t.Fatalf("Haiku: state %q, want failed", ov.Jumps[0].State)
+	}
+	_ = db.SetSetting(ctx, KeyModel, "claude-sonnet-5-5")
+	if ov, _ := m.List(ctx); ov.Jumps[0].State == StateFailed {
+		t.Error("another model may try the same day")
+	}
+	for id, want := range map[string]bool{"": true, "claude-haiku-5-5": true, "claude-sonnet-5-5": true,
+		"claude-opus-5-5": true, "claude-fable-5-2": false, "claude-opus-4-8": false} {
+		if got := m.AllowedModel(id); got != want {
+			t.Errorf("AllowedModel(%q) = %v", id, got)
+		}
+	}
+}

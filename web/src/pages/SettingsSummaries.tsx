@@ -130,7 +130,7 @@ function SettingsForm({ s, onSaved }: { s: SummaryStatus; onSaved: () => void })
                 <span>
                   <b>{o.label}</b>{o.id === s.defaultModel && <span className="subtle"> · default</span>}{" "}
                   <span className="subtle">
-                    {perM(o.price.Input)} in / {perM(o.price.Output)} out per million tokens · at most {usd(o.maxPerSummaryMicros)} per summary with the saved limits
+                    {perM(o.price.Input)} in / {perM(o.price.Output)} out per million tokens · at most {usd(o.maxPerSummaryMicros)} per summary with the saved limits{dirty ? " (save to recalculate)" : ""}
                     {o.fallback ? ` (incl. a refusal fallback to ${label(s, o.fallback)})` : " · no refusal fallback: a refused request fails and is retried the next day"}
                     {MODEL_NOTES[o.id] ? ` — ${MODEL_NOTES[o.id]}` : ""}
                   </span>

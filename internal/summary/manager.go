@@ -78,7 +78,7 @@ func (s Settings) Validate() error {
 	case s.MaxOutputTokens < MinMaxOutput || s.MaxOutputTokens > HardMaxOutput:
 		return fmt.Errorf("max output tokens: %d–%d", MinMaxOutput, HardMaxOutput)
 	case s.Model != "" && !KnownModel(s.Model):
-		return fmt.Errorf("model: one of %s (Owl must know its price to enforce the caps)", strings.Join(SelectableModels, ", "))
+		return fmt.Errorf("model: Owl has no price for %q, so it couldn't enforce the caps", s.Model)
 	}
 	return nil
 }
@@ -162,6 +162,7 @@ type jumpState struct {
 	exact     bool
 	countedOn string // the model tokens were counted for (counts differ per model)
 	failedAt  time.Time
+	failedOn  string // the model that failed: another model may try the same day
 	lastErr   string
 	// collectedAt: when the notes were last read (re-read after notesMaxAge).
 	collectedAt time.Time
@@ -173,6 +174,17 @@ func (m *Manager) model(set Settings) string {
 		return set.Model
 	}
 	return m.Model
+}
+
+// failedToday: this model already failed on the jump today (it's retried tomorrow; switching to another
+// model — e.g. one with a refusal fallback — may try at once).
+func (m *Manager) failedToday(st *jumpState, model string) bool {
+	return !st.failedAt.IsZero() && sameDay(st.failedAt, m.now()) && (st.failedOn == "" || st.failedOn == model)
+}
+
+// AllowedModel: what Settings may choose — the offered models and this server's default.
+func (m *Manager) AllowedModel(id string) bool {
+	return id == "" || id == m.Model || slices.Contains(SelectableModels, id)
 }
 
 // exactFor: a count is exact only for the model it was made on.
@@ -388,7 +400,7 @@ var (
 	ErrTooLarge     = errors.New("the release notes are larger than the input limit")
 	ErrBudget       = errors.New("this request could exceed the remaining daily or monthly budget")
 	ErrNoNotes      = errors.New("no release notes available for this upgrade")
-	ErrUnknownPrice = errors.New("unknown price for the configured model: set OWL_CLAUDE_MODEL to a listed model")
+	ErrUnknownPrice = errors.New("unknown price for the chosen model: pick another in Settings → Claude summaries (or set OWL_CLAUDE_MODEL to a listed model)")
 	ErrNotReady     = errors.New("release notes are still being collected — try again in a moment")
 	// ErrNotesUnavailable: fetching the release notes failed (nothing was sent to Claude).
 	ErrNotesUnavailable = errors.New("release notes couldn't be fetched")
@@ -548,7 +560,7 @@ func (m *Manager) fail(ctx context.Context, st *jumpState, req Request, in, out,
 		m.Log.Error("summary request log write failed", "err", err)
 	}
 	m.mu.Lock()
-	st.failedAt, st.lastErr = m.now(), msg
+	st.failedAt, st.failedOn, st.lastErr = m.now(), req.Model, msg
 	m.mu.Unlock()
 	if recent, err := m.Store.ListSummaryRequests(ctx, failuresToPause); err == nil && len(recent) == failuresToPause {
 		all := true
@@ -602,7 +614,7 @@ func (m *Manager) runAuto(ctx context.Context) {
 		m.mu.Lock()
 		st := m.jumps[k]
 		skip := st == nil || have[k] || !st.collected || st.noNotes || st.notesErr != "" ||
-			(!st.failedAt.IsZero() && sameDay(st.failedAt, m.now())) ||
+			m.failedToday(st, m.model(set)) ||
 			(st.tokens > set.MaxInputTokens && st.exactFor(m.model(set)))
 		m.mu.Unlock()
 		if skip {
@@ -760,7 +772,7 @@ func (m *Manager) state(st *jumpState, v JumpView, set Settings, paused string, 
 		return StatePaused
 	case st.tokens > set.MaxInputTokens && (st.exactFor(m.model(set)) || st.tokens > set.MaxInputTokens*2):
 		return StateTooLarge
-	case !st.failedAt.IsZero() && sameDay(st.failedAt, m.now()):
+	case m.failedToday(st, m.model(set)):
 		return StateFailed
 	case remaining >= 0 && v.MaxCost > remaining:
 		return StateBudget
