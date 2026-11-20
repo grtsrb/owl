@@ -40,8 +40,7 @@ In CI, download it with the token you use anyway:
 curl -fsSL -H "Authorization: Bearer $OWL_TOKEN" "$OWL_SERVER/api/v1/cli/linux-amd64" -o owl && chmod +x owl
 ```
 
-Platforms: `darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`. From the source:
-`make cli` builds all four into `bin/cli/`.
+Platforms: `darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`.
 
 ## Personal API tokens
 
@@ -58,6 +57,8 @@ a scope and an expiry. It's shown **once** — Owl keeps only a hash.
   password, sign-in settings, policies or settings, and never create tokens. Changing your password
   revokes all your tokens. Disabling your user deletes all your
   tokens; admins can see and revoke anyone's tokens in Settings → Users.
+
+> **Why:** a personal token works for Google users too, can be limited to reading, expires, and can be revoked on its own without touching your password — and every change it makes is audited under your name. The CLI never takes a token as an argument (it would land in shell history and `ps`) and never sends it over plain HTTP or to a redirect target.
 
 ## owl login / logout / whoami
 
@@ -171,6 +172,8 @@ In Owl but not in the file (can still sign in):
 - Changes made in the UI (or with the commands below) to a managed user still work — Owl warns that
   they show as drift until the file is updated.
 
+> **Why:** Owl keeps no state file: the server itself marks which users came from the file, so the file in your repository is the whole truth and there's nothing else to lose or keep in sync. `plan` shows every change before `apply`, and `--prune` only disables — it never deletes anyone.
+
 ### One-off changes
 
 For teams without a file (write token):
@@ -186,6 +189,8 @@ owl users enable dev@example.com
 
 Takes a backup on the server now (write token) — e.g. before an upgrade. Restores are done in the UI
 (Settings → Backups & restore).
+
+> **Why:** the CLI changes only what it needs to (clusters, backups, users); everything else stays in the UI, where viewers and admins see the same thing and every change is audited.
 
 ## Server-side commands
 
@@ -205,10 +210,10 @@ Runs the agent. Flags and environment: [Configuration → Agent](configuration.m
 
 ```bash
 # What would this cluster report? (no server or token needed)
-owl agent --print --context k3d-it-aws-prod
+owl agent --print --context my-cluster
 
-# One push from your laptop, against a dev server
-OWL_TOKEN=... OWL_ALLOW_INSECURE_HTTP=true owl agent --once --context k3d-it-hetzner --server http://127.0.0.1:8080
+# One push from your laptop, with the cluster's agent token
+OWL_TOKEN=... owl agent --once --context my-cluster --server https://owl.example.com
 ```
 
 ### owl db cluster / owl db user

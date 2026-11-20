@@ -27,7 +27,7 @@ What Owl can see, what it stores and sends, and how to run it safely.
 - **Password sign-in can be turned off** once Google works and an admin has signed in with Google.
   While it's off, the last active admin who signs in with Google can't be demoted, disabled or
   deleted; if the Google settings disappear from the environment, passwords come back on by
-  themselves. The emergency way back in is `owl db user reset-link <email>` on the server (needs shell
+  themselves. The emergency way back in is `owl db user reset-link --email <email>` on the server (needs shell
   access to it).
 - **Sessions**: a random 256-bit cookie, stored only as a SHA-256 hash. `HttpOnly`, `Secure`,
   `SameSite=Lax`, and the `__Host-` prefix (no subdomain can set or overwrite it); only on
@@ -49,12 +49,14 @@ What Owl can see, what it stores and sends, and how to run it safely.
   and never follows redirects with it. The downloadable CLI is built into the server image; its
   SHA-256 checksums are shown next to the downloads (the binaries aren't code-signed).
 
+> **Why:** Owl knows which versions — and which known vulnerabilities — run where. That's exactly what an attacker looks for, so nothing is public, nobody can sign up, and every secret Owl stores is a hash that's useless if the database or a backup leaks.
+
 ## The agent
 
 - **Read-only**: its ClusterRole allows only `get` and `list` on pods, nodes, deployments,
   statefulsets, daemonsets, replicasets, jobs and cronjobs. **No Secrets, no ConfigMaps, no write
-  verbs.** The role is defined once in `deploy/agent/agent.yaml` and must match exactly what the
-  collector reads.
+  verbs.** The role is defined once, in the agent manifest Owl serves (Settings → Clusters, or
+  `/api/v1/agent/manifest`), and matches exactly what the agent reads.
 - **Push-only**: the agent connects out to the server. The server never connects into a cluster and
   never stores kubeconfigs.
 - Sends only: Kubernetes version, node info (name, kubelet/OS/kernel/runtime version, architecture),
@@ -63,6 +65,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
 - Runs as non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped.
 - Refuses an `http://` server URL unless `OWL_ALLOW_INSECURE_HTTP=true`.
 - The token is read from the environment only (a flag would show in `ps`).
+
+> **Why:** if Owl could connect into your clusters, a compromised Owl would be a way in. Pushing from a read-only agent means the server holds nothing that grants access to a cluster, and the agent can't read secrets or change anything even if its token leaks.
 
 ## Tokens
 
@@ -91,6 +95,9 @@ What Owl can see, what it stores and sends, and how to run it safely.
 - **Strict Content-Security-Policy** (`default-src 'self'`, no inline scripts, no third-party origins),
   `X-Frame-Options: DENY`, `nosniff`, `no-referrer`.
 - **Size limits** on every body; gzip bombs are caught (see [Configuration → Limits](configuration.md#limits)).
+- **Built-in docs** (`/api/v1/docs`) need sign-in like everything else. They're rendered when Owl is
+  built, from Owl's own documentation; raw HTML in them is refused at build time, so a page can't carry
+  scripts.
 - **Strict validation** of names that end up in YAML or `kubectl` commands.
 - **Logs never contain** headers, cookies, query strings, passwords or tokens (tested).
 - **Client IPs** come from `X-Forwarded-For` only when the request arrives from `OWL_TRUSTED_PROXIES`.

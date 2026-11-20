@@ -1,10 +1,12 @@
 import { LevelBadge } from "../ui";
+import { DocHelp } from "../pages/Docs";
+import { DOC_HELP } from "../dochelp";
 
 /** The priority rules in plain words (DESIGN.md "Priority"). Levels are rule-based; this only explains them. */
 export default function LevelHelp() {
   return (
     <details className="level-help">
-      <summary>What do the levels mean?</summary>
+      <summary>What do the levels mean?<DocHelp to={DOC_HELP.levels} label="priority levels" /></summary>
       <dl>
         <div><dt><LevelBadge level="critical" /></dt><dd>A high or critical security advisory that has a fix, its release line is past end-of-life, or the project is retired upstream.</dd></div>
         <div><dt><LevelBadge level="high" /></dt><dd>End-of-life within 90 days, or 2 or more release lines behind the target your version policy sets.</dd></div>

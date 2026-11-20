@@ -6,5 +6,7 @@
 /web/node_modules/
 /web/dist/*
 !/web/dist/.keep
+/internal/docs/dist/*
+!/internal/docs/dist/.keep
 *.tsbuildinfo
 dev/.mattermost.env

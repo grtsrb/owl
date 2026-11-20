@@ -58,8 +58,11 @@ type Server struct {
 	// Auth is the sign-in configuration (public URL, Google, email, trusted proxies).
 	Auth   AuthConfig
 	limits limiter
-	// UI is the built web app (web.Dist()); nil = API only.
-	UI fs.FS
+	// UI is the built web app (web.Dist()); nil = API only. Docs is the built documentation
+	// (docs.Dist()); nil or not built = GET /api/v1/docs answers 404.
+	UI   fs.FS
+	Docs fs.FS
+	docs docsCache
 	// Backups is nil when backups are disabled. LogLevel and LogFile (optional) follow the settings
 	// edited in the UI (applyOpsSettings).
 	Backups *backup.Manager
@@ -130,6 +133,8 @@ func (s *Server) Handler() http.Handler {
 	s.catalogRoutes(mux)
 	s.signinRoutes(mux)
 	s.tokenRoutes(mux)
+	mux.HandleFunc("GET /api/v1/docs", s.listDocs)
+	mux.HandleFunc("GET /api/v1/docs/{page}", s.docPage)
 	mux.HandleFunc("GET /api/v1/cli", s.listCLI)
 	mux.HandleFunc("GET /api/v1/cli/{platform}", s.downloadCLI)
 	mux.HandleFunc("/", s.fallback) // UI for GET/HEAD, JSON 404 for everything else

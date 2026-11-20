@@ -10,6 +10,7 @@ A tour of the web UI. For what the levels, notes and drift mean, see [Concepts](
 - [Cluster page](#cluster-page)
 - [Changes](#changes)
 - [Settings](#settings)
+- [Docs](#docs)
 
 ## Signing in
 
@@ -22,9 +23,11 @@ page emails you a link (when the server can send email); otherwise ask an admin 
 You stay signed in for up to 30 days (7 days without using Owl signs you out). Your name at the
 bottom of the sidebar leads to **Account** and **Sign out**.
 
+> **Why:** nobody can sign up on their own: Owl shows which versions and known vulnerabilities run where, which is useful to an attacker. Links are single-use and short-lived because they sign you in.
+
 ## Layout
 
-The sidebar has **Overview**, **Clusters**, **Changes** and **Settings**; at the bottom it shows who
+The sidebar has **Overview**, **Clusters**, **Changes**, **Settings** and **Docs**; at the bottom it shows who
 you're signed in as, your role, and **Sign out**. The UI follows your OS light/dark setting.
 
 **Viewers** can see everything. **Admins** can also change things; for viewers, buttons that change
@@ -132,6 +135,8 @@ tenants, Catalog and Version policy read-only, and don't see the admin-only sect
   current workloads, full history; no token). Deleting removes all of the cluster's data.
 - **Agent settings** — the agent image (e.g. `registry.example.com/team/owl:0.7.0`) and the server URL
   agents should use. Until set, generated files contain placeholders and a warning.
+
+> **Why:** the agent token is stored only as a hash, so Owl can't show it again — if it's lost, rotate it. The token goes into a Secret file you download, not into a command, so it never lands in your shell history. Rotating cuts an agent off but keeps the cluster's history; deleting removes everything, which is why the export is offered first.
 
 ### Stages & tenants
 
@@ -261,3 +266,23 @@ Settings → Notifications (needs email to be set up on the server).
   the expiry (30, 90, 365 days or never). The token is shown **once**: copy it into `owl login` or a
   CI variable. The list shows when each was created and last used and when it expires (*expired*
   ones stay listed for 30 days); **Revoke** stops one at once.
+
+## Docs
+
+**Docs** in the sidebar opens this documentation — the docs of the Owl version you're running, shown
+in the header. It reopens the page you last read.
+
+- **Topics** on the right: search the docs, the list of pages, and the sections of the page you're on.
+  The arrow hides it so the text gets the full width; click **Topics** to bring it back (remembered per
+  browser). On a phone it opens over the page.
+- **Search** finds sections that contain every word you type; matches in a heading come first.
+- Hover a heading and click **#** to copy a link to that section — share it with anyone who can sign
+  in to this Owl.
+- Code blocks have a **Copy** button.
+- A small **?** next to a page title (Overview, Changes, Clusters, and Settings → Catalog,
+  Notifications, Backups, Users) or the level legend opens the part of the docs that explains that
+  feature. Back returns you to where you were.
+
+> **Why:** the docs ship inside Owl, so they always describe the version you run — not the newest one
+> on the internet — and work without access to anything else. They are only for signed-in users, like
+> everything else in Owl.

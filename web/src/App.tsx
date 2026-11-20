@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, session, useMe, type Cluster, type StageInfo } from "./api";
 import { Icon } from "./icons";
 import { orderClusters } from "./model";
@@ -11,7 +11,9 @@ import Changes from "./pages/Changes";
 import Clusters from "./pages/Clusters";
 import ClusterDetail from "./pages/ClusterDetail";
 import Settings from "./pages/Settings";
-import { AcceptPage, LoginPage } from "./pages/Login";
+import Docs, { DocHelp, docsHome } from "./pages/Docs";
+import { DOC_HELP } from "./dochelp";
+import { AcceptPage, LoginPage, takeReturn } from "./pages/Login";
 import { AccountTab, signOut } from "./pages/SettingsUsers";
 import { ErrorBox, Loading } from "./ui";
 
@@ -35,7 +37,14 @@ export default function App() {
   const me = useMe();
   const { pathname } = useLocation();
   const [loadError, setLoadError] = useState<unknown>(null);
+  const navigate = useNavigate();
   useEffect(() => { if (me === undefined) session.load().catch(setLoadError); }, [me, setLoadError]);
+  // Back to the page (e.g. a shared docs section) a Google sign-in started from.
+  useEffect(() => {
+    if (!me) return;
+    const to = takeReturn();
+    if (to) navigate(to, { replace: true });
+  }, [me, navigate]);
   if (pathname === "/invite" || pathname === "/reset") return <AcceptPage />;
   if (loadError) return <main className="content"><ErrorBox error={loadError} retry={() => { setLoadError(null); void session.load().catch(setLoadError); }} /></main>;
   if (me === undefined) return <Loading />;
@@ -72,6 +81,7 @@ function Shell() {
           <NavItem to="/clusters" icon={<Icon.clusters />}>Clusters</NavItem>
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
+          <NavLink to={docsHome()} className={`nav${pathname.startsWith("/docs") ? " active" : ""}`}><Icon.docs />Docs</NavLink>
           <div className="side-foot">
             <NavLink to="/account" className="side-me" title={`${me.email} — your account`}>
               <span className="avatar" aria-hidden="true">{me.email.charAt(0).toUpperCase()}</span>
@@ -95,6 +105,8 @@ function Shell() {
               <Route path="/settings" element={<Navigate to="/settings/clusters" replace />} />
               <Route path="/settings/:tab" element={<Settings />} />
               <Route path="/account" element={<AccountPage />} />
+              <Route path="/docs" element={<Docs />} />
+              <Route path="/docs/:page" element={<Docs />} />
               <Route path="/images" element={<Navigate to="/clusters" replace />} />
               <Route path="*" element={<p className="empty">Page not found.</p>} />
             </Routes>
@@ -113,7 +125,7 @@ function NavItem({ to, end, icon, children }: { to: string; end?: boolean; icon:
 function AccountPage() {
   return (
     <>
-      <div className="page-head"><div><h1>Account</h1><p className="muted">Your sign-in and what Owl sends you.</p></div></div>
+      <div className="page-head"><div><h1>Account<DocHelp to={DOC_HELP.users} label="users and sign-in" /></h1><p className="muted">Your sign-in and what Owl sends you.</p></div></div>
       <AccountTab />
     </>
   );

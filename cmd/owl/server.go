@@ -22,6 +22,7 @@ import (
 	"owl/internal/auth"
 	"owl/internal/backup"
 	"owl/internal/catalog"
+	"owl/internal/docs"
 	"owl/internal/logfile"
 	"owl/internal/notify"
 	"owl/internal/registry"
@@ -96,7 +97,7 @@ func runServer(args []string) error {
 		return err
 	}
 	app := &server.Server{Store: db, Catalog: cat, Log: log, AllowedHosts: strings.Split(*allowedHosts, ","),
-		Auth: authCfg, UI: web.Dist(), LogLevel: level, Version: version, CLIDir: envOr("OWL_CLI_DIR", "/cli")}
+		Auth: authCfg, UI: web.Dist(), Docs: docs.Dist(), LogLevel: level, Version: version, CLIDir: envOr("OWL_CLI_DIR", "/cli")}
 	if logFile != nil {
 		app.LogFile = logFile
 	}

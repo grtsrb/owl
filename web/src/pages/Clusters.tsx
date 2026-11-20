@@ -1,3 +1,5 @@
+import { DocHelp } from "./Docs";
+import { DOC_HELP } from "../dochelp";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAppData } from "../App";
@@ -17,7 +19,7 @@ export default function Clusters() {
     <>
       <div className="page-head">
         <div>
-          <h1>Clusters</h1>
+          <h1>Clusters<DocHelp to={DOC_HELP.clusters} label="clusters, stages and tenants" /></h1>
           <p className="muted">Everything running in each cluster: every workload, its image and what we know about it.</p>
         </div>
         <Link to="/settings/clusters" className="btn primary">+ Add cluster</Link>

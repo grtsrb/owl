@@ -33,10 +33,12 @@ cluster). The same image `owl:<version>` runs both.
 - Optional: an **S3-compatible bucket** for backups (AWS S3, Hetzner Object Storage, …), an **SMTP
   server** for invite and reset emails, a **Google OAuth client** for Google sign-in.
 
+> **Why:** Owl decides who may sign in with `Secure` cookies and rate limits per client, and agents send tokens; all of that is only safe over HTTPS. A GitHub token with no scopes can read nothing private — it only raises the rate limit.
+
 ## 1. Build and push the image
 
 The image is distroless, runs as non-root (UID 65532), contains only `/owl`, and is the same for the
-server and the agents. Build it for both CPU architectures (amd64, and arm64 for Graviton instances
+server and the agents. Build it from a checkout of the Owl source, for both CPU architectures (amd64, and arm64 for Graviton instances
 like `t4g`) and push it to your registry (log in first, e.g. `docker login registry.gitlab.example.com`):
 
 ```bash
@@ -50,7 +52,7 @@ make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0
 
 ### Docker Compose on one host (recommended)
 
-[`deploy/compose/`](../deploy/compose) runs Owl behind **Caddy**, which gets and renews the HTTPS
+This setup (`deploy/compose/` in the source) runs Owl behind **Caddy**, which gets and renews the HTTPS
 certificate from Let's Encrypt. Owl itself isn't published on any port; only Caddy is.
 
 **The host** (example: AWS EC2):
@@ -68,7 +70,7 @@ certificate from Let's Encrypt. Owl itself isn't published on any port; only Cad
 ```bash
 sudo mkdir -p /srv/owl && sudo chown 65532:65532 /srv/owl   # Owl runs as UID 65532
 mkdir ~/owl && cd ~/owl
-# copy deploy/compose/{compose.yaml,Caddyfile,owl.env.example} here, then:
+# create compose.yaml, Caddyfile and owl.env.example here (below), then:
 cp owl.env.example .env && chmod 600 .env
 vi .env           # OWL_IMAGE, OWL_DOMAIN, OWL_PUBLIC_URL, GITHUB_TOKEN, S3, SMTP, …
 docker compose up -d
@@ -82,9 +84,20 @@ capped at 3 × 10 MB.
 Check it: `curl -s https://owl.example.com/healthz` prints `ok`. The first start can take a minute
 while Caddy gets the certificate.
 
+The three files, exactly as shipped with this version (in the source:
+[`deploy/compose/`](../deploy/compose)):
+
+<!-- include deploy/compose/compose.yaml -->
+
+<!-- include deploy/compose/Caddyfile -->
+
+<!-- include deploy/compose/owl.env.example -->
+
+> **Why:** Compose on its own host keeps Owl up when a cluster it watches is down, and Caddy handles certificates without anything else to run. Owl itself listens only inside the Compose network; only Caddy is reachable.
+
 ### Inside a cluster
 
-[`deploy/server/`](../deploy/server) runs the server as a one-replica StatefulSet with its own volume
+`server.yaml` (below) runs the server as a one-replica StatefulSet with its own volume
 (SQLite has one writer: never scale it up), plus an example Ingress for ingress-nginx and cert-manager.
 
 ```bash
@@ -97,6 +110,13 @@ kubectl apply -f deploy/server/ingress.example.yaml   # edit host, issuer, class
 `OWL_TRUSTED_PROXIES` set to the ingress controller's pod network (RKE2 default `10.42.0.0/16`).
 The trade-off: Owl then runs inside one of the clusters it watches — if that cluster is down, so is
 Owl. Prefer a separate host for the production instance.
+
+The two files, exactly as shipped with this version (in the source:
+[`deploy/server/`](../deploy/server)):
+
+<!-- include deploy/server/server.yaml -->
+
+<!-- include deploy/server/ingress.example.yaml -->
 
 ### Plain `docker run`
 
@@ -188,6 +208,8 @@ kubectl -n owl create secret generic owl-agent \
   reporting every 15 minutes (`OWL_INTERVAL`), reading `OWL_SERVER_URL` and `OWL_TOKEN` from the
   `owl-agent` Secret.
 
+> **Why:** the agent only pushes and only reads. The server never connects into your clusters and stores no kubeconfigs, so a compromised Owl can't reach them, and the agent's role can't read Secrets or change anything. The token sits in a Secret you apply from a file, never in a URL or a command line.
+
 ## 5. Configure backups
 
 Without a bucket, backups stay on the server's own disk and the UI warns that this isn't safe. Set
@@ -206,6 +228,8 @@ Anthropic's side first:
    **Manual**, and **Automatic** only once you're comfortable. Check the daily/monthly caps there.
 
 Details: [Operations → Claude upgrade summaries](operations.md#claude-upgrade-summaries).
+
+> **Why:** Owl's own daily and monthly caps protect you from Owl's mistakes; the workspace spend limit and prepaid credits protect you from everything else, including a leaked key. Starting with *Estimate only* shows the cost before anything is spent.
 
 ## 7. Optional: email
 
@@ -237,8 +261,8 @@ to be a Workspace admin to set this up, only access to a Google Cloud project:
    invited user). Optionally then **Settings → Users → Password sign-in → Turn off**, so everyone uses
    Google (and its 2-step verification).
 
-If Google sign-in ever breaks while passwords are off, `owl db user reset-link <email>` on the server
-prints a link that sets a password and signs you in — see [Troubleshooting](troubleshooting.md#locked-out).
+If Google sign-in ever breaks while passwords are off, `owl db user reset-link --email <email>` on the server
+prints a link that sets a password and signs you in — see [Troubleshooting](troubleshooting.md#locked-out-no-admin-can-sign-in).
 
 ## 9. Optional: Mattermost notifications
 
@@ -268,6 +292,8 @@ including keeping users in a `users.yaml` (`owl users plan/apply`) and failing C
 
 Agents and servers of different versions work together as long as the snapshot schema version is
 the same; the server rejects an incompatible agent with a clear `400` in the agent's logs.
+
+> **Why:** a migrated database can contain things an older Owl doesn't understand, so an older binary refuses to open it rather than silently damage it — the pre-upgrade backup is the way back.
 
 ## Uninstalling an agent
 

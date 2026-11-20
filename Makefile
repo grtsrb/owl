@@ -6,7 +6,7 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: ui ui-dev build cli test lint image image-push dev-up dev-down seed agent-print catalog-check agent-deploy stack-up stack-down mattermost-up mattermost-down
+.PHONY: ui ui-dev docs build cli test lint image image-push dev-up dev-down seed agent-print catalog-check agent-deploy stack-up stack-down mattermost-up mattermost-down
 
 ## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
 ui:
@@ -15,7 +15,11 @@ ui:
 ui-dev: ## Vite dev server on :5173, proxying /api to the server on :8080
 	cd web && npm run dev
 
-build:
+## Docs (docs/*.md) rendered to HTML + search index in internal/docs/dist, embedded by `make build`.
+docs:
+	go run ./internal/docs/docsgen
+
+build: docs
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/owl ./cmd/owl
 
 ## The downloadable client (client commands only) for every platform, into bin/cli (the image builds the same).

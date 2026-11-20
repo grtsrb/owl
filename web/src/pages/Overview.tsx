@@ -4,6 +4,8 @@ import { api, LEVELS, type Cluster, type ComponentReport, type Level, type Score
 import { useAppData, useReporting } from "../App";
 import ComponentPanel from "../components/ComponentPanel";
 import LevelHelp from "../components/LevelHelp";
+import { DocHelp } from "./Docs";
+import { DOC_HELP } from "../dochelp";
 import { SummaryHeadline } from "../components/Summaries";
 import { LEGEND, needsByCluster, Note, notesFor, paginate, useClusterSelection, usePageSize, useQueryState, worstInstance, type NoteItem } from "../model";
 import { ago, Card, CountBadges, Empty, ErrorBox, LevelBadge, LevelBar, levelCounts, levelLabel, levelRank, Loading, Pager, useApi, worstLevel } from "../ui";
@@ -89,7 +91,7 @@ export default function Overview() {
     <>
       <div className="page-head">
         <div>
-          <h1>Overview</h1>
+          <h1>Overview<DocHelp to={DOC_HELP.overview} label="the Overview" /></h1>
           <p className="muted">{rows.length} components in {cols.length} {cols.length === 1 ? "cluster" : "clusters"} · generated {ago(report.data.generatedAt)}</p>
         </div>
         <button className="btn" onClick={report.reload}>Refresh</button>

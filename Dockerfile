@@ -26,6 +26,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=ui /web/dist ./web/dist
+# Docs rendered to HTML at build time (the binary carries no Markdown parser).
+RUN go run ./internal/docs/docsgen
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/owl ./cmd/owl
 RUN mkdir -p /out/data
