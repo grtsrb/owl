@@ -100,7 +100,7 @@ its page.
 
 - **Header** — Kubernetes/RKE2 version and EOL, last report, counts per level.
 - **Workloads** — every workload and container with image, version and level. Under the level: the
-  action and the reasons. Flags (with tooltips and a legend): unpinned, scaled to 0, rollout in
+  action and the reasons. Flags (with tooltips and a legend; the rollout flags list what each pod image runs): unpinned, scaled to 0, not rolled out, rollout in
   progress, mapped, in-house, in-house (marked), unrecognized, ignored. Filter by level, search, page.
 - **Unrecognized images** — images Owl doesn't know, per repository. Admins can:
   - add it as a **New component** (see [Catalog](#catalog)) — for software Owl's catalog doesn't know,

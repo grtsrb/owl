@@ -1,6 +1,6 @@
 // Everything running in one cluster, combined from the report (scored components) and the inventory
 // (in-house, unrecognized, ignored images).
-import type { Inventory, Level, Report } from "./api";
+import type { Instance, Inventory, Level, Report } from "./api";
 
 export interface Flag { text: string; tone: string; title: string }
 
@@ -8,13 +8,19 @@ export interface Flag { text: string; tone: string; title: string }
 export const FLAG = {
   unpinned: { text: "unpinned", tone: "warn", title: "The tag (e.g. :latest or :16) doesn't say which version runs, so it can't be checked. Pin an exact version." },
   scaled0: { text: "scaled to 0", tone: "", title: "0 replicas: nothing runs right now, but the image is still deployed and would start if scaled up, so it's checked like any other." },
-  rollout: { text: "rollout in progress", tone: "warn", title: "Pods run more than one image version: an update is half-way (or stuck)." },
+  rollout: { text: "rollout in progress", tone: "warn", title: "Pods run more than one image version: an update is half-way (or stuck). The level counts the older version too." },
+  notRolledOut: { text: "not rolled out", tone: "warn", title: "No pod runs the image in the workload's configuration yet (OnDelete update strategy, or a paused or stuck rollout). The version shown is the configured one; the level counts what the pods actually run." },
   mapped: { text: "mapped", tone: "info", title: "You mapped this image to a component (Settings → Catalog)." },
   inhouse: { text: "in-house", tone: "info", title: "From an internal registry: our own software. Listed for inventory, not checked against upstream." },
   inhouseMarked: { text: "in-house (marked)", tone: "info", title: "You marked this image as our own software. Listed, not checked against upstream." },
   unrecognized: { text: "unrecognized", tone: "warn", title: "Not in the catalog, so nothing is checked. Add it as a new component, map it to an existing one, mark it in-house or ignore it (below)." },
   ignored: { text: "ignored", tone: "", title: "You chose to ignore this image. Undo in Settings → Catalog." },
 } satisfies Record<string, Flag>;
+
+/** What the pods run, one line per image ("nginx:1.33.6: 2/3 ready"), for flag tooltips. */
+export function runningText(i: Instance): string {
+  return i.running?.map((r) => `${r.image}: ${r.ready}/${r.pods} ready`).join("\n") ?? "";
+}
 
 export interface WorkloadRow {
   key: string;
@@ -39,7 +45,9 @@ export function workloadsFor(cluster: string, report: Report, inv: Inventory): W
       if (i.status === "unpinned") flags.push({ ...FLAG.unpinned, title: `${FLAG.unpinned.title} (${i.reason})` });
       if (i.override === "map") flags.push({ ...FLAG.mapped, title: `You mapped ${i.repository} to ${c.name}.` });
       if (i.desiredReplicas === 0 && i.kind !== "CronJob" && i.kind !== "Job") flags.push(FLAG.scaled0);
-      if ((i.running?.length ?? 0) > 1) flags.push(FLAG.rollout);
+      const runs = runningText(i);
+      if (i.notRolledOut) flags.push({ ...FLAG.notRolledOut, title: `${FLAG.notRolledOut.title}\n${runs}` });
+      else if ((i.running?.length ?? 0) > 1) flags.push({ ...FLAG.rollout, title: `${FLAG.rollout.title}\n${runs}` });
       rows.push({ ...base(i), key: `${c.id}/${i.namespace}/${i.kind}/${i.workload}/${i.container}`, componentId: c.id, componentName: c.name,
         version: i.version, level: i.score.level, action: i.action.text, why: i.action.why,
         reasons: i.score.reasons.map((r) => r.text), group: "third", flags });

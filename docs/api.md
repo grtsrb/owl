@@ -137,8 +137,8 @@ All under `/api/v1/auth/` except the two Google redirects.
 | `GET /clusters` | `[{name, stage, tenant, kubernetesVersion, agentVersion, lastSeenAt}]` |
 | `GET /clusters/{name}/images` | Current workloads/containers of one cluster (intended image, running images, replicas) |
 | `GET /changes?cluster=&limit=` | Change history, newest first. `cluster` optional; `limit` default 200, max 1000 |
-| `GET /inventory` | Components × clusters with instances, plus `unpinned`, `inHouse`, `unrecognized`, `ignored` lists. An instance has `bundledWith: rke2 \| k3s` when the cluster's distribution ships that image itself. |
-| `GET /report` | The scored report: `summary` (components per level), `components[]` with `level`, `target`, `upstream`, `instances[]` (each with `score` + reasons and `action`), `drift[]`, `action`; plus `policies`, `stages`, counts. `action.kind`: `none`, `patch`, `upgrade`, `update`, `plan`, `replace`, `pin`, `check`. |
+| `GET /inventory` | Components × clusters with instances, plus `unpinned`, `inHouse`, `unrecognized`, `ignored` lists. An instance has `bundledWith: rke2 \| k3s` when the cluster's distribution ships that image itself, `runningVersions` (other versions its pods still run, oldest first) and `notRolledOut: true` when no pod runs the template's image. |
+| `GET /report` | The scored report: `summary` (components per level), `components[]` with `level`, `target`, `upstream`, `instances[]` (each with `score` + reasons and `action`), `drift[]`, `action`; plus `policies`, `stages`, counts. `action.kind`: `none`, `patch`, `upgrade`, `update`, `plan`, `replace`, `pin`, `check`, `rollout`. `score.stillRunning` is set when an older version the pods still run decided the level (`score.templateLevel` is then the template version's own level). |
 | `GET /components/{id}` | `component` (catalog entry), `inventory` (where it runs), `upstream` (lines, EOL, archived, …), `advisoriesByVersion[]` |
 | `GET /upstream` | Upstream info for every component running in a cluster, and every custom one (release lines, latest stable, archived/retired, advisory source, fetch time, `stale`, errors) |
 | `GET /catalog` | The built-in catalog |

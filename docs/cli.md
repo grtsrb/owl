@@ -91,6 +91,7 @@ owl outdated                       # everything at Low or above, most urgent fir
 owl outdated --level high --cluster it-aws-prod,it-aws-test
 owl outdated --tenant IT --all     # --all includes OK and Unknown
 owl component coredns              # lines (newest + the ones running), target, instances, drift, advisories
+                                   # (a version reads "1.36.6 (pods run 1.33.6)" when pods lag the template)
 owl clusters
 owl changes --cluster it-hetzner --limit 20
 owl unrecognized

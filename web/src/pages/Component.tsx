@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, useIsAdmin, writeErrorText, type ComponentReport, type Match } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
 import { SummaryCards } from "../components/Summaries";
+import { FLAG, runningText } from "../clusterview";
 
 export default function ComponentPage() {
   const { id = "" } = useParams();
@@ -119,7 +120,9 @@ function Instances({ c }: { c: ComponentReport }) {
                 <td>
                   {i.namespace ? `${i.namespace}/${i.workload}` : "cluster"}
                   <div className="subtle">{i.kind}{i.container ? ` · ${i.container}` : ""}{i.kind ? ` · ${i.desiredReplicas} replicas` : ""}</div>
-                  {(i.running?.length ?? 0) > 1 && <Tag tone="warn" title={i.running!.map((r) => `${r.image}: ${r.ready}/${r.pods} ready`).join("\n")}>rollout in progress</Tag>}
+                  {i.notRolledOut
+                    ? <Tag tone="warn" title={`${FLAG.notRolledOut.title}\n${runningText(i)}`}>{FLAG.notRolledOut.text}</Tag>
+                    : (i.running?.length ?? 0) > 1 && <Tag tone="warn" title={`${FLAG.rollout.title}\n${runningText(i)}`}>{FLAG.rollout.text}</Tag>}
                 </td>
                 <td className="mono">{i.version || "?"}<div className="subtle mono" title={i.image}>{i.image.length > 48 ? "…" + i.image.slice(-46) : i.image}</div>
                   {i.bundledWith && <BundledTag by={i.bundledName || distroName(i.bundledWith)} />}</td>

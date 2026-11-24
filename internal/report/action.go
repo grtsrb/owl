@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ const (
 	ActionCheck   ActionKind = "check"   // no data to decide on
 	ActionUpdate  ActionKind = "update"  // component level: bring every instance to the target
 	ActionPlan    ActionKind = "plan"    // on the newest patch of a line upstream still supports: plan the move
+	ActionRollout ActionKind = "rollout" // the template is fine, the pods don't run it (yet)
 )
 
 // Action is the recommended next step as one sentence: Text says what ("Upgrade to 1.14.7"), Why the
@@ -38,8 +40,16 @@ type Action struct {
 
 // ActionFor turns a score into the recommended action for one instance. For an image the cluster's
 // distribution ships itself (BundledWith) a patch or upgrade means upgrading the distribution.
+//
+// Pods that don't run the template's version (Score.StillRunning, Instance.NotRolledOut): when the
+// template itself needs nothing, the step is finishing the rollout; otherwise the template's step stays
+// (it fixes both once rolled out) and says the pods still run the old version.
 func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *upstream.Info) Action {
-	a := coverFixes(scoreAction(in, sc, target, info), in, sc, target, info)
+	tmpl := sc
+	if sc.StillRunning != "" {
+		tmpl.Level = sc.TemplateLevel // the template's step follows from the template's own level
+	}
+	a := coverFixes(scoreAction(in, tmpl, target, info), in, tmpl, target, info)
 	switch {
 	case in.BundledWith != "" && (a.Kind == ActionPatch || a.Kind == ActionUpgrade):
 		a.Text = bundledText(bundledName(in), a.To)
@@ -47,7 +57,38 @@ func ActionFor(in inventory.Instance, sc Score, target *policy.Target, info *ups
 		d := bundledName(in)
 		a.Text = "Comes with " + d + " — plan the " + d + " upgrade that ships " + a.To + " or newer"
 	}
+	if sc.StillRunning == "" && !in.NotRolledOut || in.Version == "" {
+		return a
+	}
+	why := rolloutWhy(in, sc)
+	switch a.Kind {
+	case ActionNone:
+		return Action{ActionRollout, "Finish the rollout to " + in.Version, why, in.Version}
+	case ActionPatch, ActionUpgrade, ActionPlan, ActionCheck:
+		a.Why = strings.TrimPrefix(a.Why+"; "+why, "; ")
+	}
 	return a
+}
+
+// rolloutWhy: which older version the pods still run and why it matters, and what to look at.
+func rolloutWhy(in inventory.Instance, sc Score) string {
+	var why []string
+	if sc.StillRunning != "" {
+		for _, r := range sc.Reasons {
+			if strings.HasPrefix(r.Text, "pods still run ") {
+				why = append(why, r.Text) // worst first
+				break
+			}
+		}
+	} else if len(in.RunningVersions) > 0 {
+		why = append(why, "pods still run "+strings.Join(in.RunningVersions, ", "))
+	}
+	if in.NotRolledOut {
+		why = append(why, "no pod runs "+tagOf(in.Image)+" yet — restart the pods (OnDelete update strategy, or a paused or stuck rollout)")
+	} else if len(why) > 0 {
+		why = append(why, "some pods run the new version — a rollout in progress, or stuck")
+	}
+	return strings.Join(why, "; ")
 }
 
 // bundledName: how what ships the image is written in sentences ("RKE2", "Cilium").
@@ -320,6 +361,18 @@ func ComponentAction(insts []ScoredInstance, target *policy.Target) Action {
 			return Action{ActionUpgrade, bundledText(bundled, ""), worst.Action.Why, ""}
 		}
 		return Action{ActionPatch, "Patch each to the newest of its line", worst.Action.Why, ""}
+	case needs[ActionRollout]:
+		// Only rollouts left to do now: the template versions are fine.
+		var texts []string
+		for _, in := range insts {
+			if in.Action.Kind == ActionRollout && !slices.Contains(texts, in.Action.Text) {
+				texts = append(texts, in.Action.Text)
+			}
+		}
+		if len(texts) == 1 {
+			return Action{ActionRollout, texts[0], worst.Action.Why, ""}
+		}
+		return Action{ActionRollout, "Finish the rollouts", worst.Action.Why, ""}
 	case needs[ActionPin]:
 		return Action{ActionPin, "Pin an exact version", worst.Action.Why, ""}
 	case needs[ActionCheck]:

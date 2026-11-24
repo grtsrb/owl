@@ -129,17 +129,30 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 			}
 		}
 		matchesOf := map[string][]upstream.Match{} // many instances share a version; matching is the costly part
+		matchFor := func(v string) []upstream.Match {
+			m, ok := matchesOf[v]
+			if !ok {
+				m = upstream.AdvisoriesFor(info, v)
+				matchesOf[v] = m
+			}
+			return m
+		}
 		for _, inst := range cv.Instances {
 			var matches []upstream.Match
 			if info != nil && inst.Status == string(catalog.StatusIdentified) {
-				m, ok := matchesOf[inst.Version]
-				if !ok {
-					m = upstream.AdvisoriesFor(info, inst.Version)
-					matchesOf[inst.Version] = m
-				}
-				matches = m
+				matches = matchFor(inst.Version)
 			}
 			sc := ScoreInstance(inst, info, cr.Target, matches, in.Now)
+			if info != nil && len(inst.RunningVersions) > 0 {
+				// What the pods still run counts too (half-done, stuck or never-started rollouts).
+				var rs []RunningScore
+				for _, v := range inst.RunningVersions {
+					old := inst
+					old.Version, old.RunningVersions = v, nil
+					rs = append(rs, RunningScore{v, ScoreInstance(old, info, cr.Target, matchFor(v), in.Now)})
+				}
+				sc = WithRunning(sc, rs)
+			}
 			cr.Instances = append(cr.Instances, ScoredInstance{Instance: inst, Score: sc, Action: ActionFor(inst, sc, cr.Target, info)})
 			if sc.Level.Rank() > cr.Level.Rank() {
 				cr.Level = sc.Level

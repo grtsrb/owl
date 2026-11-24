@@ -2,6 +2,17 @@
 
 What each milestone shipped. Newest first.
 
+## What runs counts
+
+- When pods still run an older version than the workload's configuration — a rollout half-way, stuck, or
+  never started (StatefulSets and DaemonSets with `updateStrategy: OnDelete`, a paused Deployment) — that
+  version is scored too, and the worse level wins. Before, changing the image in the YAML made Owl treat
+  the upgrade as done even though no pod had been replaced.
+- New flag **not rolled out** when no pod runs the configured image; the rollout flags show what each pod
+  image runs. New action **Finish the rollout to …** when the configuration itself is fine.
+- `owl component` shows "1.36.6 (pods run 1.33.6)"; the API has `runningVersions`, `notRolledOut`,
+  `score.stillRunning` and action kind `rollout`.
+
 ## Overview: one set of numbers
 
 - The level tiles are gone. Under the title: how many components need attention (Critical, High,

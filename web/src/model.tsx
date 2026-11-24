@@ -96,6 +96,7 @@ export function need(i: ScoredInstance): string {
     case "none": return "up to date";
     case "patch": return "patch";
     case "plan": return "plan the move";
+    case "rollout": return "finish the rollout";
     case "upgrade":
       if (i.score.eol) return "EOL line";
       return i.score.linesBehind > 0 ? `${i.score.linesBehind} ${i.score.linesBehind === 1 ? "line" : "lines"} behind` : "upgrade";

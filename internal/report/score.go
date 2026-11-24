@@ -69,6 +69,46 @@ type Score struct {
 	// Supported: 2+ lines behind, but upstream still supports this line ("8.19 supported until
 	// 2027-07-15") — why the level is Medium, not High. The action then patches within the line first.
 	Supported string `json:"supported,omitempty"`
+	// StillRunning: an older version the pods still run that scores worse than the template's version
+	// and so decided the level (see WithRunning). Empty when the template's version decides.
+	StillRunning string `json:"stillRunning,omitempty"`
+	// TemplateLevel is the template version's own level when StillRunning raised it (what the action for
+	// the template is derived from).
+	TemplateLevel Level `json:"templateLevel,omitempty"`
+}
+
+// RunningScore is the score of a version the pods still run (Instance.RunningVersions).
+type RunningScore struct {
+	Version string
+	Score   Score
+}
+
+// WithRunning raises an instance's score to the worst version its pods actually run: a vulnerable or
+// EOL version that still serves traffic must not look fixed because the template changed. The other
+// fields keep describing the template's version (what the workload is configured to run); only the
+// level and the reasons change. A running version counts only when it is strictly worse, and its reasons
+// that are worse than the template's level are added as "pods still run <v>: …".
+func WithRunning(s Score, running []RunningScore) Score {
+	worst := -1
+	for i, r := range running {
+		if r.Score.Level.Rank() > s.Level.Rank() && (worst < 0 || r.Score.Level.Rank() > running[worst].Score.Level.Rank()) {
+			worst = i
+		}
+	}
+	if worst < 0 {
+		return s
+	}
+	r := running[worst]
+	out := s
+	out.Reasons = append([]Reason{}, s.Reasons...)
+	for _, x := range r.Score.Reasons {
+		if x.Level.Rank() > s.Level.Rank() {
+			out.Reasons = append(out.Reasons, Reason{x.Level, "pods still run " + r.Version + ": " + x.Text})
+		}
+	}
+	sort.SliceStable(out.Reasons, func(i, j int) bool { return out.Reasons[i].Level.Rank() > out.Reasons[j].Level.Rank() })
+	out.Level, out.StillRunning, out.TemplateLevel = r.Score.Level, r.Version, s.Level
+	return out
 }
 
 type EOLInfo struct {
