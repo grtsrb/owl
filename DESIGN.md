@@ -137,7 +137,8 @@ with its reasons (e.g. "CVE-2025-1974 (critical), fixed in 1.11.5", "release lin
 Redpanda ship a minor roughly monthly, so n-1 is strict there — use per-component policies.
 
 Policies (`internal/policy`): `lts-or-n-1` (default), `lts` (falls back to n-1), `latest`, `n-1`,
-`n-2`, `pin:<line or version>`; stored per scope (`global` or component id), editable via
+`n-2`, `pin:<line or version>` (**per component only** — agreed 2026-11-25: a global pin would make one version every
+component's target; the API refuses it, `effectivePolicy` ignores an old one with a note); stored per scope (`global` or component id), editable via
 `PUT /api/v1/policies/{scope}` (JSON only — a cross-site form post can't change them).
 
 Promotion drift across stages: "newer in staging, not yet in prod" and anomalies like "prod newer than staging"

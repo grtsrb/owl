@@ -131,7 +131,14 @@ A **policy** decides which version a component *should* run — its **target**.
 | `pin:<line or version>` | exactly that line or version, e.g. `pin:12.3` or `pin:16` |
 
 Policies are set globally and optionally per component (Settings → Version policy, or the
-component page). A per-component policy overrides the global one.
+component page). A per-component policy overrides the global one. A **pin is per component only**: as the
+global policy it would make one version (say 1.30) the target of Redis, Postgres and CoreDNS alike, so
+the API refuses it, and a global pin stored by an older Owl is ignored with a note (the default applies).
+
+Changing a policy only changes targets: the report is computed on every read, so levels, actions and
+drift follow at once. Policies move "lines behind" (High / Medium / Low), never Critical — that comes from
+advisories, end of life and retired projects — so a change doesn't trigger Critical alerts. With
+summaries on **Automatic**, new targets mean new upgrades to summarize, within the spending caps.
 
 > **Why:** the newest release is rarely what production should run on day one. The default asks for a supported line — LTS where the project has one, otherwise one line behind the newest — and per-component policies cover projects with a different rhythm. Policies are explicit settings, so everyone sees the same target.
 

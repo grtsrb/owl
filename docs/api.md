@@ -164,7 +164,7 @@ The snapshot carries no cluster identity — the server derives it from the toke
 
 | Endpoint | Body |
 |---|---|
-| `PUT /policies/{scope}` | `{"policy": "n-2"}` — `scope` is `global` or a component id |
+| `PUT /policies/{scope}` | `{"policy": "n-2"}` — `scope` is `global` or a component id; `pin:` only for a component (400 for `global`) |
 | `DELETE /policies/{scope}` | — (component goes back to the global policy) |
 
 Policies: `lts-or-n-1`, `lts`, `latest`, `n-1`, `n-2` (any `n-<0..10>`), `pin:<version>`.

@@ -181,7 +181,8 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 }
 
 // effectivePolicy: component override, else global, else the default. An invalid stored policy falls
-// back to the next level (with a note) instead of silently producing no target.
+// back to the next level (with a note) instead of silently producing no target; so does a global pin
+// (one version can't be every component's target — the API refuses it, older data may have one).
 func effectivePolicy(pols map[string]string, id string) (policy.Spec, string) {
 	note := ""
 	for _, scope := range []string{id, "global"} {
@@ -190,7 +191,7 @@ func effectivePolicy(pols map[string]string, id string) (policy.Spec, string) {
 			continue
 		}
 		sp, err := policy.Parse(raw)
-		if err == nil {
+		if err == nil && (scope != "global" || sp.Kind != "pin") { // a global pin (stored before it was refused) means nothing per component
 			return sp, note
 		}
 		note = fmt.Sprintf("invalid %s policy %q ignored", scope, raw)

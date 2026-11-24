@@ -150,8 +150,11 @@ tenants, Catalog and Version policy read-only, and don't see the admin-only sect
 
 ### Version policy
 
-The global policy (default `lts-or-n-1`) and per-component overrides. See
-[policies](concepts.md#version-policies-and-targets).
+The global policy (default `lts-or-n-1`), chosen from a list that says what each policy means, and the
+per-component overrides. A component's own policy is set on its page: the same list plus **Use global**
+and **pin a line or version…** (e.g. `16`). A pin is per component only. Changing a policy takes effect
+at once: targets, levels and actions are recalculated on the next page load, and nothing stored is
+rewritten. See [policies](concepts.md#version-policies-and-targets).
 
 ### Catalog
 

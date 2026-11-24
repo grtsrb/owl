@@ -718,6 +718,11 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if scope == "global" && sp.Kind == "pin" {
+		// One version for every component (Redis, CoreDNS, Postgres…) makes every target meaningless.
+		httpError(w, http.StatusBadRequest, "a version pin is per component: set it on the component's page, not as the global policy")
+		return
+	}
 	if err := s.Store.SetPolicy(r.Context(), scope, sp.Raw); err != nil {
 		s.fail(w, err)
 		return

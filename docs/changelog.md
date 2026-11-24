@@ -2,6 +2,14 @@
 
 What each milestone shipped. Newest first.
 
+## Version policy picker
+
+- Settings → Version policy and the component page choose the policy from a list that says what each one
+  means. Before, a text field with suggestions only offered the policy already typed in, so the others —
+  including going back to the default — couldn't be picked.
+- A component can **pin a line or version** from the list. As the global policy a pin is refused (it
+  would make one version every component's target); a global pin stored earlier is ignored with a note.
+
 ## What runs counts
 
 - When pods still run an older version than the workload's configuration — a rollout half-way, stuck, or
