@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, session, type TokenInfo } from "../api";
 import { Icon } from "../icons";
-import { Loading, Msg, useApi } from "../ui";
+import { formValue, Loading, Msg, pwLength, useApi } from "../ui";
 
 // Reasons the server sends back to /login?error=… after a Google sign-in attempt.
 const googleErrors: Record<string, string> = {
@@ -62,7 +62,7 @@ export function LoginPage() {
   const loc = useLocation();
   const error = new URLSearchParams(loc.search).get("error");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [hasPassword, setHasPassword] = useState(false); // the password itself stays in the (uncontrolled) input
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(error ? { ok: false, text: googleErrors[error] ?? "Sign-in failed." } : null);
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
@@ -70,8 +70,9 @@ export function LoginPage() {
   if (!cfg.data) return cfg.error ? <AuthCard title="Sign in"><Msg msg={{ ok: false, text: "Owl isn't reachable. Try again in a moment." }} /></AuthCard> : <Loading />;
   const c = cfg.data;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const password = formValue(e.currentTarget, "password");
     setBusy(true); setMsg(null);
     try {
       if (forgot) {
@@ -96,17 +97,17 @@ export function LoginPage() {
           </label>
           {!forgot && (
             <label className="field">Password
-              <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <input className="input" type="password" name="password" autoComplete="current-password" onInput={(e) => setHasPassword(e.currentTarget.value !== "")} required />
             </label>
           )}
           <Msg msg={msg} />
-          <button className="btn primary" disabled={busy || !email || (!forgot && !password)}>{busy ? "…" : forgot ? "Email me a link" : "Sign in"}</button>
+          <button className="btn primary" disabled={busy || !email || (!forgot && !hasPassword)}>{busy ? "…" : forgot ? "Email me a link" : "Sign in"}</button>
         </form>
       )}
       {!c.password && !forgot && msg && <Msg msg={msg} />}
       <p className="subtle auth-foot">
         {c.forgot && (forgot
-          ? <button className="link-btn" onClick={() => { setForgot(false); setMsg(null); }}>Back to sign-in</button>
+          ? <button className="link-btn" onClick={() => { setForgot(false); setMsg(null); setHasPassword(false); }}>Back to sign-in</button>
           : <button className="link-btn" onClick={() => { setForgot(true); setMsg(null); }}>Forgot password?</button>)}
         {!c.forgot && "Forgot your password? Ask an admin for a reset link."}
       </p>
@@ -122,8 +123,8 @@ export function AcceptPage() {
   const token = loc.hash.replace(/^#/, "");
   const [info, setInfo] = useState<TokenInfo | null>(null);
   const [err, setErr] = useState("");
-  const [pw, setPw] = useState("");
-  const [again, setAgain] = useState("");
+  // The passwords stay in the (uncontrolled) inputs; only what the form needs to show is kept here.
+  const [pwState, setPwState] = useState({ long: false, again: false, match: true });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -136,8 +137,15 @@ export function AcceptPage() {
   if (!info) return <Loading />;
   const invite = info.kind === "invite";
 
-  async function submit(e: React.FormEvent) {
+  function check(e: React.FormEvent<HTMLFormElement>) {
+    const pw = formValue(e.currentTarget, "pw"), again = formValue(e.currentTarget, "again");
+    setPwState({ long: pwLength(pw) >= 12, again: again !== "", match: pw === again });
+  }
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const pw = formValue(e.currentTarget, "pw");
+    if (pw !== formValue(e.currentTarget, "again")) return;
     setBusy(true); setMsg(null);
     try {
       const me = await api.accept(token, pw);
@@ -160,18 +168,18 @@ export function AcceptPage() {
         </>
       )}
       {info.password && (
-        <form className="stack" onSubmit={submit}>
+        <form className="stack" onSubmit={submit} onInput={check}>
           <input type="email" autoComplete="username" value={info.email} readOnly hidden />
           <label className="field">{invite ? "Password" : "New password"}
-            <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus={!info.google} />
+            <input className="input" type="password" name="pw" autoComplete="new-password" autoFocus={!info.google} />
             <span className="subtle" style={{ fontWeight: 400 }}>At least 12 characters. A few random words work well.</span>
           </label>
           <label className="field">Again
-            <input className="input" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+            <input className="input" type="password" name="again" autoComplete="new-password" />
           </label>
-          {again !== "" && pw !== again && <p className="err-text">The passwords don't match.</p>}
+          {pwState.again && !pwState.match && <p className="err-text">The passwords don't match.</p>}
           <Msg msg={msg} />
-          <button className="btn primary" disabled={busy || [...pw].length < 12 || pw !== again}>{busy ? "…" : invite ? "Set password and sign in" : "Save and sign in"}</button>
+          <button className="btn primary" disabled={busy || !pwState.long || !pwState.match}>{busy ? "…" : invite ? "Set password and sign in" : "Save and sign in"}</button>
         </form>
       )}
     </AuthCard>
