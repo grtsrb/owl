@@ -24,6 +24,8 @@ export interface Score {
   eol?: { line: string; since?: string }; review?: number; eolSoon?: string;
   /** 2+ lines behind on a line upstream still supports ("8.19 supported until 2027-07-15"): why it's Medium. */
   supported?: string;
+  /** An older version the pods still run that decided the level; templateLevel is the template version's own level then. */
+  stillRunning?: string; templateLevel?: Level;
 }
 
 export interface Instance {
@@ -33,8 +35,10 @@ export interface Instance {
   /** What ships and upgrades this image itself: the cluster's distribution or a component (cilium). */
   bundledWith?: string; bundledName?: string;
   desiredReplicas: number; running?: RunningImage[];
+  /** Other versions the pods still run (left from a rollout), oldest first; notRolledOut: no pod runs the template's image. */
+  runningVersions?: string[]; notRolledOut?: boolean;
 }
-export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update" | "plan";
+export type ActionKind = "none" | "patch" | "upgrade" | "replace" | "pin" | "check" | "update" | "plan" | "rollout";
 export interface Action { kind: ActionKind; text: string; why: string }
 export interface ScoredInstance extends Instance { score: Score; action: Action }
 

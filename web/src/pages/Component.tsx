@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { api, useIsAdmin, writeErrorText, type ComponentReport, type Match } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
 import { SummaryCards } from "../components/Summaries";
+import { FLAG, runningText } from "../clusterview";
+import { joinPolicy, PolicyPicker, policyHint, splitPolicy } from "../components/PolicyPicker";
 
 export default function ComponentPage() {
   const { id = "" } = useParams();
@@ -61,7 +63,6 @@ export default function ComponentPage() {
               scope={id}
               current={policies.data.overrides[id]}
               inherited={policies.data.global}
-              presets={policies.data.presets}
               onSaved={() => { policies.reload(); report.reload(); }}
             />
           )}
@@ -119,7 +120,9 @@ function Instances({ c }: { c: ComponentReport }) {
                 <td>
                   {i.namespace ? `${i.namespace}/${i.workload}` : "cluster"}
                   <div className="subtle">{i.kind}{i.container ? ` · ${i.container}` : ""}{i.kind ? ` · ${i.desiredReplicas} replicas` : ""}</div>
-                  {(i.running?.length ?? 0) > 1 && <Tag tone="warn" title={i.running!.map((r) => `${r.image}: ${r.ready}/${r.pods} ready`).join("\n")}>rollout in progress</Tag>}
+                  {i.notRolledOut
+                    ? <Tag tone="warn" title={`${FLAG.notRolledOut.title}\n${runningText(i)}`}>{FLAG.notRolledOut.text}</Tag>
+                    : (i.running?.length ?? 0) > 1 && <Tag tone="warn" title={`${FLAG.rollout.title}\n${runningText(i)}`}>{FLAG.rollout.text}</Tag>}
                 </td>
                 <td className="mono">{i.version || "?"}<div className="subtle mono" title={i.image}>{i.image.length > 48 ? "…" + i.image.slice(-46) : i.image}</div>
                   {i.bundledWith && <BundledTag by={i.bundledName || distroName(i.bundledWith)} />}</td>
@@ -202,10 +205,12 @@ function Advisories({ d }: { d: { version: string; advisories: Match[]; error?: 
   );
 }
 
-function PolicyEditor({ scope, current, inherited, presets, onSaved }: {
-  scope: string; current?: string; inherited: string; presets: string[]; onSaved: () => void;
+function PolicyEditor({ scope, current, inherited, onSaved }: {
+  scope: string; current?: string; inherited: string; onSaved: () => void;
 }) {
-  const [value, setValue] = useState(current ?? "");
+  const [choice, setChoice] = useState(() => splitPolicy(current ?? "")[0]);
+  const [pin, setPin] = useState(() => splitPolicy(current ?? "")[1]);
+  const value = joinPolicy(choice, pin);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const hasToken = useIsAdmin();
@@ -218,15 +223,17 @@ function PolicyEditor({ scope, current, inherited, presets, onSaved }: {
   }
 
   return (
-    <form className="policy-form" onSubmit={(e) => { e.preventDefault(); run(() => api.setPolicy(scope, value), "Policy saved."); }}>
+    <form className="policy-form" onSubmit={(e) => {
+      e.preventDefault();
+      if (choice === "") run(() => api.clearPolicy(scope), "Now uses the global policy.");
+      else run(() => api.setPolicy(scope, value), "Policy saved.");
+    }}>
       <label htmlFor="policy">Policy for this component</label>
       <div className="row">
-        <input id="policy" className="input mono" list="presets" placeholder={`inherited: ${inherited}`} value={value} onChange={(e) => setValue(e.target.value)} />
-        <datalist id="presets">{presets.filter((p) => !p.includes("<")).map((p) => <option key={p} value={p} />)}</datalist>
-        <button className="btn primary" disabled={busy || !value || !hasToken}>Save</button>
-        {current && <button type="button" className="btn" disabled={busy || !hasToken} onClick={async () => { if (await run(() => api.clearPolicy(scope), "Override removed.")) setValue(""); }}>Use global</button>}
+        <PolicyPicker id="policy" label="Policy for this component" choice={choice} pin={pin} onChoice={setChoice} onPin={setPin} inherited={inherited} disabled={!hasToken} />
+        <button className="btn primary" disabled={busy || !hasToken || (choice === "" ? !current : !value || value === current)}>Save</button>
       </div>
-      <p className="subtle">e.g. <code>lts-or-n-1</code>, <code>latest</code>, <code>n-2</code>, <code>pin:16</code>{!hasToken && <> · only admins can edit</>}</p>
+      <p className="subtle">{policyHint(choice, inherited)}{!hasToken && <> · only admins can edit</>}</p>
       {msg && <p className={msg.ok ? "ok-text" : "err-text"}>{msg.text}</p>}
     </form>
   );

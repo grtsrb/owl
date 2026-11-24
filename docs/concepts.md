@@ -45,7 +45,13 @@ grouped under that owner). For each workload Owl stores:
 - the **intended** images from the pod template (what *should* run) — so a Deployment scaled to 0
   still counts, and
 - the **running** images from the pods (what *does* run), with pod/ready counts. Several different
-  running images for one container means a rollout is in progress.
+  running images for one container means a rollout is in progress (**rollout in progress**); pods that
+  all still run something other than the template's image are **not rolled out** — typical for
+  StatefulSets and DaemonSets with `updateStrategy: OnDelete`, or a paused Deployment.
+
+The version Owl shows is the template's. The **level** also counts what the pods run: an older version of
+the same component still running is scored too, and if it's worse, it decides the level (see
+[Priority levels](#priority-levels)).
 
 An **instance** is one component at one version in one place (cluster + namespace + workload +
 container). A component's level is the worst level of its instances.
@@ -53,7 +59,7 @@ container). A component's level is the worst level of its instances.
 Kubernetes, RKE2 and k3s are special: their version comes from the cluster's nodes
 (`kubeletVersion`, e.g. `v1.30.4+rke2r1`), not from an image.
 
-> **Why:** the pod template says what *should* run and is there even when a workload is scaled to 0; the pods say what *does* run, so a rollout that is stuck halfway is visible. The agent sends a complete snapshot every time, so a missed report fixes itself with the next one.
+> **Why:** the pod template says what *should* run and is there even when a workload is scaled to 0; the pods say what *does* run, so a rollout that is stuck halfway — or never started — is visible, and a vulnerable version that still serves traffic doesn't look fixed just because the YAML changed. The agent sends a complete snapshot every time, so a missed report fixes itself with the next one.
 
 ## Components and the catalog
 
@@ -125,7 +131,14 @@ A **policy** decides which version a component *should* run — its **target**.
 | `pin:<line or version>` | exactly that line or version, e.g. `pin:12.3` or `pin:16` |
 
 Policies are set globally and optionally per component (Settings → Version policy, or the
-component page). A per-component policy overrides the global one.
+component page). A per-component policy overrides the global one. A **pin is per component only**: as the
+global policy it would make one version (say 1.30) the target of Redis, Postgres and CoreDNS alike, so
+the API refuses it, and a global pin stored by an older Owl is ignored with a note (the default applies).
+
+Changing a policy only changes targets: the report is computed on every read, so levels, actions and
+drift follow at once. Policies move "lines behind" (High / Medium / Low), never Critical — that comes from
+advisories, end of life and retired projects — so a change doesn't trigger Critical alerts. With
+summaries on **Automatic**, new targets mean new upgrades to summarize, within the spending caps.
 
 > **Why:** the newest release is rarely what production should run on day one. The default asks for a supported line — LTS where the project has one, otherwise one line behind the newest — and per-component policies cover projects with a different rhythm. Policies are explicit settings, so everyone sees the same target.
 
@@ -185,6 +198,12 @@ level). The component's level is its worst instance.
 | ✅ **OK** | at or above the target and on the latest patch of its line |
 | ❔ **Unknown** | no upstream release data — never shown as OK |
 
+**What runs counts.** When pods still run an older version than the template (a rollout half-way, stuck,
+or not started), that version is scored with the same rules, and the instance gets the worse of the two
+levels. Its reasons are added as "pods still run 1.33.6: release line 1.33 is end-of-life …". A newer
+version in the pods never lowers the level, and the version shown, the target distance and drift stay the
+template's.
+
 Every level comes with its reasons, e.g. "release line 1.33 is EOL since 2026-06-28", or "5 release lines
 behind target 9.4.9 (lts-or-n-1); 8.19 supported until 2027-07-15" for Elasticsearch 8.19 while 9.x moves on.
 Without lifecycle data (release lines from GitHub tags) Owl can't tell a supported line from an abandoned
@@ -216,6 +235,11 @@ On a line upstream still supports but far behind (Medium), it's the newest patch
 one line per group of clusters says what each needs ("it-hetzner 1.14.6 → patch", "it-aws-test,
 it-aws-prod 1.13.1 → 1 line behind"). The action is derived from the level and its reasons, never
 the other way round.
+
+When the pods don't run the template's version and the template itself needs nothing, the action is
+**Finish the rollout to 1.36.6**, with what the pods run and what to check (restart the pods for
+`OnDelete`, or look at why the new pods aren't ready). When the template also needs a patch or upgrade,
+that step stays the action — it fixes both once rolled out — and the reason says what the pods still run.
 
 > **Why:** one sentence per component that is the same in every view, so teams agree on the goal; the per-cluster lines say who still has work to do. The action always follows from the level and its reasons, never the other way round. Security beats the policy target: if the target version doesn't contain an advisory's fix, the action goes to the newest patch of the line that does, and says so ("beyond the policy target …").
 

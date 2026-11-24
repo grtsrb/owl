@@ -119,6 +119,15 @@ cluster (each)                               server (Docker locally, later one E
 - ✅ OK — at/above target and on the latest patch of its line
 - ❔ Unknown — no upstream release data (never shown as OK)
 
+**What runs counts** (agreed 2026-11-25): the level of an instance is the worse of its template version and
+any older version of the same component its pods still run (`Instance.RunningVersions`, scored with the
+same rules in `report.WithRunning`). Before, a template change made the instance look upgraded even when
+no pod had been replaced (`OnDelete` StatefulSets/DaemonSets, paused or stuck rollouts) — a vulnerable
+version serving traffic looked fixed. The version shown, target distance and drift stay the template's
+(the intent; also works for scaled-to-0). `notRolledOut` = pods exist but none runs the template's image;
+the action is "Finish the rollout to …" when the template needs nothing itself. Notifications key on
+(component, cluster), so a normal rollout doesn't flap.
+
 "Needs review" advisories, advisories with no fix listed, "no advisory data" and archived-but-
 releasing projects are **notes**: shown with the instance, never change the level. Every level comes
 with its reasons (e.g. "CVE-2025-1974 (critical), fixed in 1.11.5", "release line 1.33 is EOL since
@@ -128,7 +137,8 @@ with its reasons (e.g. "CVE-2025-1974 (critical), fixed in 1.11.5", "release lin
 Redpanda ship a minor roughly monthly, so n-1 is strict there — use per-component policies.
 
 Policies (`internal/policy`): `lts-or-n-1` (default), `lts` (falls back to n-1), `latest`, `n-1`,
-`n-2`, `pin:<line or version>`; stored per scope (`global` or component id), editable via
+`n-2`, `pin:<line or version>` (**per component only** — agreed 2026-11-25: a global pin would make one version every
+component's target; the API refuses it, `effectivePolicy` ignores an old one with a note); stored per scope (`global` or component id), editable via
 `PUT /api/v1/policies/{scope}` (JSON only — a cross-site form post can't change them).
 
 Promotion drift across stages: "newer in staging, not yet in prod" and anomalies like "prod newer than staging"

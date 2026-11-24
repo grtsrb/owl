@@ -36,6 +36,12 @@ type Instance struct {
 	// Replicas / running pods, so scaled-to-0 and half-done rollouts are visible.
 	DesiredReplicas int32                   `json:"desiredReplicas"`
 	Running         []snapshot.RunningImage `json:"running,omitempty"`
+	// RunningVersions: other versions of the same component the pods still run (left over from a
+	// rollout), oldest first — the report scores them too, so an old version that still serves traffic
+	// isn't hidden by a newer template. NotRolledOut: pods exist, but none runs the template's image
+	// (OnDelete update strategy, paused or stuck rollout).
+	RunningVersions []string `json:"runningVersions,omitempty"`
+	NotRolledOut    bool     `json:"notRolledOut,omitempty"`
 }
 
 type ComponentView struct {
@@ -151,6 +157,7 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 			in.Namespace, in.Kind, in.Workload, in.Container = r.Namespace, r.Kind, r.Workload, r.Container
 			in.Image, in.DesiredReplicas, in.Running = r.Image, r.DesiredReplicas, r.Running
 			id, override := identify(r.Image)
+			in.RunningVersions, in.NotRolledOut = runningState(r.Image, r.Running, id, identify)
 			if by := id.BundledWith; by != "" && (by == distro || !slices.Contains(catalog.Distributions, by)) {
 				in.BundledWith = by
 				in.BundledName = by
@@ -177,6 +184,36 @@ func Build(ctx context.Context, st store.Store, cat *catalog.Catalog) (*Inventor
 		inv.Unrecognized = []Unrecognized{}
 	}
 	return inv, nil
+}
+
+// runningState compares what the pods run with the template's image: the other versions of the same
+// component they run (only for an identified template version; a running image Owl can't place as the
+// same component at a known version is left out), and whether no pod runs the template's image at all.
+func runningState(image string, running []snapshot.RunningImage, id catalog.Identification,
+	identify func(string) (catalog.Identification, string)) ([]string, bool) {
+	if len(running) == 0 {
+		return nil, false // scaled to 0 or not scheduled yet: nothing runs, nothing to compare
+	}
+	rolledOut := false
+	var vs []string
+	for _, r := range running {
+		if r.Image == image {
+			rolledOut = true
+			continue
+		}
+		if id.Status != catalog.StatusIdentified || id.Component == nil || id.Version == nil {
+			continue
+		}
+		rid, _ := identify(r.Image)
+		if rid.Status != catalog.StatusIdentified || rid.Component == nil || rid.Component.ID != id.Component.ID || rid.Version == nil {
+			continue
+		}
+		if v := rid.Version.String(); v != id.Version.String() && !contains(vs, v) {
+			vs = append(vs, v)
+		}
+	}
+	sort.Slice(vs, func(i, j int) bool { return versionLess(vs[i], vs[j]) })
+	return vs, !rolledOut
 }
 
 // versionLess orders version strings by version (1.9.0 < 1.10.0), falling back to text.

@@ -41,7 +41,10 @@ type instanceJSON struct {
 	Version   string `json:"version"`
 	Status    string `json:"status"`
 	Replicas  int    `json:"desiredReplicas"`
-	Score     struct {
+	// Pods that don't run the template's version (left from a rollout).
+	RunningVersions []string `json:"runningVersions"`
+	NotRolledOut    bool     `json:"notRolledOut"`
+	Score           struct {
 		Level   string   `json:"level"`
 		Reasons []reason `json:"reasons"`
 		Line    string   `json:"line"`
@@ -446,7 +449,7 @@ func runComponent(a *App, ctx context.Context, args []string) error {
 			if in.Workload != "" {
 				wl = in.Namespace + "/" + in.Workload
 			}
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", strings.ToUpper(in.Score.Level), in.Cluster, wl, dash(in.Version), in.Action.Text)
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", strings.ToUpper(in.Score.Level), in.Cluster, wl, dash(in.Version)+podsRun(in), in.Action.Text)
 		}
 		tw.Flush()
 		for _, dr := range comp.Drift {
@@ -610,4 +613,15 @@ func imageTag(image string) string {
 		return name[i+1:]
 	}
 	return "latest"
+}
+
+// podsRun: " (pods run 1.33.6)" when the pods don't (all) run the template's version, "" otherwise.
+func podsRun(in instanceJSON) string {
+	switch {
+	case len(in.RunningVersions) > 0:
+		return " (pods run " + strings.Join(in.RunningVersions, ", ") + ")"
+	case in.NotRolledOut:
+		return " (not rolled out)"
+	}
+	return ""
 }

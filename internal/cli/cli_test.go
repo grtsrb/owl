@@ -247,3 +247,15 @@ func TestImageTag(t *testing.T) {
 		}
 	}
 }
+
+func TestPodsRun(t *testing.T) {
+	for want, in := range map[string]instanceJSON{
+		"":                           {},
+		" (pods run 1.33.6, 1.35.0)": {RunningVersions: []string{"1.33.6", "1.35.0"}, NotRolledOut: true},
+		" (not rolled out)":          {NotRolledOut: true},
+	} {
+		if got := podsRun(in); got != want {
+			t.Errorf("podsRun(%+v) = %q, want %q", in, got, want)
+		}
+	}
+}

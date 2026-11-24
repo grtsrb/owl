@@ -129,17 +129,30 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 			}
 		}
 		matchesOf := map[string][]upstream.Match{} // many instances share a version; matching is the costly part
+		matchFor := func(v string) []upstream.Match {
+			m, ok := matchesOf[v]
+			if !ok {
+				m = upstream.AdvisoriesFor(info, v)
+				matchesOf[v] = m
+			}
+			return m
+		}
 		for _, inst := range cv.Instances {
 			var matches []upstream.Match
 			if info != nil && inst.Status == string(catalog.StatusIdentified) {
-				m, ok := matchesOf[inst.Version]
-				if !ok {
-					m = upstream.AdvisoriesFor(info, inst.Version)
-					matchesOf[inst.Version] = m
-				}
-				matches = m
+				matches = matchFor(inst.Version)
 			}
 			sc := ScoreInstance(inst, info, cr.Target, matches, in.Now)
+			if info != nil && len(inst.RunningVersions) > 0 {
+				// What the pods still run counts too (half-done, stuck or never-started rollouts).
+				var rs []RunningScore
+				for _, v := range inst.RunningVersions {
+					old := inst
+					old.Version, old.RunningVersions = v, nil
+					rs = append(rs, RunningScore{v, ScoreInstance(old, info, cr.Target, matchFor(v), in.Now)})
+				}
+				sc = WithRunning(sc, rs)
+			}
 			cr.Instances = append(cr.Instances, ScoredInstance{Instance: inst, Score: sc, Action: ActionFor(inst, sc, cr.Target, info)})
 			if sc.Level.Rank() > cr.Level.Rank() {
 				cr.Level = sc.Level
@@ -168,7 +181,8 @@ func Build(ctx context.Context, in Inputs) (*Report, error) {
 }
 
 // effectivePolicy: component override, else global, else the default. An invalid stored policy falls
-// back to the next level (with a note) instead of silently producing no target.
+// back to the next level (with a note) instead of silently producing no target; so does a global pin
+// (one version can't be every component's target — the API refuses it, older data may have one).
 func effectivePolicy(pols map[string]string, id string) (policy.Spec, string) {
 	note := ""
 	for _, scope := range []string{id, "global"} {
@@ -177,7 +191,7 @@ func effectivePolicy(pols map[string]string, id string) (policy.Spec, string) {
 			continue
 		}
 		sp, err := policy.Parse(raw)
-		if err == nil {
+		if err == nil && (scope != "global" || sp.Kind != "pin") { // a global pin (stored before it was refused) means nothing per component
 			return sp, note
 		}
 		note = fmt.Sprintf("invalid %s policy %q ignored", scope, raw)

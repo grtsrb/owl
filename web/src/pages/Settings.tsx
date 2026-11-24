@@ -4,6 +4,7 @@ import { agentSecretYAML, api, ApiError, download, useIsAdmin, writeErrorText, t
 import { paginate, usePageSize } from "../model";
 import { useAppData } from "../App";
 import { Icon } from "../icons";
+import { PolicyPicker, policyHint } from "../components/PolicyPicker";
 import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
 import { overrideText } from "./ClusterDetail";
 import NotificationsTab from "./SettingsNotifications";
@@ -495,13 +496,12 @@ function PolicyTab() {
     <Card title="Global version policy">
       <form className="row" onSubmit={async (e) => {
         e.preventDefault();
-        if (await w.run(() => api.setPolicy("global", v), "Saved.")) { setValue(null); policies.reload(); }
+        if (await w.run(() => api.setPolicy("global", v), "Saved. Levels and targets use it from now on.")) { setValue(null); policies.reload(); }
       }}>
-        <input className="input mono" list="gpresets" value={v} onChange={(e) => setValue(e.target.value)} aria-label="Global policy" />
-        <datalist id="gpresets">{policies.data.presets.filter((p) => !p.includes("<")).map((p) => <option key={p} value={p} />)}</datalist>
+        <PolicyPicker id="global-policy" label="Global policy" choice={v} pin="" onChoice={setValue} onPin={() => {}} disabled={!hasToken} />
         <button className="btn primary" disabled={!v || v === current || w.busy || !hasToken}>Save</button>
       </form>
-      <p className="subtle" style={{ margin: 0 }}><code>lts-or-n-1</code> (default): newest LTS line if the product has one, otherwise the previous release line. Per-component policies are set on the component page.</p>
+      <p className="subtle" style={{ margin: 0 }}>{policyHint(v)} The target for every component without its own policy. To pin a component to a line or version, use its page.</p>
       {Object.keys(policies.data.overrides).length > 0 && (
         <div className="row">Overrides: {Object.entries(policies.data.overrides).map(([k, p]) => <Link key={k} to={`/components/${encodeURIComponent(k)}`}><Tag>{k}: {p}</Tag></Link>)}</div>
       )}
