@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { absoluteLink, api, session, useIsAdmin, useMe, type AuthSettings, type LinkResult, type Role, type User } from "../api";
 import { Icon } from "../icons";
-import { ago, Card, Empty, ErrorBox, Loading, Msg, Tag, useApi } from "../ui";
+import { ago, Card, Empty, ErrorBox, formValue, Loading, Msg, pwLength, Tag, useApi } from "../ui";
 import { ApiTokensCard, AllTokensCard, CliDownloadCard } from "./ApiTokens";
 import { Dialog, useWrite } from "./Settings";
 
@@ -222,11 +222,14 @@ export function AccountTab() {
   const me = useMe();
   const cfg = useApi(api.authConfig);
   const w = useWrite();
-  const [cur, setCur] = useState("");
-  const [next, setNext] = useState("");
-  const [again, setAgain] = useState("");
+  // The passwords stay in the (uncontrolled) inputs (see formValue); only what the form shows is kept here.
+  const empty = { cur: false, long: false, again: false, match: true };
+  const [pw, setPw] = useState(empty);
   if (!me) return <Loading />;
-  const mismatch = again !== "" && next !== again;
+  const check = (f: HTMLFormElement) => {
+    const next = formValue(f, "next"), again = formValue(f, "again");
+    setPw({ cur: formValue(f, "cur") !== "", long: pwLength(next) >= 12, again: again !== "", match: next === again });
+  };
   return (
     <>
       <Card title="Your account">
@@ -239,24 +242,27 @@ export function AccountTab() {
       <ApiTokensCard />
       {me.hasPassword && cfg.data?.password && (
         <Card title="Change password">
-          <form className="stack" style={{ maxWidth: 420 }} onSubmit={async (e) => {
+          <form className="stack" style={{ maxWidth: 420 }} onInput={(e) => check(e.currentTarget)} onSubmit={async (e) => {
             e.preventDefault();
-            if (await w.run(() => api.changePassword(cur, next), "Password changed. Your other sessions were signed out and your API tokens revoked.")) { setCur(""); setNext(""); setAgain(""); }
+            const f = e.currentTarget;
+            const cur = formValue(f, "cur"), next = formValue(f, "next");
+            if (next !== formValue(f, "again")) return;
+            if (await w.run(() => api.changePassword(cur, next), "Password changed. Your other sessions were signed out and your API tokens revoked.")) { f.reset(); setPw(empty); }
           }}>
             <input type="email" autoComplete="username" value={me.email} readOnly hidden />
             <label className="field">Current password
-              <input className="input" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} />
+              <input className="input" type="password" name="cur" autoComplete="current-password" />
             </label>
             <label className="field">New password
-              <input className="input" type="password" autoComplete="new-password" minLength={12} value={next} onChange={(e) => setNext(e.target.value)} />
+              <input className="input" type="password" name="next" autoComplete="new-password" minLength={12} />
               <span className="subtle" style={{ fontWeight: 400 }}>At least 12 characters. A few random words work well.</span>
             </label>
             <label className="field">New password again
-              <input className="input" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+              <input className="input" type="password" name="again" autoComplete="new-password" />
             </label>
-            {mismatch && <p className="err-text">The new passwords don't match.</p>}
+            {pw.again && !pw.match && <p className="err-text">The new passwords don't match.</p>}
             <Msg msg={w.msg} />
-            <div><button className="btn primary" disabled={w.busy || !cur || [...next].length < 12 || next !== again}>{w.busy ? "Saving…" : "Change password"}</button></div>
+            <div><button className="btn primary" disabled={w.busy || !pw.cur || !pw.long || !pw.match}>{w.busy ? "Saving…" : "Change password"}</button></div>
           </form>
         </Card>
       )}

@@ -154,3 +154,17 @@ export function Pager({ page, pages, start, shown, total, size, onPage, onSize }
     </nav>
   );
 }
+
+/** The value of a form field by name ("" if missing). Password inputs are deliberately uncontrolled
+ * (no `value=` prop): React copies a controlled input's value into the HTML `value` attribute, which puts
+ * the password in the DOM where CSS attribute selectors and DOM inspectors can see it. Read them from
+ * the form on input/submit instead, and keep only derived booleans (filled, long enough, matching) in state. */
+export function formValue(form: HTMLFormElement, name: string): string {
+  const el = form.elements.namedItem(name);
+  return el instanceof HTMLInputElement ? el.value : "";
+}
+
+/** Password length the way the server counts it (code points, not UTF-16 units). */
+export function pwLength(s: string): number {
+  return [...s].length;
+}
