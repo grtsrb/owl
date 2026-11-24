@@ -414,6 +414,9 @@ func TestDigestSchedule(t *testing.T) {
 
 func TestDigestContent(t *testing.T) {
 	e := newEnv(t)
+	// Wall clock throughout: ingest stamps changes with the real time, and the "left Critical" marks
+	// must fall in the same 7-day window (a fixed start date here stopped working a week after it).
+	e.now = time.Now().UTC()
 	ctx := context.Background()
 	e.cluster("it-hetzner", "IT", "redis:7.2.4", "coredns/coredns:1.11.3")
 	e.cluster("ds-prod", "DS", "redis:7.2.4")
