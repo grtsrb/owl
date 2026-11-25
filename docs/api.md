@@ -139,7 +139,7 @@ All under `/api/v1/auth/` except the two Google redirects.
 | `GET /changes?cluster=&limit=` | Change history, newest first. `cluster` optional; `limit` default 200, max 1000 |
 | `GET /inventory` | Components × clusters with instances, plus `unpinned`, `inHouse`, `unrecognized`, `ignored` lists. An instance has `bundledWith: rke2 \| k3s` when the cluster's distribution ships that image itself, `runningVersions` (other versions its pods still run, oldest first) and `notRolledOut: true` when no pod runs the template's image. |
 | `GET /report` | The scored report: `summary` (components per level), `components[]` with `level`, `target`, `upstream`, `instances[]` (each with `score` + reasons and `action`), `drift[]`, `action`; plus `policies`, `stages`, counts. `action.kind`: `none`, `patch`, `upgrade`, `update`, `plan`, `replace`, `pin`, `check`, `rollout`. `score.stillRunning` is set when an older version the pods still run decided the level (`score.templateLevel` is then the template version's own level). |
-| `GET /components/{id}` | `component` (catalog entry), `inventory` (where it runs), `upstream` (lines, EOL, archived, …), `advisoriesByVersion[]` |
+| `GET /components/{id}` | `component` (catalog entry), `inventory` (where it runs), `upstream` (lines, EOL, archived, …), `advisoriesByVersion[]`, `imageScans[]` (its images, as in `GET /vulns`), `trivyConfirmed[]` (advisory ids Trivy found in them too) |
 | `GET /upstream` | Upstream info for every component running in a cluster, and every custom one (release lines, latest stable, archived/retired, advisory source, fetch time, `stale`, errors) |
 | `GET /catalog` | The built-in catalog |
 | `GET /policies` | `{global, overrides: {componentId: policy}, presets}` |
@@ -151,6 +151,22 @@ All under `/api/v1/auth/` except the two Google redirects.
 
 Drift entries: `{kind: pending_promotion | anomaly | only_in, text, tenant, clusters}`.
 Levels: `critical`, `high`, `medium`, `low`, `unknown`, `ok`.
+
+## Image vulnerabilities
+
+Reads: any signed-in user or API token. Writes (🔒): admins in the browser only — API tokens can't
+rescan, cancel or accept.
+
+| Endpoint | |
+|---|---|
+| `GET /vulns` | `{enabled, images[]}`. An image: `key` (its digest, or the kubelet image ID when not scannable), `digest`, `ref` (`repository@sha256:…`), `repositories[]`, `inHouse`, `components[]`, `places[]` (`cluster, stage, tenant, namespace, kind, workload, container`), `state` (`ok`, `failed`, `scanning`, `queued`, `not scanned yet`, `not scannable`), `queue`, `scannedAt`, `error`, `os`, `fixable` and `total` (per severity, accepted and component-advisory findings left out), `accepted`, `confirmed`. In-house first, then by fixable Critical/High. |
+| `GET /vulns/images/{digest}` | `{image, vulns[], confirmed[]}` — `vulns[]`: `id, package, installed, fixed, severity, class (os\|lang), pkgType, target, title, url, accepted?, expiredAcceptance?`; `confirmed[]`: `{id, component}` shown as component advisories instead. `404` if no cluster runs it. |
+| `GET /vulns/scanner` | `{enabled, reason?, status?}` — `status`: `current`, `queue[]` (first 20), `queueLength`, `recent[]` (last 20 with `outcome`, `tookMs`, `error`), `db`, `lastDaily`, `authFailures[]`, `credentialPrefixes[]` |
+| `GET /vulns/acceptances` | `[{repository, vulnId, reason, expiresAt, createdBy, createdAt}]` |
+| `POST /vulns/images/{digest}/rescan` 🔒 | `{queued}` — `false` when it's already queued or being scanned; `404` if no cluster runs it; `409` when scanning is off |
+| `POST /vulns/scanner/cancel` 🔒 | `{"digest": "sha256:…"}`: stop the running scan of it or remove it from the queue → `204`; `404` if it's neither |
+| `PUT /vulns/acceptances` 🔒 | `{"repository", "vulnId", "reason", "expiresAt": "2027-03-31" \| ""}` → `204` (replaces an existing one) |
+| `DELETE /vulns/acceptances` 🔒 | `{"repository", "vulnId"}` → `204`, `404` if there's none |
 
 ## Agent ingest
 

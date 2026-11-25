@@ -1,7 +1,8 @@
 # Two images from one Dockerfile:
 #   --target agent  → owl-agent: the slim agent (-tags owlagent: `owl agent` only — no server, SQLite, UI,
 #                     Claude, S3 or CLI code), what every cluster pulls;
-#   default (server) → owl: the full binary (server, UI embedded, `owl db …`, CLI downloads; `owl agent` too).
+#   default (server) → owl: the full binary (server, UI embedded, `owl db …`, CLI downloads; `owl agent` too)
+#                     and Trivy for image scans.
 FROM --platform=$BUILDPLATFORM node:24-alpine AS ui
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -52,8 +53,15 @@ COPY --from=agent-build /out/owl /owl
 USER 65532:65532
 ENTRYPOINT ["/owl"]
 
+# Trivy for image vulnerability scans (server image only). Pinned by digest, never by tag: in March 2026
+# Trivy's release tags and Docker Hub images were briefly replaced by malicious ones (CVE-2026-33634).
+# 0.76.2 (2026-11-05); the same index digest on Docker Hub and ghcr.io/aquasecurity/trivy. To upgrade,
+# check the release on GitHub, compare both registries' digests, then change this line.
+FROM aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb AS trivy
+
 FROM gcr.io/distroless/static-debian12:nonroot AS server
 COPY --from=build /out/owl /owl
+COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=cli /out/cli /cli
 # Server state (SQLite). Mount a volume here; owned by the distroless nonroot user.
 COPY --from=build --chown=65532:65532 /out/data /data

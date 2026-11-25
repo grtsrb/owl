@@ -128,6 +128,35 @@ advisory and decide; it doesn't change the level.
 Drift is only computed between clusters of the **same tenant** for components running in both, and is
 hidden for clusters not selected in the cluster picker.
 
+## Image scanning
+
+### The Vulnerabilities page says scanning is off
+
+The Scanner panel gives the reason: `OWL_SCAN=off`, `--no-upstream`, or *trivy not found* (a server binary
+run outside the Owl image — set `OWL_TRIVY` to a Trivy binary).
+
+### "Auth failed for registry.example.com/team-a"
+
+The registry refused the login for that prefix (or wants one, for an image with no matching prefix:
+`anonymous: <registry>`). Check the deploy token in `OWL_REGISTRY_AUTH_FILE` hasn't expired and has
+`read_registry`, then restart the server and **Rescan now**. The image's last good result stays shown.
+
+### An image is "not scannable"
+
+It was built or imported on the node, so there's no registry digest to pull (k3d's `k3d image import`
+does this too). Push it to a registry and deploy it from there to get it scanned.
+
+### "not in the registry (pulled from a mirror, deleted, or built locally)"
+
+The registry doesn't have that digest any more (a re-pushed tag whose old digest was cleaned up), or
+the nodes pull through a mirror the server can't see. Redeploy from the registry, or scan with a login
+for the mirror's prefix.
+
+### Scans wait and "Now scanning" says "waiting for the vulnerability DB"
+
+The first start downloads ~3.5 GB from `mirror.gcr.io`. If the Scanner panel shows *DB update failed*,
+the server can't reach it (proxy: `HTTPS_PROXY` is passed to Trivy) or the disk is full.
+
 ## Upgrade summaries
 
 | You see | Meaning / fix |

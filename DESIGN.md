@@ -515,7 +515,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 
 ## Milestones (v2, agreed 2026-11-25 after the team demo)
 14. **Slim agent image** (built 2026-11-25): agent-only binary and image (plan below). Comes first: the host agent is that binary.
-15. **Image scanning (Trivy), server-side**, clusters first — the team's pain point is in-house images.
+15. **Image scanning (Trivy), server-side** (built 2026-11-25), clusters first — the team's pain point is in-house images.
 16. **Docker hosts**: their images get scanning for free, because 15 exists by then.
 Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDuty & co.: "Later".
 
@@ -561,7 +561,17 @@ Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDu
   two answers); Trivy Operator (operator per cluster, doesn't cover hosts).
 - **Trivy binary in the server image only** (not the agent image), run as a subprocess with JSON output —
   not linked as a Go library (huge dependency tree). DB + layer cache in the data volume (`/data/trivy`), DB
-  from `mirror.gcr.io` (Trivy's default). Image grows ~100 MB; production instance → t4g.medium.
+  from `mirror.gcr.io` (Trivy's default). **Pinned by digest** (0.76.2, same index digest on Docker Hub and
+  ghcr.io): Trivy's tags and Docker Hub images were hijacked in March 2026 (CVE-2026-33634). Measured while
+  building: binary 163 MB (image 86 → ~300 MB), DB 1.7 GB + Java DB 1.5 GB on disk, a scan 2–5 s and well
+  under 100 MB of memory for the dev images — t4g.small may do; disk ≥ 10 GB is what matters.
+- **Subprocess hygiene**: environment built from scratch (server secrets never reach Trivy; only proxy/CA
+  vars pass), `--image-src remote` (never a local socket), `--scanners vuln` (no secret scanning: Owl must not
+  collect secrets found in images), `--skip-db-update`/`--skip-java-db-update` (DB only from the daily update,
+  so a day's scans agree), `--offline-scan` (no jar hashes to Maven Central).
+- **Platform**: kubelet image IDs usually point at a multi-arch index; the server (arm64 on t4g) would scan its
+  own architecture. Each cluster stores its nodes' most common architecture (`clusters.node_arch`), and a
+  digest is scanned with `--platform linux/<arch>` of the first cluster that runs it.
 - **Scope**: every running image. In-house images are shown first; for third-party images the findings sit next
   to the upgrade advice, not instead of it.
 - **Registry credentials**: `OWL_REGISTRY_AUTH_FILE`, a read-only mounted YAML list of
@@ -573,8 +583,11 @@ Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDu
   rescanned daily after the DB update (layer cache = no re-download). One scan at a time, with a timeout.
   Digests no longer running anywhere lose their results. **Rescan now** (admin, image row + detail page) puts the
   digest at the front; a second click while queued/running does nothing; no "rescan all".
-- **Storage**: results in SQLite, **not in backups** (regenerable, like the upstream cache); after a restore
-  everything is rescanned.
+- **Storage**: results in SQLite (`image_scans`), **not in backups** (regenerable, like the upstream cache); a
+  restore keeps this server's results (digest-keyed facts) and scans what the restored clusters run that's new.
+  A failed rescan keeps the last good result, marked failed. The daily-rescan marker (`scanLastDaily` setting)
+  is not restored. Results are held in memory by `scan.Manager` (loaded at start) — requests never parse the
+  stored JSON.
 - **Separate signal — priority levels are unchanged.** Nearly every image has some fixable critical OS-package
   CVE; folding them in would make everything red. Whether a threshold ever feeds priority: decide later on
   real data.

@@ -10,4 +10,5 @@ export const DOC_HELP = {
   backups: "operations#backups",
   users: "security#users-and-sign-in",
   levels: "concepts#priority-levels",
+  vulns: "concepts#image-vulnerabilities",
 } as const;

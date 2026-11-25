@@ -95,11 +95,17 @@ owl component coredns              # lines (newest + the ones running), target, 
 owl clusters
 owl changes --cluster it-hetzner --limit 20
 owl unrecognized
+owl vulns                          # image scan results: fixable Critical/High per image, in-house first
+owl vulns --in-house --fail-on critical
+owl vulns --image registry.gitlab.example.com/team/app   # or --image sha256:…: that image's findings
 ```
 
 ### Failing a pipeline
 
-`--fail-on <level>` exits **1** when anything shown is at that level or above (filters apply first):
+`--fail-on <level>` exits **1** when anything shown is at that level or above (filters apply first).
+`owl vulns --fail-on critical|high` does the same for images with a *fixable*, not accepted finding — and
+for images without a scan result yet (queued, failed, not scannable, scanning off), since "not checked" isn't
+"clean"; add `--allow-unscanned` to let those pass:
 
 ```yaml
 # .gitlab-ci.yml
@@ -107,6 +113,7 @@ owl-check:
   script:
     - curl -fsSL -H "Authorization: Bearer $OWL_TOKEN" "$OWL_SERVER/api/v1/cli/linux-amd64" -o owl && chmod +x owl
     - ./owl outdated --cluster it-aws-prod --fail-on critical
+    - ./owl vulns --in-house --fail-on critical
 ```
 
 ## Clusters (write token)

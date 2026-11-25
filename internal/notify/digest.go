@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"owl/internal/catalog"
@@ -92,6 +93,9 @@ func (n *Notifier) sendDigest(ctx context.Context, slot time.Time, meta map[stri
 		n.mailDigest(ctx, d)
 		_ = n.Store.SetNotifyMeta(ctx, metaDigestMail, slotS)
 	}
+	if d.vulns != nil { // next week's digest compares with these numbers; a retry of this slot with d.vulnsBase
+		_ = n.Store.SetNotifyMeta(ctx, metaDigestVulns, slotS+"|"+strconv.Itoa(d.vulns.Critical)+","+strconv.Itoa(d.vulns.High)+"|"+d.vulnsBase)
+	}
 	if err := n.Store.PruneResolved(ctx, n.now().Add(-5*weekly)); err != nil {
 		n.Log.Warn("prune resolved", "err", err)
 	}
@@ -168,6 +172,19 @@ func (n *Notifier) BuildDigest(ctx context.Context) (Doc, error) {
 	}
 	in := digestInputs{rep: rep, clusters: clusters, since: since, now: now, resolved: resolved,
 		identify: inventory.Identifier(cat, ovs), cat: cat, headlines: headlines(sums)}
+	if n.Vulns != nil {
+		if in.vulns, err = n.Vulns(ctx); err != nil {
+			return Doc{}, err
+		}
+		if in.vulns != nil {
+			st, err := n.Store.NotifyState(ctx)
+			if err != nil {
+				return Doc{}, err
+			}
+			set, _ := n.settings(ctx)
+			in.lastVulns = vulnBase(st.Meta[metaDigestVulns], set.LastSlot(now))
+		}
+	}
 	in.changes = changes
 	set, _ := n.settings(ctx)
 	loc, err := loadTZ(set.DigestTZ)
@@ -187,6 +204,16 @@ type digestInputs struct {
 	identify  func(image string) (catalog.Identification, string)
 	cat       *catalog.Catalog
 	headlines map[[3]string]string // component, from, to -> headline
+	vulns     *VulnSummary
+	lastVulns string // "critical,high" of the previous scheduled digest ("" = none)
+}
+
+// VulnSummary: fixable, not accepted Critical/High findings in running in-house images (milestone 15).
+type VulnSummary struct {
+	Critical, High int
+	Affected       int // in-house images with at least one of them
+	Images         int // in-house images running
+	NotScanned     int // in-house images without a result (yet, or not scannable)
 }
 
 func headlines(sums []store.Summary) map[[3]string]string {
@@ -227,8 +254,65 @@ func (n *Notifier) digestDoc(in digestInputs, loc *time.Location) Doc {
 			d.Sections = append(d.Sections, n.digestSection("Tenant "+t, sc, in))
 		}
 	}
+	if in.vulns != nil {
+		d.Sections = append(d.Sections, n.vulnSection(in))
+		d.vulns, d.vulnsBase = in.vulns, in.lastVulns
+	}
 	d.Footer = n.footer("Open the Overview", "/")
 	return d
+}
+
+// vulnSection: one line on in-house images, compared with the last scheduled digest. Image findings never
+// change priority levels, so they're counted here, not mixed into the components above.
+func (n *Notifier) vulnSection(in digestInputs) Section {
+	v := in.vulns
+	b := Block{Title: "In-house images"}
+	if v.Images == 0 {
+		b.Empty = "No in-house images are running."
+		return Section{Heading: "Image vulnerabilities", Blocks: []Block{b}}
+	}
+	line := Ln(B(strconv.Itoa(v.Critical)+" Critical"), T(", "), B(strconv.Itoa(v.High)+" High"),
+		T(" with a fix, in "+strconv.Itoa(v.Affected)+" of "+report.Plural(v.Images, "image")))
+	if c, h, ok := parsePair(in.lastVulns); ok {
+		switch {
+		case c == v.Critical && h == v.High:
+			line = append(line, D(" — same as last week"))
+		default:
+			line = append(line, D(" — last week "+strconv.Itoa(c)+" Critical, "+strconv.Itoa(h)+" High"))
+		}
+	}
+	if v.NotScanned > 0 {
+		line = append(line, D(" · "+strconv.Itoa(v.NotScanned)+" not scanned"))
+	}
+	b.Items = []Line{line}
+	if l := n.link("/vulns"); l != "" {
+		b.Items = append(b.Items, Ln(L("Open Vulnerabilities", l)))
+	}
+	return Section{Heading: "Image vulnerabilities", Blocks: []Block{b}}
+}
+
+// vulnBase picks what a digest for slot compares with, from "<slot>|<c,h sent then>|<c,h that one compared
+// with>": a digest already recorded for this slot (an hourly retry, or the email after the post) compares
+// with what that one did — never with its own numbers.
+func vulnBase(meta string, slot time.Time) string {
+	parts := strings.Split(meta, "|")
+	if len(parts) != 3 {
+		return ""
+	}
+	if t, err := time.Parse(time.RFC3339, parts[0]); err == nil && t.Equal(slot) {
+		return parts[2]
+	}
+	return parts[1]
+}
+
+func parsePair(s string) (int, int, bool) {
+	a, b, ok := strings.Cut(s, ",")
+	if !ok {
+		return 0, 0, false
+	}
+	x, err1 := strconv.Atoi(a)
+	y, err2 := strconv.Atoi(b)
+	return x, y, err1 == nil && err2 == nil
 }
 
 func (n *Notifier) digestSection(heading string, sc scope, in digestInputs) Section {

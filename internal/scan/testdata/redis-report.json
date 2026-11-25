@@ -1,0 +1,208 @@
+{
+ "SchemaVersion": 2,
+ "ArtifactName": "docker.io/library/redis:7.2.4",
+ "ArtifactType": "container_image",
+ "Metadata": {
+  "OS": {
+   "Family": "debian",
+   "Name": "12.5"
+  }
+ },
+ "Results": [
+  {
+   "Target": "docker.io/library/redis:7.2.4 (debian 12.5)",
+   "Class": "os-pkgs",
+   "Type": "debian",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2026-33845",
+     "PkgName": "libgnutls30",
+     "InstalledVersion": "3.7.9-2+deb12u2",
+     "FixedVersion": "3.7.9-2+deb12u7",
+     "Severity": "CRITICAL",
+     "Title": "gnutls: GnuTLS: Denial of Service via DTLS zero-length fragment",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-33845",
+     "Status": "fixed",
+     "PkgID": "libgnutls30@3.7.9-2+deb12u2"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-42010",
+     "PkgName": "libgnutls30",
+     "InstalledVersion": "3.7.9-2+deb12u2",
+     "FixedVersion": "3.7.9-2+deb12u7",
+     "Severity": "CRITICAL",
+     "Title": "gnutls: gnutls: Authentication Bypass via NUL Character in Username",
+     "PrimaryURL": "http://example.com/x",
+     "Status": "fixed",
+     "PkgID": "libgnutls30@3.7.9-2+deb12u2"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-109518",
+     "PkgName": "apt",
+     "InstalledVersion": "2.6.1",
+     "FixedVersion": "2.6.2",
+     "Severity": "HIGH",
+     "Title": "apt: apt: Remote code execution via hard link reuse during package download retries",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-109518",
+     "Status": "fixed",
+     "PkgID": "apt@2.6.1"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-53613",
+     "PkgName": "bsdutils",
+     "InstalledVersion": "1:2.38.1-5+deb12u1",
+     "Severity": "HIGH",
+     "Title": "util-linux: TOCTOU in the mount program via ancestor directory swap on target path",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-53613",
+     "Status": "affected",
+     "PkgID": "bsdutils@1:2.38.1-5+deb12u1"
+    },
+    {
+     "VulnerabilityID": "CVE-2011-3374",
+     "PkgName": "apt",
+     "InstalledVersion": "2.6.1",
+     "Severity": "LOW",
+     "Title": "It was found that apt-key in apt, all versions, do not correctly valid ...",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2011-3374",
+     "Status": "affected",
+     "PkgID": "apt@2.6.1"
+    },
+    {
+     "VulnerabilityID": "TEMP-0841856-B18BAF",
+     "PkgName": "bash",
+     "InstalledVersion": "5.2.15-2+b2",
+     "Severity": "LOW",
+     "Title": "[Privilege escalation possible to other user than root]",
+     "PrimaryURL": "https://security-tracker.debian.org/tracker/TEMP-0841856-B18BAF",
+     "Status": "affected",
+     "PkgID": "bash@5.2.15-2+b2"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-91094",
+     "PkgName": "dpkg",
+     "InstalledVersion": "1.21.22",
+     "Severity": "UNKNOWN",
+     "Title": "A directory traversal bug was discovered when unpacking 3.0 (quilt) so ...",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-91094",
+     "Status": "fix_deferred",
+     "PkgID": "dpkg@1.21.22"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-121758",
+     "PkgName": "libc-bin",
+     "InstalledVersion": "2.36-9+deb12u7",
+     "Severity": "UNKNOWN",
+     "Title": "Converting crafted ISO-2022-CN-EXT input in the GNU C Library version  ...",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-121758",
+     "Status": "affected",
+     "PkgID": "libc-bin@2.36-9+deb12u7"
+    },
+    {
+     "VulnerabilityID": "CVE-2011-3374",
+     "PkgName": "apt",
+     "InstalledVersion": "2.6.1",
+     "Severity": "LOW",
+     "Title": "It was found that apt-key in apt, all versions, do not correctly valid ...",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2011-3374",
+     "Status": "affected",
+     "PkgID": "apt@2.6.1"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-33845",
+     "PkgName": "libgnutls30",
+     "InstalledVersion": "3.7.9-2+deb12u2",
+     "FixedVersion": "3.7.9-2+deb12u7",
+     "Severity": "CRITICAL",
+     "Title": "gnutls: GnuTLS: Denial of Service via DTLS zero-length fragment",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-33845",
+     "Status": "fixed",
+     "PkgID": "libgnutls30@3.7.9-2+deb12u2"
+    }
+   ]
+  },
+  {
+   "Target": "usr/local/bin/gosu",
+   "Class": "lang-pkgs",
+   "Type": "gobinary",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2023-24538",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.19.8, 1.20.3",
+     "Severity": "CRITICAL",
+     "Title": "golang: html/template: backticks not treated as string delimiters",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-24538",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2023-24540",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.19.9, 1.20.4",
+     "Severity": "CRITICAL",
+     "Title": "golang: html/template: improper handling of JavaScript whitespace",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-24540",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2022-27664",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.18.6, 1.19.1",
+     "Severity": "HIGH",
+     "Title": "golang: net/http: handle server errors after sending GOAWAY",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-27664",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2022-28131",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.17.12, 1.18.4",
+     "Severity": "HIGH",
+     "Title": "golang: encoding/xml: stack exhaustion in Decoder.Skip",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-28131",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2022-30629",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.17.11, 1.18.3",
+     "Severity": "LOW",
+     "Title": "golang: crypto/tls: session tickets lack random ticket_age_add",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-30629",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2024-45341",
+     "PkgName": "stdlib",
+     "InstalledVersion": "v1.18.2",
+     "FixedVersion": "1.22.11, 1.23.5, 1.24.0-rc.2",
+     "Severity": "LOW",
+     "Title": "golang: crypto/x509: crypto/x509: usage of IPv6 zone IDs can bypass URI name constraints",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-45341",
+     "Status": "fixed",
+     "PkgID": "stdlib@v1.18.2"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-39824",
+     "PkgName": "golang.org/x/sys",
+     "InstalledVersion": "v0.13.0",
+     "FixedVersion": "0.44.0",
+     "Severity": "UNKNOWN",
+     "Title": "Invoking integer overflow in NewNTUnicodeString in golang.org/x/sys/windows",
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-39824",
+     "Status": "fixed",
+     "PkgID": "golang.org/x/sys@v0.13.0"
+    }
+   ]
+  }
+ ]
+}

@@ -2,6 +2,25 @@
 
 What each milestone shipped. Newest first.
 
+## Image vulnerability scanning (milestone 15)
+
+- The server scans every running image with **Trivy** (in the server image, pinned by digest): once per
+  image digest, for the nodes' CPU architecture, right after a cluster starts running it and again daily
+  with a fresh vulnerability DB. Images built on a node are listed as *not scannable*.
+- New **Vulnerabilities** page: every image with its fixable Critical/High findings, in-house first; one
+  image's findings; and a **Scanner** panel — what's scanning now, the queue, the last scans, the DB's age,
+  failed registry logins. Admins can **Rescan now**, cancel a scan, and **accept** a finding for an image
+  repository (reason required, optional expiry; audit-logged, kept in backups).
+- **Vulns** columns on the cluster and component pages; a component's page lists its images' findings and
+  tags advisories Trivy found too (**Trivy: confirmed**, counted once).
+- Findings never change priority levels.
+- Private registries: `OWL_REGISTRY_AUTH_FILE` with read-only logins per image prefix (e.g. one GitLab group
+  deploy token per group). `OWL_SCAN=off` switches scanning off.
+- The weekly digest has one line on in-house images, compared with the previous digest.
+- `owl vulns [--in-house] [--image …] [--fail-on critical|high [--allow-unscanned]]` — an image without a scan
+  result fails the gate unless allowed.
+- The server needs about 3.5 GB more disk for Trivy's DB; the image is ~300 MB (was 86 MB).
+
 ## Slim agent image (milestone 14)
 
 - The agent has its own image, `owl-agent:<version>`, next to the server's `owl:<version>` (same version

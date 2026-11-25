@@ -67,7 +67,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 5
           resources:
-            requests: {cpu: 50m, memory: 128Mi}
+            requests: {cpu: 50m, memory: 128Mi} # Trivy scans need more: see docs/install.md
             limits: {memory: 512Mi} # password hashing uses up to 2 × 64 MiB at once
           securityContext:
             allowPrivilegeEscalation: false
@@ -82,4 +82,4 @@ spec:
       spec:
         accessModes: [ReadWriteOnce]
         resources:
-          requests: {storage: 5Gi}
+          requests: {storage: 10Gi} # database, backups (local copies), logs, Trivy DB (~3.5 GB)

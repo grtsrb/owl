@@ -32,5 +32,6 @@ export const Icon = {
   pin: () => <Svg size={14}><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" /></Svg>,
   review: () => <Svg size={14}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></Svg>,
   nocve: () => <Svg size={14}><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" /><path d="M10 10a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2M12 16h.01" /></Svg>,
+  shield: () => <Svg size={18}><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></Svg>,
   stale: () => <Svg size={14}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Svg>,
 };

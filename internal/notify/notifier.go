@@ -30,6 +30,7 @@ const (
 	metaDigestMail    = "digestMailSlot" // … and by email
 	metaDigestTry     = "digestTriedAt"  // last attempt (retry hourly)
 	metaDigestEnabled = "digestEnabledAt"
+	metaDigestVulns   = "digestVulns"     // "<slot>|critical,high|compared-with" of in-house images, last scheduled digest
 	metaCatalog       = "catalogBuiltins" // built-in component ids the last check knew (comma separated)
 	metaLearning      = "catalogLearning" // id@RFC3339 since: running components a catalog upgrade taught Owl, upstream data pending
 )
@@ -62,7 +63,10 @@ type Notifier struct {
 	// Fetched reports whether upstream data for a component has loaded. Components a catalog upgrade
 	// taught Owl stay quiet until it has, completely (see Incomplete), or for learnFor at most
 	// (nil = always loaded).
-	Fetched   func(componentID string) bool
+	Fetched func(componentID string) bool
+	// Vulns summarizes image scan findings of in-house images for the digest (milestone 15); nil, or a nil
+	// summary, = scanning off (no section).
+	Vulns     func(ctx context.Context) (*VulnSummary, error)
 	Webhook   *Webhook    // nil = OWL_MATTERMOST_WEBHOOK_URL not set
 	Mail      mail.Sender // nil = no SMTP: no digest email
 	PublicURL *url.URL    // links; nil = messages without links

@@ -22,8 +22,10 @@ cluster). It ships as two images with the same version tag: `owl:<version>` for 
 ## Requirements
 
 - **Server**: a host with Docker (or a Kubernetes cluster) and a persistent volume for `/data`. It is
-  light: about 40 MB of memory with three clusters (plus up to 128 MB briefly while checking
-  passwords). Outbound HTTPS to `api.github.com`, `endoflife.date` and `api.osv.dev`.
+  light: about 80 MB of memory with three clusters (plus up to 128 MB briefly while checking
+  passwords; a Trivy scan adds its own process, usually well under 500 MB). Disk: **at least 10 GB** —
+  Trivy's vulnerability DB takes about 3.5 GB. Outbound HTTPS to `api.github.com`, `endoflife.date`,
+  `api.osv.dev`, `mirror.gcr.io` (Trivy DB) and the registries your images come from.
 - **A domain name and HTTPS.** Sign-in cookies are `Secure`, so browsers only keep you signed in over
   HTTPS (plain `http://` works only on `localhost`). The Compose setup gets a certificate from Let's
   Encrypt automatically; it needs a DNS record pointing at the host and ports 80 and 443 reachable.
@@ -218,6 +220,18 @@ kubectl -n owl create secret generic owl-agent \
   `owl-agent` Secret.
 
 > **Why:** the agent only pushes and only reads. The server never connects into your clusters and stores no kubeconfigs, so a compromised Owl can't reach them, and the agent's role can't read Secrets or change anything. The token sits in a Secret you apply from a file, never in a URL or a command line.
+
+## Image scanning
+
+The server image includes Trivy (pinned by digest). Scanning starts on its own: the first start downloads
+the vulnerability DB (~3.5 GB on disk, a few minutes), then every running image is scanned. Public images
+need nothing else. For private registries, add their logins
+([registry logins](configuration.md#registry-logins-for-image-scanning)): in the Compose setup, create
+`registries.yaml` next to `compose.yaml` (`chmod 600`), uncomment its line under `volumes:` and set
+`OWL_REGISTRY_AUTH_FILE=/run/secrets/owl-registries.yaml` in `.env`. To switch scanning off, set
+`OWL_SCAN=off`.
+
+> **Why:** the server pulls images itself so the agents stay read-only and never see registry credentials. Trivy is pinned by digest, not tag: in March 2026 Trivy's release tags and Docker Hub images were briefly replaced with malicious ones (CVE-2026-33634).
 
 ## 5. Configure backups
 

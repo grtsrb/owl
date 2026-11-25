@@ -259,3 +259,84 @@ func TestCustomComponents(t *testing.T) {
 		t.Fatalf("not restored: %+v", cs)
 	}
 }
+
+// Scan results are regenerable: never in a backup, untouched by a restore. Acceptances are decisions:
+// restored. The daily-rescan marker describes this server's scanner: kept.
+func TestBackupScansAndAcceptances(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	d := "sha256:" + string(make([]byte, 0))
+	at := time.Now()
+	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "a", Ref: "r@a", ScannedAt: &at, Result: []byte(`{"vulns":[]}`), AttemptAt: at})
+	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-1", Reason: "not reachable", CreatedBy: "a@x"})
+	_ = db.SetSetting(ctx, "scanLastDaily", "before")
+
+	bak := filepath.Join(t.TempDir(), "b.db")
+	if err := db.Backup(ctx, bak); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := sql.Open("sqlite", "file:"+bak)
+	var n int
+	_ = raw.QueryRow("SELECT count(*) FROM image_scans").Scan(&n)
+	raw.Close()
+	if n != 0 {
+		t.Errorf("backup has %d image scans", n)
+	}
+
+	_ = db.DeleteVulnAcceptance(ctx, "reg/app", "CVE-1")
+	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-2", Reason: "later", CreatedBy: "a@x"})
+	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "b", Ref: "r@b", Error: "auth", AttemptAt: at})
+	_ = db.SetSetting(ctx, "scanLastDaily", "after")
+	cp := filepath.Join(t.TempDir(), "restore.db")
+	b, _ := os.ReadFile(bak)
+	_ = os.WriteFile(cp, b, 0o600)
+	if err := db.Restore(ctx, cp); err != nil {
+		t.Fatal(err)
+	}
+	as, _ := db.ListVulnAcceptances(ctx)
+	if len(as) != 1 || as[0].VulnID != "CVE-1" || as[0].Reason != "not reachable" {
+		t.Errorf("acceptances = %+v", as)
+	}
+	scans, _ := db.ListImageScans(ctx)
+	if len(scans) != 2 {
+		t.Errorf("a restore keeps this server's scans: %+v", scans)
+	}
+	if s, _ := db.GetSettings(ctx); s["scanLastDaily"] != "after" {
+		t.Errorf("scanLastDaily = %q", s["scanLastDaily"])
+	}
+}
+
+func TestImageScansAndAcceptances(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	at := time.Now().Add(-time.Hour)
+	for _, d := range []string{"a", "b", "c"} {
+		if err := db.PutImageScan(ctx, store.ImageScan{Digest: d, Ref: "r@" + d, AttemptAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := time.Now()
+	_ = db.PutImageScan(ctx, store.ImageScan{Digest: "a", Ref: "r2@a", ScannedAt: &later, Result: []byte(`{"os":"x"}`), AttemptAt: later})
+	if n, err := db.DeleteImageScansExcept(ctx, []string{"a", "c"}); err != nil || n != 1 {
+		t.Fatalf("delete: %d %v", n, err)
+	}
+	scans, _ := db.ListImageScans(ctx)
+	if len(scans) != 2 || scans[0].Digest != "a" || scans[0].Ref != "r2@a" || string(scans[0].Result) != `{"os":"x"}` ||
+		scans[0].ScannedAt == nil || scans[1].ScannedAt != nil {
+		t.Errorf("scans = %+v", scans)
+	}
+	if n, _ := db.DeleteImageScansExcept(ctx, nil); n != 2 {
+		t.Errorf("delete all: %d", n)
+	}
+
+	exp := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-1", Reason: "r1", CreatedBy: "a"})
+	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-1", Reason: "r2", ExpiresAt: &exp, CreatedBy: "b"})
+	as, _ := db.ListVulnAcceptances(ctx)
+	if len(as) != 1 || as[0].Reason != "r2" || as[0].ExpiresAt == nil || !as[0].ExpiresAt.Equal(exp) || as[0].CreatedBy != "b" {
+		t.Errorf("acceptances = %+v", as)
+	}
+	if err := db.DeleteVulnAcceptance(ctx, "reg/app", "CVE-9"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete missing: %v", err)
+	}
+}

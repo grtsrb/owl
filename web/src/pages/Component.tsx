@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, useIsAdmin, writeErrorText, type ComponentReport, type Match } from "../api";
+import { api, useIsAdmin, writeErrorText, type ComponentReport, type Match, type VulnImage } from "../api";
 import { ago, Card, date, Empty, ErrorBox, LevelBadge, Loading, Tag, useApi } from "../ui";
 import { SummaryCards } from "../components/Summaries";
 import { FLAG, runningText } from "../clusterview";
 import { joinPolicy, PolicyPicker, policyHint, splitPolicy } from "../components/PolicyPicker";
+import { shortRef, useVulnsByPlace, VulnCell, VulnCounts } from "./Vulns";
 
 export default function ComponentPage() {
   const { id = "" } = useParams();
@@ -80,7 +81,8 @@ export default function ComponentPage() {
 
       {summaries.data && <SummaryCards overview={summaries.data} componentId={id} onChanged={summaries.reload} />}
       {c && <Instances c={c} />}
-      <Advisories d={d.advisoriesByVersion} />
+      <Advisories d={d.advisoriesByVersion} confirmed={d.trivyConfirmed ?? []} />
+      <ImageScans images={d.imageScans ?? []} />
 
       <Card title={`Release lines${up?.linesSource ? ` (${up.linesSource})` : ""}`}>
         {up && up.lines.length ? (
@@ -107,11 +109,12 @@ export default function ComponentPage() {
 }
 
 function Instances({ c }: { c: ComponentReport }) {
+  const vulnsAt = useVulnsByPlace();
   return (
     <Card title={`Where it runs (${c.instances.length})`}>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Level</th><th>Cluster</th><th>Workload</th><th>Version</th><th>Recommended action</th><th>Why</th></tr></thead>
+          <thead><tr><th>Level</th><th>Cluster</th><th>Workload</th><th>Version</th><th>Recommended action</th><th>Why</th>{vulnsAt && <th title="Trivy: fixable Critical/High in the image (not a priority level)">Vulns</th>}</tr></thead>
           <tbody>
             {c.instances.map((i, n) => (
               <tr key={n}>
@@ -131,6 +134,7 @@ function Instances({ c }: { c: ComponentReport }) {
                   {i.score.reasons.length === 0 ? <span className="muted">At target, latest patch.</span> : <Reasons reasons={i.score.reasons} />}
                   {i.score.notes?.map((note, k) => <div key={k} className="subtle">ℹ {note}</div>)}
                 </td>
+                {vulnsAt && <td>{i.namespace ? <VulnCell images={vulnsAt(i)} /> : <span className="muted">—</span>}</td>}
               </tr>
             ))}
           </tbody>
@@ -168,8 +172,32 @@ function Reasons({ reasons }: { reasons: { level: string; text: string }[] }) {
   );
 }
 
-function Advisories({ d }: { d: { version: string; advisories: Match[]; error?: string }[] }) {
+/** The images this component runs, as Trivy sees them (OS packages and libraries inside the image). */
+function ImageScans({ images }: { images: VulnImage[] }) {
+  if (images.length === 0) return null;
+  return (
+    <Card title="Image vulnerabilities (Trivy)" actions={<span className="subtle">What's inside the images — upgrading the component usually fixes these too. Never changes the level.</span>}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Fixable</th><th>Image</th><th>Runs in</th></tr></thead>
+          <tbody>
+            {images.map((img) => (
+              <tr key={img.key}>
+                <td><VulnCounts img={img} /></td>
+                <td className="mono small" style={{ wordBreak: "break-all" }}>{img.digest ? <Link to={`/vulns/${encodeURIComponent(img.digest)}`}>{shortRef(img.ref)}</Link> : shortRef(img.ref)}</td>
+                <td className="small">{[...new Set(img.places.map((p) => p.cluster))].join(", ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function Advisories({ d, confirmed }: { d: { version: string; advisories: Match[]; error?: string }[]; confirmed: string[] }) {
   if (d.length === 0) return null;
+  const isConfirmed = (a: Match) => [a.id, ...(a.aliases ?? [])].some((x) => confirmed.includes(x));
   return (
     <Card title="Security advisories by running version">
       {d.map((v) => {
@@ -189,7 +217,7 @@ function Advisories({ d }: { d: { version: string; advisories: Match[]; error?: 
                   {[...affected, ...review].map((a) => (
                     <tr key={a.id}>
                       <td><Tag tone={sevTone(a.severity)}>{a.severity || "unknown"}</Tag>{!a.certain && <Tag title="Upstream data doesn't say which versions are fixed">review</Tag>}{a.noFix && <Tag title="No fixed version listed">no fix</Tag>}</td>
-                      <td><a href={a.url} target="_blank" rel="noreferrer noopener" className="mono">{label(a)}</a><div className="subtle">{a.summary}</div></td>
+                      <td><a href={a.url} target="_blank" rel="noreferrer noopener" className="mono">{label(a)}</a>{isConfirmed(a) && <> <Tag tone="info" title="Trivy found this one in the running image too">Trivy: confirmed</Tag></>}<div className="subtle">{a.summary}</div></td>
                       <td className="mono" title={a.fixedIn?.length ? `All fixed versions: ${a.fixedIn.join(", ")}` : undefined}>
                         {a.relevantFix || a.fixedIn?.join(", ") || "—"}
                       </td>

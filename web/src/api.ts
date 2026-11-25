@@ -85,6 +85,39 @@ export interface ComponentDetail {
   component: { id: string; name: string; github?: string; eol?: string; notes?: string };
   upstream: UpstreamInfo | null;
   advisoriesByVersion: { version: string; advisories: Match[]; error?: string }[];
+  /** Scanned images this component runs; trivyConfirmed: advisory ids Trivy found in them too. */
+  imageScans: VulnImage[]; trivyConfirmed: string[];
+}
+
+// Image vulnerability scans (milestone 15, internal/server/vulns.go + internal/scan). A separate signal:
+// never a priority level.
+export type Severity = "critical" | "high" | "medium" | "low" | "unknown";
+export const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "unknown"];
+export type SevCounts = Record<Severity, number>;
+export type VulnState = "ok" | "failed" | "scanning" | "queued" | "not scanned yet" | "not scannable";
+export interface VulnPlace { cluster: string; stage: string; tenant: string; namespace: string; kind: string; workload: string; container: string }
+export interface VulnImage {
+  key: string; digest?: string; ref: string; repositories: string[]; inHouse: boolean; components: string[];
+  places: VulnPlace[]; state: VulnState; queue?: "scanning" | "queued"; scannedAt?: string; error?: string; os?: string;
+  /** Not accepted findings; fixable = with a fixed version. */
+  fixable: SevCounts; total: SevCounts; accepted: number; confirmed: number;
+}
+export interface Acceptance { repository: string; vulnId: string; reason: string; expiresAt?: string; createdBy: string; createdAt: string }
+export interface Vuln {
+  id: string; package: string; installed: string; fixed?: string; severity: Severity; class: "os" | "lang";
+  pkgType?: string; target?: string; title?: string; url?: string;
+  accepted?: Acceptance; expiredAcceptance?: boolean;
+}
+export interface VulnDetail { image: VulnImage; vulns: Vuln[]; confirmed: { id: string; component: string }[] }
+export interface ScanJob { digest: string; ref: string; repository: string; platform?: string; reason: "new" | "daily" | "manual"; queuedAt: string }
+export interface ScannerStatus {
+  current: (ScanJob & { startedAt: string; timeoutSeconds: number }) | null;
+  queue: ScanJob[]; queueLength: number;
+  recent: (ScanJob & { startedAt: string; tookMs: number; outcome: "ok" | "failed" | "cancelled" | "timeout" | "removed from queue"; error?: string })[];
+  db: { version: string; updatedAt: string; downloadedAt: string; error?: string; updating: boolean };
+  lastDaily: string | null;
+  authFailures: { prefix: string; ref: string; at: string }[];
+  credentialPrefixes: string[];
 }
 
 export interface ComponentView {
@@ -278,6 +311,15 @@ export const api = {
     request<SummaryOverview>("POST", "/api/v1/summaries/generate", { component: j.component, from: j.from, to: j.to, force }),
   resumeSummaries: () => request<SummaryStatus>("POST", "/api/v1/summaries/resume"),
   audit: (limit = 1000) => request<AuditEntry[]>("GET", `/api/v1/audit?limit=${limit}`),
+
+  vulns: () => request<{ enabled: boolean; images: VulnImage[] }>("GET", "/api/v1/vulns"),
+  vulnImage: (digest: string) => request<VulnDetail>("GET", `/api/v1/vulns/images/${encodeURIComponent(digest)}`),
+  scanner: () => request<{ enabled: boolean; reason?: string; status?: ScannerStatus }>("GET", "/api/v1/vulns/scanner"),
+  rescan: (digest: string) => request<{ queued: boolean }>("POST", `/api/v1/vulns/images/${encodeURIComponent(digest)}/rescan`),
+  cancelScan: (digest: string) => request("POST", "/api/v1/vulns/scanner/cancel", { digest }),
+  acceptances: () => request<Acceptance[]>("GET", "/api/v1/vulns/acceptances"),
+  acceptVuln: (a: { repository: string; vulnId: string; reason: string; expiresAt: string }) => request("PUT", "/api/v1/vulns/acceptances", a),
+  unacceptVuln: (repository: string, vulnId: string) => request("DELETE", "/api/v1/vulns/acceptances", { repository, vulnId }),
 
   // Sign-in and users (milestone 9).
   authConfig: () => request<AuthConfig>("GET", "/api/v1/auth/config"),

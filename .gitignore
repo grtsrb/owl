@@ -1,4 +1,5 @@
 /bin/
+/owl
 /dist/
 *.db
 *.db-*

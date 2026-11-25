@@ -109,6 +109,8 @@ type Cluster struct {
 	LastSeenAt        *time.Time
 	KubernetesVersion string
 	AgentVersion      string
+	// NodeArch: the nodes' most common CPU architecture (amd64, arm64), "" before the first snapshot.
+	NodeArch string
 }
 
 // ImageRow is one container image of one workload in a cluster's current state.
@@ -282,6 +284,29 @@ type ClusterImport struct {
 	AgentVersion      string
 	Images            []ImageRow
 	Changes           []Change
+}
+
+// ImageScan is the stored state of one image digest's vulnerability scan (milestone 15): the last good
+// result (JSON from the scan package; opaque here) and the last attempt's error, if it failed. Not in
+// backups (regenerable).
+type ImageScan struct {
+	Digest    string
+	Ref       string
+	ScannedAt *time.Time // last good scan
+	Result    []byte
+	Error     string
+	AttemptAt time.Time
+}
+
+// VulnAcceptance: the team agreed to leave a vulnerability in an image repository (all its tags and
+// digests), until ExpiresAt if set. Restored with backups (a decision, like catalog overrides).
+type VulnAcceptance struct {
+	Repository string     `json:"repository"`
+	VulnID     string     `json:"vulnId"`
+	Reason     string     `json:"reason"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	CreatedBy  string     `json:"createdBy"`
+	CreatedAt  time.Time  `json:"createdAt"`
 }
 
 // Summary is a Claude-written upgrade summary for one jump (milestone 8). Content is the validated
@@ -519,6 +544,17 @@ type Store interface {
 	ListResolved(ctx context.Context, since time.Time) ([]ResolvedMark, error)
 	PruneResolved(ctx context.Context, before time.Time) error
 	SetDigestEmail(ctx context.Context, userID int64, on bool) error
+
+	// Image scans (milestone 15): not in backups, not restored. DeleteImageScansExcept removes every
+	// digest not in keep (no longer running anywhere).
+	ListImageScans(ctx context.Context) ([]ImageScan, error)
+	PutImageScan(ctx context.Context, s ImageScan) error
+	DeleteImageScansExcept(ctx context.Context, keep []string) (int64, error)
+	// Accepted vulnerabilities (restored with backups). PutVulnAcceptance replaces an existing one;
+	// DeleteVulnAcceptance returns ErrNotFound when there's none.
+	ListVulnAcceptances(ctx context.Context) ([]VulnAcceptance, error)
+	PutVulnAcceptance(ctx context.Context, a VulnAcceptance) error
+	DeleteVulnAcceptance(ctx context.Context, repository, vulnID string) error
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)
