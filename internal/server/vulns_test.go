@@ -99,7 +99,7 @@ func setupVulnsToken(t *testing.T) (*httptest.Server, *sqlite.DB, *Server, *fake
 	for _, w := range []struct{ name, image, id string }{
 		{"app", "registry.gitlab.example.com/team/app:1.0", "registry.gitlab.example.com/team/app@" + digestOf("a")},
 		{"redis", "redis:7.2.4", "docker.io/library/redis@" + digestOf("b")},
-		{"local", "local/tool:dev", digestOf("c")}, // built on the node
+		{"local", "local/tool:dev", digestOf("c")},                                // built on the node
 		{"meta", "169.254.169.254/x/y:1", "169.254.169.254/x/y@" + digestOf("9")}, // a lying agent
 	} {
 		sn.Workloads = append(sn.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "seed", Name: w.name, DesiredReplicas: 1,
