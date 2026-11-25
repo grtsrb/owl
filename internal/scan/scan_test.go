@@ -457,3 +457,26 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistryAllowed(t *testing.T) {
+	for host, want := range map[string]bool{
+		"docker.io": true, "registry.gitlab.example.com": true, "ghcr.io": true, "registry.local:5000": true,
+		"169.254.169.254": false, "169.254.169.254:80": false, "10.0.0.5:5000": false, "127.0.0.1": false,
+		"[::1]:5000": false, "[fd00::1]": false, "localhost:5000": false, "localhost": false, "a.localhost": false,
+		"metadata.google.internal": false, "instance-data": false,
+		"10.1.2.3:5000": true, // configured below
+	} {
+		if ok, why := RegistryAllowed(host, []string{"10.1.2.3:5000"}); ok != want {
+			t.Errorf("%s: %v (%s), want %v", host, ok, why, want)
+		}
+	}
+	if ok, _ := RegistryAllowed("10.1.2.3:6000", []string{"10.1.2.3:5000"}); ok {
+		t.Error("another port of a configured IP")
+	}
+	if ok, _ := RegistryAllowed("10.1.2.3:6000", []string{"10.1.2.3"}); !ok {
+		t.Error("a configured host without a port allows every port")
+	}
+	if tg, _ := TargetFromImageID("docker.io/library/redis@sha256:"+strings.Repeat("a", 64), "x; rm -rf /"); tg.Platform != "" {
+		t.Errorf("unknown arch passed on: %q", tg.Platform)
+	}
+}

@@ -50,11 +50,14 @@ func TargetFromImageID(imageID, arch string) (Target, bool) {
 		return Target{}, false
 	}
 	t := Target{Digest: digest, Ref: repo + "@" + digest, Repository: repo}
-	if arch != "" {
+	if slices.Contains(knownArch, arch) {
 		t.Platform = "linux/" + arch
 	}
 	return t, true
 }
+
+// RegistryOf is the registry host of a target (docker.io for Docker Hub's short names).
+func (t Target) Registry() string { return registryOf(t.Ref) }
 
 // ValidDigest: sha256:<64 lower-case hex>.
 func ValidDigest(d string) bool {

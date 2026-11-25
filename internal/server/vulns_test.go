@@ -100,6 +100,7 @@ func setupVulnsToken(t *testing.T) (*httptest.Server, *sqlite.DB, *Server, *fake
 		{"app", "registry.gitlab.example.com/team/app:1.0", "registry.gitlab.example.com/team/app@" + digestOf("a")},
 		{"redis", "redis:7.2.4", "docker.io/library/redis@" + digestOf("b")},
 		{"local", "local/tool:dev", digestOf("c")}, // built on the node
+		{"meta", "169.254.169.254/x/y:1", "169.254.169.254/x/y@" + digestOf("9")}, // a lying agent
 	} {
 		sn.Workloads = append(sn.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "seed", Name: w.name, DesiredReplicas: 1,
 			Containers: []snapshot.Container{{Name: w.name, Image: w.image}},
@@ -159,6 +160,16 @@ func TestVulnsList(t *testing.T) {
 	if local["state"] != "not scannable" || local["digest"] != nil {
 		t.Errorf("local = %v", local)
 	}
+	// an image ID naming an IP-literal registry is never pulled (SSRF from a leaked agent token)
+	meta := by["169.254.169.254/x/y@"+digestOf("9")]
+	if meta == nil || meta["state"] != "not scannable" || !strings.Contains(meta["error"].(string), "IP address") {
+		t.Errorf("meta = %v", meta)
+	}
+	ft.mu.Lock()
+	if n := len(ft.platforms); n != 2 {
+		t.Errorf("scanned %d images, want 2 (never the metadata address)", n)
+	}
+	ft.mu.Unlock()
 	// in-house first
 	_, out := call(t, "GET", srv.URL+"/api/v1/vulns", "", false)
 	if first := out["images"].([]any)[0].(map[string]any); first["key"] != digestOf("a") {
