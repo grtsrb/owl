@@ -226,9 +226,10 @@ kubectl -n owl create secret generic owl-agent \
 The server image includes Trivy (pinned by digest). Scanning starts on its own: the first start downloads
 the vulnerability DB (~3.5 GB on disk, a few minutes), then every running image is scanned. Public images
 need nothing else. For private registries, add their logins
-([registry logins](configuration.md#registry-logins-for-image-scanning)): in the Compose setup, create
-`registries.yaml` next to `compose.yaml` (`chmod 600`), uncomment its line under `volumes:` and set
-`OWL_REGISTRY_AUTH_FILE=/run/secrets/owl-registries.yaml` in `.env`. To switch scanning off, set
+([registry logins](configuration.md#registry-logins-for-image-scanning)): set `OWL_SECRET_KEY` in `.env`
+(`openssl rand -base64 32`; keep a copy outside the server) and add them in **Settings → Registries**. Or
+from a file: in the Compose setup, create `registries.yaml` next to `compose.yaml` (`chmod 600`), uncomment
+its line under `volumes:` and set `OWL_REGISTRY_AUTH_FILE=/run/secrets/owl-registries.yaml` in `.env`. To switch scanning off, set
 `OWL_SCAN=off`.
 
 > **Why:** the server pulls images itself so the agents stay read-only and never see registry credentials. Trivy is pinned by digest, not tag: in March 2026 Trivy's release tags and Docker Hub images were briefly replaced with malicious ones (CVE-2026-33634).

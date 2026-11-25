@@ -142,6 +142,7 @@ type Status struct {
 	LastDaily    *time.Time    `json:"lastDaily"` // last finished daily rescan
 	AuthFailures []AuthFailure `json:"authFailures"`
 	Prefixes     []string      `json:"credentialPrefixes"` // never the credentials themselves
+	Expiring     []Expiring    `json:"credentialsExpiring"`
 }
 
 const (
@@ -154,7 +155,7 @@ const (
 type Manager struct {
 	Scanner Scanner
 	Store   Store
-	Creds   Credentials
+	Creds   Credentials // the initial list; then SetCredentials / Credentials (guarded by mu)
 	// Targets lists every running digest that can be scanned (from the clusters' current state).
 	Targets func(ctx context.Context) ([]Target, error)
 	Log     *slog.Logger
@@ -543,8 +544,8 @@ func (m *Manager) scan(ctx context.Context, job Job) {
 	sctx, cancel := context.WithTimeout(ctx, m.Timeout)
 	defer cancel()
 	start := m.Now()
-	cred := m.Creds.For(job.Ref)
 	m.mu.Lock()
+	cred := m.Creds.For(job.Ref)
 	m.cur, m.curCancel, m.cancelled = &Running{Job: job, StartedAt: start, TimeoutSec: int64(m.Timeout / time.Second)}, cancel, false
 	m.mu.Unlock()
 
@@ -567,7 +568,7 @@ func (m *Manager) scan(ctx context.Context, job Job) {
 		m.mu.Unlock()
 		return
 	case errors.Is(err, ErrAuth):
-		f.Outcome, f.Error = OutcomeFailed, "auth failed for "+prefix
+		f.Outcome, f.Error = OutcomeFailed, authFailedPrefix+prefix
 		m.authFail[prefix] = AuthFailure{Prefix: prefix, Ref: job.Ref, At: m.Now()}
 	case errors.Is(err, ErrNotFound):
 		f.Outcome, f.Error = OutcomeFailed, "not in the registry (pulled from a mirror, deleted, or built locally)"
@@ -610,6 +611,64 @@ func registryOf(ref string) string {
 	}
 	return host
 }
+
+// Credentials returns the credentials in use (shared: don't change them).
+func (m *Manager) Credentials() Credentials {
+	m.init()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Creds
+}
+
+// SetCredentials replaces the credentials (a change in the UI, a restore). Images whose last scan failed
+// to log in are queued again at once, and auth failures of prefixes that changed are forgotten.
+func (m *Manager) SetCredentials(ctx context.Context, cs Credentials) {
+	m.init()
+	targets := map[string]Target{}
+	if m.Targets != nil {
+		ts, err := m.Targets(ctx)
+		if err != nil {
+			m.Log.Warn("scan: listing running images failed", "err", err)
+		}
+		for _, t := range ts {
+			if _, ok := targets[t.Digest]; !ok {
+				targets[t.Digest] = t
+			}
+		}
+	}
+	m.mu.Lock()
+	old := map[string]Credential{}
+	for _, c := range m.Creds {
+		old[c.Prefix] = c
+	}
+	m.Creds = cs
+	for _, c := range cs {
+		if o, ok := old[c.Prefix]; !ok || o.Username != c.Username || o.Password != c.Password {
+			delete(m.authFail, c.Prefix)
+			delete(m.authFail, "anonymous: "+registryOf(c.Prefix+"/x"))
+		}
+		delete(old, c.Prefix)
+	}
+	for p := range old { // removed: its failures no longer say anything
+		delete(m.authFail, p)
+	}
+	retry := 0
+	for _, st := range m.results {
+		t, running := targets[st.Digest]
+		if running && strings.HasPrefix(st.Error, authFailedPrefix) && !m.queuedOrRunning(st.Digest) {
+			m.queue = slices.Insert(m.queue, retry, Job{Target: t, Reason: ReasonManual, QueuedAt: m.Now()})
+			retry++
+		}
+	}
+	m.mu.Unlock()
+	if retry > 0 {
+		m.Log.Info("registry credentials changed: retrying images that failed to log in", "images", retry)
+		signal(m.wake)
+	}
+	signal(m.kick) // registries a new prefix allows (IP-literal hosts) start being scanned
+}
+
+const authFailedPrefix = "auth failed for "
 
 // Results returns every known digest (the values are shared and must not be changed).
 func (m *Manager) Results() map[string]*Stored {
@@ -662,5 +721,6 @@ func (m *Manager) Status() Status {
 	for _, c := range m.Creds {
 		st.Prefixes = append(st.Prefixes, c.Prefix)
 	}
+	st.Expiring = m.Creds.Expiring(m.Now())
 	return st
 }

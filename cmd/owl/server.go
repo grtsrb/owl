@@ -28,6 +28,7 @@ import (
 	"owl/internal/notify"
 	"owl/internal/registry"
 	"owl/internal/scan"
+	"owl/internal/secretbox"
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
@@ -401,8 +402,25 @@ func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authC
 
 // setupScans turns on image vulnerability scanning (milestone 15) when the trivy binary is there (the
 // server image has it) and OWL_SCAN isn't "off". Registry credentials come only from
-// OWL_REGISTRY_AUTH_FILE; a broken file stops the server (better than scanning with the wrong login).
+// OWL_REGISTRY_AUTH_FILE and Settings → Registries (sealed with OWL_SECRET_KEY); a broken file stops the
+// server (better than scanning with the wrong login).
 func setupScans(app *server.Server, db *sqlite.DB, dbPath string, noUpstream bool, log *slog.Logger) error {
+	// Registry credentials (file + sealed in the DB, milestone 15.1) are set up even with scanning off, so
+	// Settings → Registries works; a broken file or key stops the server.
+	rc := &server.RegistryCreds{}
+	if k := os.Getenv("OWL_SECRET_KEY"); k != "" {
+		box, err := secretbox.ParseKey(k)
+		if err != nil {
+			return err
+		}
+		rc.Box = box
+	}
+	file, err := scan.LoadCredentials(os.Getenv("OWL_REGISTRY_AUTH_FILE"))
+	if err != nil {
+		return fmt.Errorf("OWL_REGISTRY_AUTH_FILE: %w", err)
+	}
+	rc.File = file
+	app.Registries = rc
 	switch {
 	case os.Getenv("OWL_SCAN") == "off":
 		app.ScansOff = "OWL_SCAN=off"
@@ -424,21 +442,20 @@ func setupScans(app *server.Server, db *sqlite.DB, dbPath string, noUpstream boo
 		log.Warn("image vulnerability scanning is off", "reason", app.ScansOff)
 		return nil
 	}
-	creds, err := scan.LoadCredentials(os.Getenv("OWL_REGISTRY_AUTH_FILE"))
-	if err != nil {
-		return fmt.Errorf("OWL_REGISTRY_AUTH_FILE: %w", err)
-	}
 	cache := envOr("OWL_TRIVY_CACHE", filepath.Join(filepath.Dir(dbPath), "trivy"))
 	if err := os.MkdirAll(cache, 0o700); err != nil {
 		return fmt.Errorf("trivy cache: %w", err)
 	}
-	app.Scans = &scan.Manager{Scanner: &scan.Trivy{Bin: bin, CacheDir: cache}, Store: db, Creds: creds,
+	app.Scans = &scan.Manager{Scanner: &scan.Trivy{Bin: bin, CacheDir: cache}, Store: db,
 		Targets: app.ScanTargets, Log: log}
 	if err := app.Scans.Load(context.Background()); err != nil {
 		return fmt.Errorf("scan results: %w", err)
 	}
+	if err := app.ReloadCredentials(context.Background()); err != nil {
+		return fmt.Errorf("registry credentials: %w", err)
+	}
 	prefixes := []string{}
-	for _, c := range creds {
+	for _, c := range app.Scans.Credentials() {
 		prefixes = append(prefixes, c.Prefix)
 	}
 	log.Info("image vulnerability scanning on", "trivy", bin, "cache", cache, "credentialPrefixes", prefixes)

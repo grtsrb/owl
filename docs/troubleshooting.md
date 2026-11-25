@@ -138,8 +138,24 @@ run outside the Owl image — set `OWL_TRIVY` to a Trivy binary).
 ### "Auth failed for registry.example.com/team-a"
 
 The registry refused the login for that prefix (or wants one, for an image with no matching prefix:
-`anonymous: <registry>`). Check the deploy token in `OWL_REGISTRY_AUTH_FILE` hasn't expired and has
-`read_registry`, then restart the server and **Rescan now**. The image's last good result stays shown.
+`anonymous: <registry>`). Check the deploy token hasn't expired and has `read_registry`, then in
+**Settings → Registries** use **Replace** (or **Add credential** for a new prefix) and **Test**: the images
+that failed are scanned again at once. For a login from `OWL_REGISTRY_AUTH_FILE`, fix the file and restart
+the server. The image's last good result stays shown.
+
+### Settings → Registries: Test says "can't resolve" or "can't connect"
+
+The test runs inside the Owl server container, like Trivy. A registry reached through a VPN or an overlay
+such as **OpenZiti** must resolve and route *there*, not only on the host: with a host tunneller, check that
+the container's DNS reaches the tunneller's resolver (Docker's embedded DNS forwards to the host's upstream
+servers, which can skip a local stub resolver) — or run the tunneller as a sidecar sharing the container's
+network. "TLS … failed" means the registry's certificate isn't trusted by the server: mount your CA and set
+`SSL_CERT_FILE` (Trivy gets it too).
+
+### Settings → Registries: "can't decrypt" or "OWL_SECRET_KEY isn't set"
+
+The logins were saved with another `OWL_SECRET_KEY` (a backup restored on a new server, or the key changed)
+or the server has none. Set the original key and restart — or **Replace** each login.
 
 ### An image is "not scannable"
 
@@ -150,7 +166,8 @@ does this too). Push it to a registry and deploy it from there to get it scanned
 
 Owl doesn't pull images from IP-address, `localhost` or metadata-service registries unless you configured
 them (so a leaked agent token can't point the server at its own network). If it's a real registry, add it
-to `OWL_INTERNAL_REGISTRIES` (or give it a login in `OWL_REGISTRY_AUTH_FILE`) and restart the server.
+to `OWL_INTERNAL_REGISTRIES` and restart the server, or give it a login (Settings → Registries or
+`OWL_REGISTRY_AUTH_FILE`).
 
 ### "not in the registry (pulled from a mirror, deleted, or built locally)"
 

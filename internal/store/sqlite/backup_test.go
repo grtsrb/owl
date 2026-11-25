@@ -270,6 +270,7 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "a", Ref: "r@a", ScannedAt: &at, Result: []byte(`{"vulns":[]}`), AttemptAt: at})
 	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-1", Reason: "not reachable", CreatedBy: "a@x"})
 	_ = db.SetSetting(ctx, "scanLastDaily", "before")
+	_ = db.AddRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/team", Username: "u", Secret: []byte("sealed-1"), UpdatedBy: "a@x"})
 
 	bak := filepath.Join(t.TempDir(), "b.db")
 	if err := db.Backup(ctx, bak); err != nil {
@@ -287,6 +288,8 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-2", Reason: "later", CreatedBy: "a@x"})
 	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "b", Ref: "r@b", Error: "auth", AttemptAt: at})
 	_ = db.SetSetting(ctx, "scanLastDaily", "after")
+	_ = db.UpdateRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/team", Username: "u2", Secret: []byte("sealed-2"), UpdatedBy: "a@x"})
+	_ = db.AddRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/other", Username: "u", Secret: []byte("x"), UpdatedBy: "a@x"})
 	cp := filepath.Join(t.TempDir(), "restore.db")
 	b, _ := os.ReadFile(bak)
 	_ = os.WriteFile(cp, b, 0o600)
@@ -296,6 +299,10 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 	as, _ := db.ListVulnAcceptances(ctx)
 	if len(as) != 1 || as[0].VulnID != "CVE-1" || as[0].Reason != "not reachable" {
 		t.Errorf("acceptances = %+v", as)
+	}
+	// Registry credentials are kept in backups (sealed) and come back with a restore.
+	if rc, _ := db.ListRegistryCredentials(ctx); len(rc) != 1 || rc[0].Username != "u" || string(rc[0].Secret) != "sealed-1" {
+		t.Errorf("registry credentials = %+v", rc)
 	}
 	scans, _ := db.ListImageScans(ctx)
 	if len(scans) != 2 {

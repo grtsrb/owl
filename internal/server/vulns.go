@@ -39,7 +39,7 @@ func (s *Server) vulnRoutes(mux *http.ServeMux) {
 func (s *Server) registryRefused(t scan.Target) string {
 	allowed := slices.Clone(s.cat().InternalRegistries)
 	if s.Scans != nil {
-		for _, c := range s.Scans.Creds {
+		for _, c := range s.Scans.Credentials() {
 			host, _, _ := strings.Cut(c.Prefix, "/")
 			allowed = append(allowed, host)
 		}
@@ -395,6 +395,9 @@ func (s *Server) VulnDigest(ctx context.Context) (*notify.VulnSummary, error) {
 		if img.Fixable.Critical+img.Fixable.High > 0 {
 			v.Affected++
 		}
+	}
+	for _, e := range s.Scans.Credentials().Expiring(time.Now()) {
+		v.Expiring = append(v.Expiring, notify.CredentialExpiry{Prefix: e.Prefix, ExpiresAt: e.ExpiresAt, Expired: e.Expired})
 	}
 	return v, nil
 }

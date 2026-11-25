@@ -9,6 +9,7 @@ import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } fr
 import { overrideText } from "./ClusterDetail";
 import NotificationsTab from "./SettingsNotifications";
 import SummariesTab from "./SettingsSummaries";
+import RegistriesTab from "./SettingsRegistries";
 import CatalogComponents from "./SettingsCatalog";
 import { UsersTab } from "./SettingsUsers";
 import { DocHelp } from "./Docs";
@@ -20,7 +21,8 @@ type Section = { id: string; label: string; admin?: boolean };
 const GROUPS: { title: string; items: Section[] }[] = [
   { title: "Inventory", items: [{ id: "clusters", label: "Clusters" }, { id: "stages", label: "Stages & tenants" },
     { id: "catalog", label: "Catalog" }, { id: "policy", label: "Version policy" }] },
-  { title: "Integrations", items: [{ id: "notifications", label: "Notifications", admin: true }, { id: "summaries", label: "Claude summaries", admin: true }] },
+  { title: "Integrations", items: [{ id: "notifications", label: "Notifications", admin: true }, { id: "summaries", label: "Claude summaries", admin: true },
+    { id: "registries", label: "Registries", admin: true }] },
   { title: "System", items: [{ id: "users", label: "Users", admin: true }, { id: "backups", label: "Backups & restore", admin: true },
     { id: "logs", label: "Logs & audit", admin: true }] },
 ];
@@ -75,6 +77,7 @@ export default function Settings() {
               {tab === "policy" && <PolicyTab />}
               {tab === "summaries" && <SummariesTab />}
               {tab === "notifications" && <NotificationsTab />}
+              {tab === "registries" && <RegistriesTab />}
               {tab === "backups" && <BackupsTab />}
               {tab === "logs" && <LogsTab />}
               {tab === "users" && <UsersTab />}

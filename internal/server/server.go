@@ -74,6 +74,8 @@ type Server struct {
 	// Scans runs image vulnerability scans (milestone 15); nil = off, ScansOff says why.
 	Scans    *scan.Manager
 	ScansOff string
+	// Registries: OWL_SECRET_KEY and the credentials file (milestone 15.1); nil = none of either.
+	Registries *RegistryCreds
 	// Notify posts the digest and alerts (milestone 10); nil in tests that don't need it.
 	Notify *notify.Notifier
 	// CLIDir holds the downloadable client builds (owl-<os>-<arch>.gz + SHA256SUMS); "" or missing =
@@ -138,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	s.signinRoutes(mux)
 	s.tokenRoutes(mux)
 	s.vulnRoutes(mux)
+	s.registryRoutes(mux)
 	mux.HandleFunc("GET /api/v1/docs", s.listDocs)
 	mux.HandleFunc("GET /api/v1/docs/{page}", s.docPage)
 	mux.HandleFunc("GET /api/v1/cli", s.listCLI)

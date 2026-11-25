@@ -118,7 +118,18 @@ export interface ScannerStatus {
   lastDaily: string | null;
   authFailures: { prefix: string; ref: string; at: string }[];
   credentialPrefixes: string[];
+  credentialsExpiring: { prefix: string; expiresAt: string; expired: boolean }[];
 }
+
+// Registry credentials Trivy pulls with (milestone 15.1, internal/server/registries.go). Write-only: a
+// password is sent once and never comes back.
+export type LoginOutcome = "ok" | "rejected" | "dns" | "connect" | "tls" | "unexpected";
+export interface LoginResult { outcome: LoginOutcome; message: string; at: string }
+export interface RegistryCredential {
+  prefix: string; username: string; source: "ui" | "file"; expiresAt?: string; updatedAt?: string; updatedBy?: string;
+  problem?: string; authFailedAt?: string; lastTest?: LoginResult;
+}
+export interface RegistriesView { credentials: RegistryCredential[]; canEdit: boolean; scanning: boolean; scansOff: string }
 
 export interface ComponentView {
   id: string; name: string; github?: string; eol?: string; notes?: string; instances: Instance[];
@@ -318,6 +329,11 @@ export const api = {
   rescan: (digest: string) => request<{ queued: boolean }>("POST", `/api/v1/vulns/images/${encodeURIComponent(digest)}/rescan`),
   cancelScan: (digest: string) => request("POST", "/api/v1/vulns/scanner/cancel", { digest }),
   acceptances: () => request<Acceptance[]>("GET", "/api/v1/vulns/acceptances"),
+  registries: () => request<RegistriesView>("GET", "/api/v1/registries"),
+  addRegistry: (b: { prefix: string; username: string; password: string; expiresAt: string }) => request("POST", "/api/v1/registries", b),
+  updateRegistry: (b: { prefix: string; username?: string; password?: string; expiresAt: string }) => request("PUT", "/api/v1/registries", b),
+  deleteRegistry: (prefix: string) => request("DELETE", "/api/v1/registries", { prefix }),
+  testRegistry: (prefix: string) => request<LoginResult>("POST", "/api/v1/registries/test", { prefix }),
   acceptVuln: (a: { repository: string; vulnId: string; reason: string; expiresAt: string }) => request("PUT", "/api/v1/vulns/acceptances", a),
   unacceptVuln: (repository: string, vulnId: string) => request("DELETE", "/api/v1/vulns/acceptances", { repository, vulnId }),
 

@@ -103,3 +103,62 @@ func (d *DB) DeleteVulnAcceptance(ctx context.Context, repository, vulnID string
 	}
 	return nil
 }
+
+func (d *DB) ListRegistryCredentials(ctx context.Context) ([]store.RegistryCredential, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT prefix, username, secret, expires_at, updated_by, created_at, updated_at FROM registry_credentials ORDER BY prefix")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []store.RegistryCredential{}
+	for rows.Next() {
+		var c store.RegistryCredential
+		var exp sql.NullString
+		var created, updated string
+		if err := rows.Scan(&c.Prefix, &c.Username, &c.Secret, &exp, &c.UpdatedBy, &created, &updated); err != nil {
+			return nil, err
+		}
+		c.ExpiresAt = parseTime(exp)
+		if t := parseTime(sql.NullString{String: created, Valid: true}); t != nil {
+			c.CreatedAt = *t
+		}
+		if t := parseTime(sql.NullString{String: updated, Valid: true}); t != nil {
+			c.UpdatedAt = *t
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) AddRegistryCredential(ctx context.Context, c store.RegistryCredential) error {
+	t := now().Format(ts)
+	_, err := d.db.ExecContext(ctx, `INSERT INTO registry_credentials(prefix, username, secret, expires_at, updated_by, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?)`, c.Prefix, c.Username, c.Secret, fmtTime(c.ExpiresAt), c.UpdatedBy, t, t)
+	if isUnique(err) {
+		return store.ErrExists
+	}
+	return err
+}
+
+func (d *DB) UpdateRegistryCredential(ctx context.Context, c store.RegistryCredential) error {
+	res, err := d.db.ExecContext(ctx, `UPDATE registry_credentials SET username=?, secret=?, expires_at=?, updated_by=?, updated_at=?
+		WHERE prefix=?`, c.Username, c.Secret, fmtTime(c.ExpiresAt), c.UpdatedBy, now().Format(ts), c.Prefix)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (d *DB) DeleteRegistryCredential(ctx context.Context, prefix string) error {
+	res, err := d.db.ExecContext(ctx, "DELETE FROM registry_credentials WHERE prefix=?", prefix)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}

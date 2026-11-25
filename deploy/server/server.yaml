@@ -53,7 +53,7 @@ spec:
           ports:
             - {name: http, containerPort: 8080}
           envFrom:
-            - secretRef: {name: owl-server} # OWL_PUBLIC_URL, OWL_TRUSTED_PROXIES, tokens, SMTP, S3, ...
+            - secretRef: {name: owl-server} # OWL_PUBLIC_URL, OWL_TRUSTED_PROXIES, OWL_SECRET_KEY, tokens, SMTP, S3, ...
           env:
             - {name: OWL_LISTEN, value: "0.0.0.0:8080"}
           volumeMounts:

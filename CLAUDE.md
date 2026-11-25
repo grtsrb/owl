@@ -21,7 +21,8 @@ catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (E
 monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) and
 GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-25 (DESIGN.md "Milestones (v2)"):
 14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
-scanning (done: `internal/scan`, Vulnerabilities page) → 16 Docker hosts. Keep this file's commands and
+scanning (done: `internal/scan`, Vulnerabilities page) → 15.1 registry logins in the UI (Settings → Registries,
+`OWL_SECRET_KEY`) → 16 Docker hosts. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -192,7 +193,13 @@ make dev-down
   digest; `clusters.node_arch`), `loadVulns` joins inventory + results + acceptances; Trivy findings whose id
   is an Owl advisory of that component version are "confirmed" and not counted. Findings **never** feed
   `ScoreInstance`. Writes (rescan, cancel, acceptances) are admin, browser-only (not in `tokenWrites`).
-  `image_scans` dropped from backups; `vuln_acceptances` restored. Trivy is pinned by digest in the
+  `image_scans` dropped from backups; `vuln_acceptances` restored.
+  Registry logins (milestone 15.1, `server/registries.go`): file entries + `registry_credentials` rows sealed
+  with `internal/secretbox` (AES-GCM, `OWL_SECRET_KEY`, prefix as AD); merged by `Server.credentials`, pushed
+  to the scanner with `ReloadCredentials` (start, change, restore) → `Manager.SetCredentials` (re-queues
+  "auth failed" digests). Write-only: no endpoint returns a password; admin + browser only (`browserOnly`,
+  reads too). Kept in backups (ciphertext) and restored. `scan.TestLogin` = the Test button (OCI token auth,
+  realm checked with `RegistryAllowed`). Trivy is pinned by digest in the
   Dockerfile (CVE-2026-33634: hijacked tags) — upgrade only by changing that line after checking both registries.
 - `internal/upstream/notes.go` — release notes per jump: GitHub bodies or `releaseNotes` sources
   (Kubernetes CHANGELOG sections, Redis/HAProxy per-branch files with pre-releases folded into x.y.0 and
