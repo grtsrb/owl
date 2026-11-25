@@ -2,6 +2,22 @@
 
 What each milestone shipped. Newest first.
 
+## Registry logins in the UI (milestone 15.1)
+
+- **Settings → Registries**: admins add the logins Trivy pulls private (in-house) images with — prefix,
+  username, password/token, optional expiry — without editing a file or restarting. Passwords are
+  write-only: **Replace** sets a new one, nothing shows the old one.
+- New `OWL_SECRET_KEY` (`openssl rand -base64 32`) encrypts them in the database and in backups; a restore
+  with the same key brings them back.
+- **Test** logs in from the Owl server like a pull would and says what went wrong (rejected, DNS, connection,
+  TLS) — useful for registries behind a VPN or ziti.
+- After a change, images that failed to log in are scanned again at once.
+- Expiry dates (also `expires:` in `OWL_REGISTRY_AUTH_FILE`): warnings 14 days ahead on the page, in the
+  Scanner panel and in the weekly digest.
+- `OWL_REGISTRY_AUTH_FILE` still works; its entries are listed read-only and win over the UI.
+- **In-house registries** on the same page: every image from them is in-house (and a registry given as an IP
+  address can be scanned), applied at once. `OWL_INTERNAL_REGISTRIES` still works and is shown read-only.
+
 ## Image vulnerability scanning (milestone 15)
 
 - The server scans every running image with **Trivy** (in the server image, pinned by digest): once per

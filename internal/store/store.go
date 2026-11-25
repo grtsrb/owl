@@ -309,6 +309,18 @@ type VulnAcceptance struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 }
 
+// RegistryCredential is a registry login managed in the UI (milestone 15.1). Secret is the password sealed
+// with OWL_SECRET_KEY (bound to the prefix); the store never sees it in clear. Restored with backups.
+type RegistryCredential struct {
+	Prefix    string
+	Username  string
+	Secret    []byte
+	ExpiresAt *time.Time
+	UpdatedBy string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // Summary is a Claude-written upgrade summary for one jump (milestone 8). Content is the validated
 // JSON the summary package produced; the store treats it as opaque.
 type Summary struct {
@@ -555,6 +567,12 @@ type Store interface {
 	ListVulnAcceptances(ctx context.Context) ([]VulnAcceptance, error)
 	PutVulnAcceptance(ctx context.Context, a VulnAcceptance) error
 	DeleteVulnAcceptance(ctx context.Context, repository, vulnID string) error
+	// Registry credentials (milestone 15.1, restored with backups). AddRegistryCredential returns ErrExists
+	// for a known prefix; Update and Delete return ErrNotFound for an unknown one.
+	ListRegistryCredentials(ctx context.Context) ([]RegistryCredential, error)
+	AddRegistryCredential(ctx context.Context, c RegistryCredential) error
+	UpdateRegistryCredential(ctx context.Context, c RegistryCredential) error
+	DeleteRegistryCredential(ctx context.Context, prefix string) error
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

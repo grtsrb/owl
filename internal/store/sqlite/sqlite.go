@@ -217,6 +217,17 @@ var migrations = []string{
 		PRIMARY KEY (repository, vuln_id)
 	);
 	ALTER TABLE clusters ADD COLUMN node_arch TEXT NOT NULL DEFAULT '';`,
+	// Registry credentials from the UI (milestone 15.1): the password sealed with OWL_SECRET_KEY. Kept in
+	// backups (ciphertext) and restored.
+	`CREATE TABLE registry_credentials (
+		prefix     TEXT PRIMARY KEY,
+		username   TEXT NOT NULL,
+		secret     BLOB NOT NULL,
+		expires_at TEXT,
+		updated_by TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 type DB struct{ db *sql.DB }

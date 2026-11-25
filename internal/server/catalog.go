@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -73,6 +74,17 @@ func (s *Server) ReloadCatalog(ctx context.Context) error {
 		views = append(views, customView{Component: c, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt})
 	}
 	merged, states := catalog.Merge(s.Catalog, comps)
+	// In-house registries: the server's (--internal-registries / OWL_INTERNAL_REGISTRIES) plus the UI's.
+	sets, err := s.Store.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	merged.InternalRegistries = slices.Clone(s.Catalog.InternalRegistries)
+	for _, r := range splitRegistries(sets[settingInternalRegistries]) {
+		if !slices.Contains(merged.InternalRegistries, r) {
+			merged.InternalRegistries = append(merged.InternalRegistries, r)
+		}
+	}
 	byID := map[string]catalog.CustomState{}
 	for _, st := range states {
 		byID[st.ID] = st

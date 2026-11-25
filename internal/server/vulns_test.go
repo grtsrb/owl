@@ -25,12 +25,16 @@ type fakeTrivy struct {
 	mu        sync.Mutex
 	results   map[string]*scan.Result // by repository
 	platforms []string
+	password  map[string]string // repository → the password a pull needs (ErrAuth otherwise)
 }
 
-func (f *fakeTrivy) Scan(_ context.Context, t scan.Target, _ *scan.Credential) (*scan.Result, error) {
+func (f *fakeTrivy) Scan(_ context.Context, t scan.Target, cred *scan.Credential) (*scan.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.platforms = append(f.platforms, t.Platform)
+	if pw, ok := f.password[t.Repository]; ok && (cred == nil || cred.Password != pw) {
+		return nil, scan.ErrAuth
+	}
 	if r := f.results[t.Repository]; r != nil {
 		return r, nil
 	}

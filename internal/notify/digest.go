@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -214,6 +215,15 @@ type VulnSummary struct {
 	Affected       int // in-house images with at least one of them
 	Images         int // in-house images running
 	NotScanned     int // in-house images without a result (yet, or not scannable)
+	// Expiring registry logins (milestone 15.1): expired or within 14 days, soonest first.
+	Expiring []CredentialExpiry
+}
+
+// CredentialExpiry: a registry login Trivy pulls with that needs renewing.
+type CredentialExpiry struct {
+	Prefix    string
+	ExpiresAt time.Time
+	Expired   bool
 }
 
 func headlines(sums []store.Summary) map[[3]string]string {
@@ -269,7 +279,7 @@ func (n *Notifier) vulnSection(in digestInputs) Section {
 	b := Block{Title: "In-house images"}
 	if v.Images == 0 {
 		b.Empty = "No in-house images are running."
-		return Section{Heading: "Image vulnerabilities", Blocks: []Block{b}}
+		return Section{Heading: "Image vulnerabilities", Blocks: append([]Block{b}, expiryBlock(v.Expiring, in.now, n.link("/settings/registries"))...)}
 	}
 	line := Ln(B(strconv.Itoa(v.Critical)+" Critical"), T(", "), B(strconv.Itoa(v.High)+" High"),
 		T(" with a fix, in "+strconv.Itoa(v.Affected)+" of "+report.Plural(v.Images, "image")))
@@ -288,7 +298,31 @@ func (n *Notifier) vulnSection(in digestInputs) Section {
 	if l := n.link("/vulns"); l != "" {
 		b.Items = append(b.Items, Ln(L("Open Vulnerabilities", l)))
 	}
-	return Section{Heading: "Image vulnerabilities", Blocks: []Block{b}}
+	return Section{Heading: "Image vulnerabilities", Blocks: append([]Block{b}, expiryBlock(v.Expiring, in.now, n.link("/settings/registries"))...)}
+}
+
+// expiryBlock: registry logins to renew before scans of in-house images start failing.
+func expiryBlock(es []CredentialExpiry, now time.Time, link string) []Block {
+	if len(es) == 0 {
+		return nil
+	}
+	b := Block{Title: "Registry logins to renew"}
+	for _, e := range es {
+		when := "expires " + e.ExpiresAt.Format("2 Jan 2006")
+		if days := int(math.Ceil(e.ExpiresAt.Sub(now).Hours() / 24)); !e.Expired && days <= 1 {
+			when = "expires within a day"
+		} else if !e.Expired {
+			when += " (in " + strconv.Itoa(days) + " days)"
+		}
+		if e.Expired {
+			when = "expired " + e.ExpiresAt.Format("2 Jan 2006") + " — scans with it fail"
+		}
+		b.Items = append(b.Items, Ln(C(e.Prefix), T(" "+when)))
+	}
+	if link != "" {
+		b.Items = append(b.Items, Ln(L("Open Settings → Registries", link)))
+	}
+	return []Block{b}
 }
 
 // vulnBase picks what a digest for slot compares with, from "<slot>|<c,h sent then>|<c,h that one compared

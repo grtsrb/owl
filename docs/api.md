@@ -161,12 +161,27 @@ rescan, cancel or accept.
 |---|---|
 | `GET /vulns` | `{enabled, images[]}`. An image: `key` (its digest, or the kubelet image ID when not scannable), `digest`, `ref` (`repository@sha256:…`), `repositories[]`, `inHouse`, `components[]`, `places[]` (`cluster, stage, tenant, namespace, kind, workload, container`), `state` (`ok`, `failed`, `scanning`, `queued`, `not scanned yet`, `not scannable`), `queue`, `scannedAt`, `error`, `os`, `fixable` and `total` (per severity, accepted and component-advisory findings left out), `accepted`, `confirmed`. In-house first, then by fixable Critical/High. |
 | `GET /vulns/images/{digest}` | `{image, vulns[], confirmed[]}` — `vulns[]`: `id, package, installed, fixed, severity, class (os\|lang), pkgType, target, title, url, accepted?, expiredAcceptance?`; `confirmed[]`: `{id, component}` shown as component advisories instead. `404` if no cluster runs it. |
-| `GET /vulns/scanner` | `{enabled, reason?, status?}` — `status`: `current`, `queue[]` (first 20), `queueLength`, `recent[]` (last 20 with `outcome`, `tookMs`, `error`), `db`, `lastDaily`, `authFailures[]`, `credentialPrefixes[]` |
+| `GET /vulns/scanner` | `{enabled, reason?, status?}` — `status`: `current`, `queue[]` (first 20), `queueLength`, `recent[]` (last 20 with `outcome`, `tookMs`, `error`), `db`, `lastDaily`, `authFailures[]`, `credentialPrefixes[]`, `credentialsExpiring[]` (`{prefix, expiresAt, expired}`) |
 | `GET /vulns/acceptances` | `[{repository, vulnId, reason, expiresAt, createdBy, createdAt}]` |
 | `POST /vulns/images/{digest}/rescan` 🔒 | `{queued}` — `false` when it's already queued or being scanned; `404` if no cluster runs it; `409` when scanning is off |
 | `POST /vulns/scanner/cancel` 🔒 | `{"digest": "sha256:…"}`: stop the running scan of it or remove it from the queue → `204`; `404` if it's neither |
 | `PUT /vulns/acceptances` 🔒 | `{"repository", "vulnId", "reason", "expiresAt": "2027-03-31" \| ""}` → `204` (replaces an existing one) |
 | `DELETE /vulns/acceptances` 🔒 | `{"repository", "vulnId"}` → `204`, `404` if there's none |
+
+### Registry credentials
+
+Logins: admins in the browser only, reads included — API tokens get `403`. A password is accepted, never
+returned.
+
+| Endpoint | |
+|---|---|
+| `GET /registries` | `{credentials[], canEdit, scanning, scansOff}` — a credential: `prefix, username, source (ui\|file), expiresAt?, updatedAt?, updatedBy?, problem?` (why a UI entry isn't used), `authFailedAt?`, `lastTest?` (`{outcome, message, at}`) |
+| `POST /registries` | `{"prefix", "username", "password", "expiresAt": "2027-03-31" \| ""}` → `201`; `409` for a known prefix, one from the file, or without `OWL_SECRET_KEY` |
+| `PUT /registries` | `{"prefix", "expiresAt", "username"?, "password"?}` — username + password together replace the login; without them only the expiry changes → `204` |
+| `DELETE /registries` | `{"prefix"}` → `204`, `404` if the UI has none |
+| `GET /registries/internal` | `{server[], ui[]}` — in-house registries from `OWL_INTERNAL_REGISTRIES` (read-only) and from the UI. Any signed-in user. |
+| `PUT /registries/internal` | `{"registries": ["registry.gitlab.example.com", "10.20.0.5:5000"]}` → `{ui[]}`: replaces the UI's list (host[:port], at most 50; entries already in the server's list are dropped). Admin. |
+| `POST /registries/test` | `{"prefix"}` → `{outcome: ok\|rejected\|dns\|connect\|tls\|unexpected, message, at}` |
 
 ## Agent ingest
 

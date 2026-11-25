@@ -516,6 +516,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 ## Milestones (v2, agreed 2026-11-25 after the team demo)
 14. **Slim agent image** (built 2026-11-25): agent-only binary and image (plan below). Comes first: the host agent is that binary.
 15. **Image scanning (Trivy), server-side** (built 2026-11-25), clusters first — the team's pain point is in-house images.
+15.1 **Registry credentials in the UI** (agreed 2026-11-26): see below.
 16. **Docker hosts**: their images get scanning for free, because 15 exists by then.
 Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDuty & co.: "Later".
 
@@ -581,8 +582,8 @@ Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDu
 - **Registry credentials**: `OWL_REGISTRY_AUTH_FILE`, a read-only mounted YAML list of
   `prefix` → `username`/`password` (e.g. one GitLab **group deploy token**, `read_registry` only, per group or
   organisation — covers subgroups). Longest prefix wins; no match = anonymous (public registries). The
-  credential reaches Trivy per scan through env vars, never arguments (visible in `ps`). Never in the UI, the
-  DB or backups. Auth failures shown per prefix.
+  credential reaches Trivy per scan through env vars, never arguments (visible in `ps`). Auth failures shown
+  per prefix. Since 2026-11-26 also managed in the UI, encrypted in the DB — see "Registry credentials in the UI".
 - **When**: a digest is scanned when a source first reports it (the `kickFetch` path); every running digest is
   rescanned daily after the DB update (layer cache = no re-download). One scan at a time, with a timeout.
   Digests no longer running anywhere lose their results. **Rescan now** (admin, image row + detail page) puts the
@@ -615,6 +616,47 @@ Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDu
 - **Notifications**: weekly digest only — fixable Critical/High counts for in-house images and the change since
   last week. No per-CVE alerts (daily DB updates would make them noise).
 - **CLI**: `owl vulns [--image …] [--fail-on critical]` (read path, like `owl outdated`; a CI gate later).
+
+## Registry credentials in the UI (agreed 2026-11-26, milestone 15.1)
+Adding a GitLab group's deploy token meant editing the mounted file and restarting. Now admins manage the
+prefix → credential list in **Settings → Registries**; Trivy pulls exactly as before (longest prefix wins).
+- **Write-only**: the password is entered once and never shown or returned again (Owl can't hash it — it has
+  to send it to the registry). Rows show prefix, username, "password set · updated …", optional expiry, the
+  last scan auth result and the last Test result. Actions: add, **replace** (new username/password, prefix
+  fixed), edit expiry, delete, **Test**.
+- **Encrypted at rest**: AES-256-GCM with `OWL_SECRET_KEY` (32 random bytes, base64: `openssl rand -base64 32`),
+  the prefix as additional data (a ciphertext can't be moved to another prefix). Without the key the page is
+  read-only and says why; a row that doesn't decrypt (other key) is shown as "can't decrypt — replace it" and
+  isn't used. The server refuses to start with a malformed key.
+- **Backups keep them, encrypted**, and a restore brings them back (`registry_credentials` is restored): a
+  server rebuilt with the same key needs no manual step; with another key the rows show "can't decrypt".
+- **The file still works**: `OWL_REGISTRY_AUTH_FILE` entries are listed as "from file" (read-only); the file
+  wins over a UI row with the same prefix, and adding such a prefix in the UI is refused. Optional
+  `expires: YYYY-MM-DD` in the file too.
+- **Test** logs in like `docker login` would, from the Owl server itself (same DNS / network as Trivy — catches
+  ziti / VPN DNS problems): `GET https://<host>/v2/`, on a Bearer challenge the token endpoint with Basic auth
+  and `scope=repository:<path>:pull`. HTTPS only; the token realm must not be an IP literal / localhost /
+  metadata host (unless it's the registry itself); no secret in any error. Results: OK / login rejected / can't
+  resolve / can't connect / TLS / unexpected answer. Kept in memory, not stored.
+- **After a change** images that failed with "auth failed" are queued again at once (no waiting for the daily
+  rescan), and the prefix's auth failure is cleared.
+- **Expiry**: optional date per credential. "Expires in N days" (≤ 14) / "expired" on the page, in the scanner
+  panel and in the weekly digest. No separate alert.
+- **Prefix hosts are checked like in-house registries** (`scan.NeverRegistry`: localhost / metadata names,
+  loopback, link-local, unspecified, multicast, known metadata IPs such as `fd00:ec2::254` and
+  `100.100.100.200`): a login's host may be pulled from and receives the password on Test. A login changed
+  while a scan with the old one runs: that scan's auth failure isn't recorded and the image is retried with the
+  new login. Reloads retry only images whose applicable login changed (not at start, not for an expiry edit),
+  after queued manual rescans.
+- Admin only (list included: usernames are half a login), browser only (not in `tokenWrites`), JSON bodies,
+  audit-logged (prefix + username, never the password). Prefix rules = the file's; username ≤ 256, password
+  ≤ 4096 bytes, no control characters (they go into env vars).
+- **In-house registries** (agreed 2026-11-26, same page): a list of hosts (`host[:port]`, ≤ 50) in the
+  `internalRegistries` setting (restored with backups), merged with `OWL_INTERNAL_REGISTRIES` (read-only in the
+  UI) by `ReloadCatalog` — applied at once. Same meaning as the env: in-house marking + an IP-literal registry
+  may be scanned. The UI refuses loopback, link-local, unspecified/multicast addresses, `localhost` and
+  metadata names (never a registry; would reopen the SSRF the scan guard closes). Readable by every signed-in
+  user, changed by admins (browser only: not in `tokenWrites`).
 
 ## Docker hosts (agreed 2026-11-25, milestone 16)
 - **What**: plain Docker / Compose hosts — their containers and images, plus Docker Engine and OS version.

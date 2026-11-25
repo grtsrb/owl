@@ -22,7 +22,7 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 | `--db` | `OWL_DB` | `owl.db` (image: `/data/owl.db`) | SQLite database file. |
 | — | `OWL_CLI_DIR` | `/cli` | Where the downloadable CLI builds are (`owl-<os>-<arch>.gz` or plain binaries, + `SHA256SUMS`; the image has them). Missing = no downloads in Account. |
 | `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated extra host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1` and the `OWL_PUBLIC_URL` host. Ports are ignored. |
-| `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. Image scanning pulls from a registry given as an IP address (`10.0.0.5:5000`) only when it's listed here or in `OWL_REGISTRY_AUTH_FILE`. |
+| `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. Admins can add more in **Settings → Registries → In-house registries** (no restart); these stay and are shown read-only there. Image scanning pulls from a registry given as an IP address (`10.0.0.5:5000`) only when it's listed (here or in the UI) or has a registry login. |
 | `--log-dir` | `OWL_LOG_DIR` | `<db dir>/logs` | Rotated log files. `-` = stderr only. |
 | `--backup-dir` | `OWL_BACKUP_DIR` | `<db dir>/backups` | Local backup folder. |
 | `--no-upstream` | — | off | Don't contact GitHub, endoflife.date or OSV (offline / tests). |
@@ -34,13 +34,27 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 | — | `OWL_SCAN` | on | `off` switches [image scanning](concepts.md#image-vulnerabilities) off. It's also off with `--no-upstream` or when Trivy isn't found. |
 | — | `OWL_TRIVY` | `trivy` in `PATH` (the image has `/usr/local/bin/trivy`) | The Trivy binary. |
 | — | `OWL_TRIVY_CACHE` | `<db dir>/trivy` | Trivy's vulnerability DB and cache, about **3.5 GB** (DB 1.7 GB + Java DB 1.5 GB). Not in backups. |
-| — | `OWL_REGISTRY_AUTH_FILE` | — | Registry logins for scanning private images (below). Without it only public images can be scanned. A broken file stops the server. |
+| — | `OWL_REGISTRY_AUTH_FILE` | — | Registry logins for scanning private images from a file (below). Optional: admins can add them in **Settings → Registries** instead. A broken file stops the server. |
+| — | `OWL_SECRET_KEY` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts the registry logins added in Settings → Registries; without it that page is read-only. A malformed key stops the server. **Keep it with your backups' credentials, not in them**: a backup restored on a server with another key can't use its logins (re-enter them). |
 | — | `OWL_CLAUDE_MODEL` | `claude-sonnet-5-5` | The *default* model for summaries; admins choose another in Settings → Claude summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
 
 ### Registry logins for image scanning
 
-A YAML list of image prefixes and the login to use for them. The longest matching prefix wins; an image
-with no match is pulled anonymously.
+Trivy pulls each running image from its registry. Public images need nothing; for private (in-house)
+registries Owl needs a login per image prefix. The longest matching prefix wins; an image with no match is
+pulled anonymously.
+
+**In the UI** (admins): **Settings → Registries → Add credential** — prefix, username, password/token and
+the token's expiry date (optional). Needs `OWL_SECRET_KEY`. The password is stored encrypted and never shown
+again: **Replace** sets a new username + password, **Expiry** changes the date, **Delete** removes it.
+**Test** logs in from the Owl server the way a pull would, so it also catches DNS problems (VPN, ziti,
+split DNS — the name has to resolve *inside the Owl container*) and untrusted certificates. After a change,
+images whose last scan couldn't log in are scanned again right away — no restart. Owl warns 14 days before
+an expiry date, on that page, in the Scanner panel and in the weekly digest.
+
+**From a file** (e.g. managed by your config tooling): a YAML list, mounted read-only. Its entries show in
+Settings → Registries as *from file* and can only be changed in the file (then restart); the file wins over
+a UI entry with the same prefix.
 
 ```yaml
 # OWL_REGISTRY_AUTH_FILE, e.g. /run/secrets/owl-registries.yaml (mount it read-only, chmod 600)
@@ -53,6 +67,7 @@ with no match is pulled anonymously.
 - prefix: registry.gitlab.com/other-org
   username: <user>
   password: <token>
+  expires: 2027-03-31                                 # optional: warn before the token runs out
 ```
 
 - A prefix matches at a path boundary: `…/team-a` covers `…/team-a/app` and `…/team-a/sub/app`, never
@@ -60,8 +75,9 @@ with no match is pulled anonymously.
 - Use **read-only** credentials: a GitLab **group deploy token** with only `read_registry`, one per group,
   so nobody needs a token that reads every group.
 - The login reaches Trivy only for that scan, as environment variables — never as command-line arguments
-  (visible in `ps`), never in the UI, the database, backups or logs. The Scanner panel shows the prefixes
-  and any that failed to log in.
+  (visible in `ps`), never in logs or API answers. UI logins are encrypted (AES-256-GCM, `OWL_SECRET_KEY`) in
+  the database and its backups; file logins are never stored. The Scanner panel shows the prefixes and any
+  that failed to log in.
 
 ### Sign-in
 

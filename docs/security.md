@@ -112,7 +112,7 @@ What Owl can see, what it stores and sends, and how to run it safely.
 | Your Mattermost (only with `OWL_MATTERMOST_WEBHOOK_URL`) | Digest and alerts: cluster, tenant and stage names, component names, versions, levels, reasons, recommended actions, image repositories, links into Owl. Everyone in the channel sees them. Names are escaped, so nothing in a message can format itself or @-mention people. The webhook URL is a secret and never logged. |
 | Google (only with Google sign-in) | The browser is sent to Google to sign in; the server exchanges the one-time code for the account's ID token. |
 | Claude API (only when summaries are set to manual or automatic) | Only public data: component name (for components added in the UI: their GitHub repository, never the name typed in Owl) and upstream repository, the two versions, upstream release notes. Never cluster names, namespaces, hosts, workloads, tenants, stages, configs or tokens (a test checks every request). |
-| The registries of the running images (image scanning) | Pulls of the exact image digests the agents reported (manifest, config and layers), with the login from `OWL_REGISTRY_AUTH_FILE` for that prefix or anonymously. |
+| The registries of the running images (image scanning) | Pulls of the exact image digests the agents reported (manifest, config and layers), with the login for that prefix (Settings → Registries or `OWL_REGISTRY_AUTH_FILE`) or anonymously. **Test** in Settings → Registries: a login to that registry (`/v2/` and its token endpoint, HTTPS only). |
 | `mirror.gcr.io` (image scanning) | Daily download of Trivy's public vulnerability DBs. Nothing about your images is sent: matching happens on the server, and jar hashes are not looked up on Maven Central (`--offline-scan`). |
 | Public container registries (Docker Hub, ghcr.io, quay.io, registry.k8s.io, public.ecr.aws) — only when an admin opens **New component** | Anonymous requests for that one image's manifest and config, to read its source label. Never a private registry, never credentials. |
 | GitHub, endoflife.date — for **New component** suggestions and preview | The repository/product names an admin typed or Owl suggested. |
@@ -124,8 +124,14 @@ What Owl can see, what it stores and sends, and how to run it safely.
   keys, Claude API key, GitHub token, SMTP password) never reach it. Only proxy and CA settings pass through.
 - The registry comes from what the agents report, so a leaked agent token could name any host. Owl never
   pulls from a registry that is an IP address, `localhost` or a cloud metadata name (`169.254.169.254`,
-  `metadata.google.internal`, …) unless it's listed in `OWL_INTERNAL_REGISTRIES` or `OWL_REGISTRY_AUTH_FILE`;
-  such images show as *not scannable*. Registry logins only go to the host in their own prefix.
+  `metadata.google.internal`, …) unless it's an in-house registry (`OWL_INTERNAL_REGISTRIES` or Settings → Registries — the UI refuses
+  loopback, link-local and metadata addresses) or has a registry login;
+  such images show as *not scannable*. Registry logins only go to the host in their own prefix (and, for
+  **Test**, to the token endpoint that registry names — never an IP-address, local or metadata one).
+- Registry logins added in the UI are **write-only** (never shown or returned again, never in logs or the
+  audit log) and encrypted with `OWL_SECRET_KEY` (AES-256-GCM, bound to their prefix). The database and its
+  backups hold only ciphertext; keep the key separate from the backup bucket. Only admins in a browser
+  session manage or list them — API tokens can't.
 - It scans for vulnerabilities only — no secret scanning, so secrets inside images are never collected — and
   reads images only from registries, never from a Docker or containerd socket.
 - Registry logins: read-only tokens, from a file mounted read-only; passed per scan as environment variables;

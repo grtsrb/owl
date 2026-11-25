@@ -253,6 +253,10 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 		if err := s.ReloadCatalog(ctx); err != nil {
 			s.Log.Error("catalog reload after restore failed", "err", err)
 		}
+		// Registry credentials (sealed) come back too.
+		if err := s.ReloadCredentials(ctx); err != nil {
+			s.Log.Error("registry credentials reload after restore failed", "err", err)
+		}
 		return nil
 	}
 	var err error

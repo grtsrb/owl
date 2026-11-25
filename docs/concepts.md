@@ -94,7 +94,7 @@ Their level is computed exactly like any other.
 |---|---|---|
 | identified | Known component, tag pins a version (`redis:7.2.4`) | yes |
 | unpinned | Known component but the tag is floating: `latest`, digest only, or fewer version parts than the component uses (`postgres:16`, `redis:7`) | yes — Medium at least, advisories not evaluated |
-| in-house | From a registry listed in `--internal-registries` (or marked in-house) | no — listed only |
+| in-house | From an in-house registry (Settings → Registries or `--internal-registries`), or marked in-house | no — listed only |
 | unrecognized | Not in the catalog | no — shown for you to classify |
 | ignored | Unrecognized and you chose to ignore it | no |
 
