@@ -50,7 +50,7 @@ make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # ow
 curl -s -H "Authorization: Bearer $OWL_TOKEN" 127.0.0.1:8080/api/v1/report   # levels + reasons + targets + drift
 ./bin/owl upstream --component redis --version 7.2.4      # debug upstream data (needs GITHUB_TOKEN)
 make catalog-check COMPONENTS=redis,coredns               # verify catalog entries live (GitHub/endoflife.date/OSV)
-set -a; . ./.env; set +a   # GITHUB_TOKEN (+ optional OWL_GOOGLE_CLIENT_ID/SECRET for local Google sign-in)
+set -a; . ./.env; set +a   # GITHUB_TOKEN, OWL_SECRET_KEY (+ optional OWL_GOOGLE_CLIENT_ID/SECRET for local Google sign-in)
 make dev-down
 ```
 

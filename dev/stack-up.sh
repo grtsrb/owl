@@ -23,6 +23,7 @@ if [[ -f dev/.mattermost.env ]]; then set -a; . dev/.mattermost.env; set +a; fi
 [[ -z ${OWL_ADMIN_TOKEN:-} ]] || echo "note: OWL_ADMIN_TOKEN in .env is no longer used (sign-in replaced it); you can delete it" >&2
 ADMIN_EMAIL=${OWL_DEV_ADMIN:-admin@owl.local}
 [[ -n ${GITHUB_TOKEN:-} ]] || echo "warning: GITHUB_TOKEN not set (.env); upstream data will be rate limited" >&2
+[[ -n ${OWL_SECRET_KEY:-} ]] || echo "note: OWL_SECRET_KEY not set (.env; openssl rand -base64 32): Settings → Registries is read-only" >&2
 
 # Local S3 for backups (S3Mock: S3-compatible test server; MinIO no longer publishes images). It
 # accepts any credentials — permissions (no delete for the server) can only be tested on real S3.
@@ -40,7 +41,7 @@ docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-
   -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example -e GITHUB_TOKEN \
   -e OWL_PUBLIC_URL=http://127.0.0.1:8080 \
   -e OWL_SMTP_HOST=owl-mailpit -e OWL_SMTP_PORT=1025 -e OWL_SMTP_TLS=none -e "OWL_SMTP_FROM=Owl <owl@owl.local>" \
-  -e OWL_GOOGLE_CLIENT_ID -e OWL_GOOGLE_CLIENT_SECRET -e OWL_GOOGLE_DOMAIN -e OWL_MATTERMOST_WEBHOOK_URL \
+  -e OWL_SECRET_KEY -e OWL_GOOGLE_CLIENT_ID -e OWL_GOOGLE_CLIENT_SECRET -e OWL_GOOGLE_DOMAIN -e OWL_MATTERMOST_WEBHOOK_URL \
   -e OWL_BACKUP_S3_ENDPOINT=owl-s3:9090 -e OWL_BACKUP_S3_BUCKET=owl-backups -e OWL_BACKUP_S3_PREFIX=dev \
   -e OWL_BACKUP_S3_ACCESS_KEY=dev -e OWL_BACKUP_S3_SECRET_KEY=dev-only-not-a-secret -e OWL_BACKUP_S3_INSECURE=true \
   "$IMAGE" server >/dev/null
