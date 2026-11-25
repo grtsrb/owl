@@ -170,7 +170,8 @@ rescan, cancel or accept.
 
 ### Registry credentials
 
-Admins in the browser only, reads included — API tokens get `403`. A password is accepted, never returned.
+Logins: admins in the browser only, reads included — API tokens get `403`. A password is accepted, never
+returned.
 
 | Endpoint | |
 |---|---|
@@ -178,6 +179,8 @@ Admins in the browser only, reads included — API tokens get `403`. A password 
 | `POST /registries` | `{"prefix", "username", "password", "expiresAt": "2027-03-31" \| ""}` → `201`; `409` for a known prefix, one from the file, or without `OWL_SECRET_KEY` |
 | `PUT /registries` | `{"prefix", "expiresAt", "username"?, "password"?}` — username + password together replace the login; without them only the expiry changes → `204` |
 | `DELETE /registries` | `{"prefix"}` → `204`, `404` if the UI has none |
+| `GET /registries/internal` | `{server[], ui[]}` — in-house registries from `OWL_INTERNAL_REGISTRIES` (read-only) and from the UI. Any signed-in user. |
+| `PUT /registries/internal` | `{"registries": ["registry.gitlab.example.com", "10.20.0.5:5000"]}` → `{ui[]}`: replaces the UI's list (host[:port], at most 50; entries already in the server's list are dropped). Admin. |
 | `POST /registries/test` | `{"prefix"}` → `{outcome: ok\|rejected\|dns\|connect\|tls\|unexpected, message, at}` |
 
 ## Agent ingest

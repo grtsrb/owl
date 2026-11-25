@@ -26,6 +26,49 @@ function testTag(t?: LoginResult) {
 type Mode = { kind: "add" } | { kind: "replace" | "expiry"; cred: RegistryCredential };
 
 export default function RegistriesTab() {
+  return <><InHouseCard /><CredentialsCard /></>;
+}
+
+// In-house registries: images from them are the team's own. The server's list (env) is read-only here.
+function InHouseCard() {
+  const list = useApi(api.internalRegistries);
+  const w = useWrite();
+  const [text, setText] = useState<string | null>(null); // null = not edited
+  if (list.error) return <ErrorBox error={list.error} retry={list.reload} />;
+  if (!list.data) return <Loading />;
+  const { server, ui } = list.data;
+  const value = text ?? ui.join("\n");
+  return (
+    <Card title="In-house registries">
+      <p className="subtle" style={{ marginTop: 0 }}>
+        Images from these registries are your own: listed as <b>in-house</b> (not compared with upstream releases), shown first on the
+        Vulnerabilities page and counted in the digest's in-house line. A registry given as an IP address is scanned only when it's listed
+        here. A host covers its subdomains; no paths.
+      </p>
+      {server.length > 0 && (
+        <div className="row" style={{ flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          <span className="subtle" style={{ margin: 0 }}>From the server's environment (OWL_INTERNAL_REGISTRIES):</span>
+          {server.map((r) => <Tag key={r}>{r}</Tag>)}
+        </div>
+      )}
+      <form className="stack" onSubmit={async (e) => {
+        e.preventDefault();
+        const regs = value.split(/[\n,]/).map((r) => r.trim()).filter(Boolean);
+        const r = await w.run(() => api.setInternalRegistries(regs), "Saved. In-house marking applies right away.");
+        if (r) { setText(null); list.reload(); }
+      }}>
+        <label className="field">{server.length > 0 ? "More, one per line" : "One per line"}
+          <textarea className="input mono" rows={Math.max(3, value.split("\n").length + 1)} value={value}
+            placeholder={"registry.gitlab.example.com\n10.20.0.5:5000"} onChange={(e) => setText(e.target.value)} />
+        </label>
+        <Msg msg={w.msg} />
+        <div><button className="btn primary" disabled={w.busy || text === null}>{w.busy ? "Saving…" : "Save"}</button></div>
+      </form>
+    </Card>
+  );
+}
+
+function CredentialsCard() {
   const view = useApi(api.registries);
   const w = useWrite();
   const [mode, setMode] = useState<Mode | null>(null);
@@ -42,7 +85,7 @@ export default function RegistriesTab() {
   };
   return (
     <>
-      <Card title="Registry credentials"
+      <Card title="Registry logins"
         actions={canEdit && <button className="btn primary small" onClick={() => setMode({ kind: "add" })}>Add credential</button>}>
         <p className="subtle" style={{ marginTop: 0 }}>
           The logins Trivy uses to pull images for vulnerability scans, matched by the longest prefix

@@ -645,8 +645,12 @@ prefix → credential list in **Settings → Registries**; Trivy pulls exactly a
 - Admin only (list included: usernames are half a login), browser only (not in `tokenWrites`), JSON bodies,
   audit-logged (prefix + username, never the password). Prefix rules = the file's; username ≤ 256, password
   ≤ 4096 bytes, no control characters (they go into env vars).
-- Not done: `OWL_INTERNAL_REGISTRIES` in the UI (the user's registries have hostnames; reaching them through
-  ziti is DNS, which stays allowed).
+- **In-house registries** (agreed 2026-11-26, same page): a list of hosts (`host[:port]`, ≤ 50) in the
+  `internalRegistries` setting (restored with backups), merged with `OWL_INTERNAL_REGISTRIES` (read-only in the
+  UI) by `ReloadCatalog` — applied at once. Same meaning as the env: in-house marking + an IP-literal registry
+  may be scanned. The UI refuses loopback, link-local, unspecified/multicast addresses, `localhost` and
+  metadata names (never a registry; would reopen the SSRF the scan guard closes). Readable by every signed-in
+  user, changed by admins (browser only: not in `tokenWrites`).
 
 ## Docker hosts (agreed 2026-11-25, milestone 16)
 - **What**: plain Docker / Compose hosts — their containers and images, plus Docker Engine and OS version.

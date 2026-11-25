@@ -165,7 +165,8 @@ listed with **Undo** in Settings → Catalog. **In-house** and **ignore** apply 
 built-in catalog learns the image — an upgrade never undoes your choice (Settings shows "Owl now
 recognizes this as …"); only a component you add yourself for that repository takes precedence. **Map**
 applies only while the catalog doesn't recognize the image; once a component covers it, that one wins
-and Settings shows "Now covered by … — remove?". Registries passed
-in `--internal-registries` are in-house without any override.
+and Settings shows "Now covered by … — remove?". Registries listed in
+Settings → Registries → **In-house registries** (or passed in `--internal-registries`) are in-house without
+any override — every image from them, including new ones.
 
 > **Why:** overrides record a decision about your own environment ("this is ours", "we don't care about this"), so a newer Owl must not quietly undo them. A *map* only fills a gap in the catalog, so it gives way once the catalog covers the image.

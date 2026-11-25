@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"owl/internal/auth"
+	"owl/internal/catalog"
 	"owl/internal/scan"
 	"owl/internal/secretbox"
+	"owl/internal/snapshot"
 	"owl/internal/store"
 )
 
@@ -185,5 +187,61 @@ func TestRegistryCredentials(t *testing.T) {
 	}
 	if n != 5 {
 		t.Fatalf("audit entries: %d", n)
+	}
+}
+
+func TestInternalRegistries(t *testing.T) {
+	srv, db, s, _ := setupVulns(t)
+	ctx := context.Background()
+	base := srv.URL + "/api/v1/registries/internal"
+	// setupVulns' server list: registry.gitlab.example.com. Viewers read, only admins change.
+	code, out := call(t, "GET", base, "", false)
+	if code != 200 || len(out["server"].([]any)) != 1 || len(out["ui"].([]any)) != 0 {
+		t.Fatalf("get: %d %v", code, out)
+	}
+	if code, _ := call(t, "PUT", base, `{"registries":["a.example.com"]}`, false); code != http.StatusForbidden {
+		t.Fatalf("viewer put: %d", code)
+	}
+	for _, bad := range []string{"169.254.169.254", "127.0.0.1:5000", "localhost:5000", "metadata.google.internal", "reg.example.com/team", "a b", "[::1]:5000", "reg.example.com:http"} {
+		if code, _ := call(t, "PUT", base, `{"registries":["`+bad+`"]}`, true); code != http.StatusBadRequest {
+			t.Fatalf("%s accepted: %d", bad, code)
+		}
+	}
+
+	// The image on the IP-literal registry isn't scanned until that registry is listed; listing it (in the
+	// UI, no restart) marks it in-house and lets it be scanned. The server's own entry isn't duplicated.
+	sn := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, AgentVersion: "test", Cluster: snapshot.Cluster{
+		KubernetesVersion: "v1.33.6+k3s1", Nodes: []snapshot.Node{{Name: "n1", Architecture: "arm64"}}}}
+	for _, w := range []struct{ name, image, id string }{
+		{"app", "registry.gitlab.example.com/team/app:1.0", "registry.gitlab.example.com/team/app@" + digestOf("a")},
+		{"ziti", "10.20.0.5:5000/team/tool:2.1", "10.20.0.5:5000/team/tool@" + digestOf("d")},
+	} {
+		sn.Workloads = append(sn.Workloads, snapshot.Workload{Kind: "Deployment", Namespace: "seed", Name: w.name, DesiredReplicas: 1,
+			Containers: []snapshot.Container{{Name: w.name, Image: w.image}},
+			Running:    []snapshot.RunningImage{{Container: w.name, Image: w.image, ImageID: w.id, Pods: 1, Ready: 1}}})
+	}
+	cs, _ := db.ListClusters(ctx)
+	tok, hash, prefix := auth.NewToken()
+	_ = db.AddToken(ctx, cs[0].ID, hash, prefix)
+	if code := push(t, srv.URL, tok, sn); code != http.StatusAccepted {
+		t.Fatalf("push: %d", code)
+	}
+	if id := s.cat().Identify("10.20.0.5:5000/team/tool:2.1"); id.Status == catalog.StatusInHouse {
+		t.Fatal("in-house before it was listed")
+	}
+	if code, out := call(t, "PUT", base, `{"registries":[" HTTPS://10.20.0.5:5000/ ","registry.gitlab.example.com","10.20.0.5:5000"]}`, true); code != 200 || len(out["ui"].([]any)) != 1 {
+		t.Fatalf("put: %d %v", code, out)
+	}
+	if id := s.cat().Identify("10.20.0.5:5000/team/tool:2.1"); id.Status != catalog.StatusInHouse {
+		t.Fatalf("not in-house after listing: %+v", id)
+	}
+	waitFor(t, "scan of the newly allowed registry", func() bool { return s.Scans.Results()[digestOf("d")] != nil })
+
+	// Kept across a catalog reload (start, restore) and readable back.
+	if err := s.ReloadCatalog(ctx); err != nil || s.cat().Identify("10.20.0.5:5000/x/y:1").Status != catalog.StatusInHouse {
+		t.Fatalf("after reload: %v", err)
+	}
+	if _, out := call(t, "GET", base, "", false); out["ui"].([]any)[0] != "10.20.0.5:5000" {
+		t.Fatalf("get after put: %v", out)
 	}
 }

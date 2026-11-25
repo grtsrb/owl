@@ -15,6 +15,8 @@ What each milestone shipped. Newest first.
 - Expiry dates (also `expires:` in `OWL_REGISTRY_AUTH_FILE`): warnings 14 days ahead on the page, in the
   Scanner panel and in the weekly digest.
 - `OWL_REGISTRY_AUTH_FILE` still works; its entries are listed read-only and win over the UI.
+- **In-house registries** on the same page: every image from them is in-house (and a registry given as an IP
+  address can be scanned), applied at once. `OWL_INTERNAL_REGISTRIES` still works and is shown read-only.
 
 ## Image vulnerability scanning (milestone 15)
 

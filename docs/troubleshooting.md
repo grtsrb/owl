@@ -166,8 +166,9 @@ does this too). Push it to a registry and deploy it from there to get it scanned
 
 Owl doesn't pull images from IP-address, `localhost` or metadata-service registries unless you configured
 them (so a leaked agent token can't point the server at its own network). If it's a real registry, add it
-to `OWL_INTERNAL_REGISTRIES` and restart the server, or give it a login (Settings → Registries or
-`OWL_REGISTRY_AUTH_FILE`).
+under Settings → Registries → **In-house registries** (or `OWL_INTERNAL_REGISTRIES`, then restart), or give
+it a registry login. Local, link-local and metadata addresses can't be added in the UI — they're never a
+registry.
 
 ### "not in the registry (pulled from a mirror, deleted, or built locally)"
 

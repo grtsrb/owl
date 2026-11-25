@@ -141,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	s.tokenRoutes(mux)
 	s.vulnRoutes(mux)
 	s.registryRoutes(mux)
+	s.internalRegistryRoutes(mux)
 	mux.HandleFunc("GET /api/v1/docs", s.listDocs)
 	mux.HandleFunc("GET /api/v1/docs/{page}", s.docPage)
 	mux.HandleFunc("GET /api/v1/cli", s.listCLI)

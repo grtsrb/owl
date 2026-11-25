@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/netip"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -370,4 +373,117 @@ func (s *Server) testRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "registry credential tested", "prefix", p, "outcome", res.Outcome)
 	writeJSON(w, http.StatusOK, res)
+}
+
+// In-house registries (milestone 15.1): images from them are the team's own (listed, not scored, first on
+// the Vulnerabilities page) and may be pulled even when the host is an IP address. The server's list
+// (--internal-registries / OWL_INTERNAL_REGISTRIES) is read-only here; the UI's is a setting (restored with
+// backups) merged into the catalog by ReloadCatalog.
+
+const (
+	settingInternalRegistries = "internalRegistries" // newline-separated hosts (host[:port])
+	maxInternalRegistries     = 50
+)
+
+func splitRegistries(v string) []string {
+	out := []string{}
+	for _, r := range strings.Split(v, "\n") {
+		if r = strings.TrimSpace(r); r != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (s *Server) internalRegistryRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/registries/internal", s.getInternalRegistries)
+	mux.HandleFunc("PUT /api/v1/registries/internal", s.requireAdmin(s.putInternalRegistries))
+}
+
+func (s *Server) getInternalRegistries(w http.ResponseWriter, r *http.Request) {
+	sets, err := s.Store.GetSettings(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	env := []string{}
+	if s.Catalog != nil {
+		env = append(env, s.Catalog.InternalRegistries...)
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"server": env, "ui": splitRegistries(sets[settingInternalRegistries])})
+}
+
+// normRegistryHost checks one in-house registry: a host name or IP with an optional port. Local, link-local
+// and metadata addresses are refused — they're never a registry, and allowing them would let a leaked agent
+// token point scans at the server's own network.
+func normRegistryHost(h string) (string, string) {
+	h = strings.ToLower(strings.TrimSpace(h))
+	h = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(h, "https://"), "http://"), "/")
+	bad := func(why string) (string, string) { return "", h + ": " + why }
+	if h == "" || len(h) > 253 {
+		return bad("a registry host like registry.gitlab.example.com or 10.0.0.5:5000")
+	}
+	host, port := h, ""
+	if i := strings.LastIndex(h, ":"); i > 0 && !strings.HasSuffix(h, "]") && strings.Count(h, ":") == 1 {
+		host, port = h[:i], h[i+1:]
+	} else if strings.HasPrefix(h, "[") {
+		if j := strings.Index(h, "]"); j > 0 {
+			host, port = h[1:j], strings.TrimPrefix(h[j+1:], ":")
+		}
+	}
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return bad("the port must be a number")
+		}
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return bad("a local or link-local address (e.g. the metadata service) is never a registry")
+		}
+		return h, ""
+	}
+	if !reRegistryHost.MatchString(host) {
+		return bad("a registry host like registry.gitlab.example.com (no path: the whole registry is in-house)")
+	}
+	if ok, _ := scan.RegistryAllowed(host, nil); !ok {
+		return bad("localhost and metadata names are never a registry")
+	}
+	return h, ""
+}
+
+var reRegistryHost = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
+
+func (s *Server) putInternalRegistries(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Registries []string `json:"registries"`
+	}
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	if len(b.Registries) > maxInternalRegistries {
+		httpError(w, http.StatusBadRequest, "registries: at most 50")
+		return
+	}
+	out := []string{}
+	for _, raw := range b.Registries {
+		h, problem := normRegistryHost(raw)
+		if problem != "" {
+			httpError(w, http.StatusBadRequest, problem)
+			return
+		}
+		if !slices.Contains(out, h) && (s.Catalog == nil || !slices.Contains(s.Catalog.InternalRegistries, h)) {
+			out = append(out, h)
+		}
+	}
+	if err := s.Store.SetSetting(r.Context(), settingInternalRegistries, strings.Join(out, "\n")); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.audit(r, "in-house registries changed", "registries", strings.Join(out, ","))
+	ctx := context.WithoutCancel(r.Context())
+	if err := s.ReloadCatalog(ctx); err != nil {
+		s.Log.Error("catalog reload failed", "err", err)
+	}
+	s.kickScans() // an IP-address registry just listed can be scanned now
+	writeJSON(w, http.StatusOK, map[string][]string{"ui": out})
 }

@@ -124,7 +124,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
   keys, Claude API key, GitHub token, SMTP password) never reach it. Only proxy and CA settings pass through.
 - The registry comes from what the agents report, so a leaked agent token could name any host. Owl never
   pulls from a registry that is an IP address, `localhost` or a cloud metadata name (`169.254.169.254`,
-  `metadata.google.internal`, …) unless it's listed in `OWL_INTERNAL_REGISTRIES` or has a registry login;
+  `metadata.google.internal`, …) unless it's an in-house registry (`OWL_INTERNAL_REGISTRIES` or Settings → Registries — the UI refuses
+  loopback, link-local and metadata addresses) or has a registry login;
   such images show as *not scannable*. Registry logins only go to the host in their own prefix (and, for
   **Test**, to the token endpoint that registry names — never an IP-address, local or metadata one).
 - Registry logins added in the UI are **write-only** (never shown or returned again, never in logs or the
