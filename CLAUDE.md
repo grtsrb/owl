@@ -19,7 +19,8 @@ Mattermost notifications, catalog from the UI + Settings reorganised, CLI + pers
 from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`. Milestone 13 (bigger built-in
 catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (Elastic, networking, certs,
 monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) and
-GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". Keep this file's commands and
+GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-25 (DESIGN.md "Milestones (v2)"):
+14 slim agent image → 15 server-side Trivy image scanning → 16 Docker hosts. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands

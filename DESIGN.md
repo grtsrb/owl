@@ -14,7 +14,8 @@ agreed 2026-11-16; Claude summaries, sign-in, packaging and notifications 2026-1
 - v1 tracks: third-party components in Kubernetes + each cluster's RKE2/Kubernetes version.
 - Initial catalog: Grafana, ingress-nginx (controller), nginx (plain), CoreDNS, Longhorn, Redis,
   Postgres, Redpanda, HAProxy, HAProxy Kubernetes Ingress — extensible.
-- Out of v1: Docker hosts, Git repo scanning, managed cloud services, version scoring of in-house
+- Out of v1 (Docker hosts and image scanning: agreed for v2 2026-11-25, see "Image scanning (Trivy)" and
+  "Docker hosts"): Git repo scanning, managed cloud services, version scoring of in-house
   services (listed only), Helm release data (opt-in later — needs Secret read access).
 
 ## Clusters
@@ -90,7 +91,7 @@ cluster (each)                               server (Docker locally, later one E
 ## Security & lifecycle
 - Advisories: OSV.dev (Go modules: kubernetes, rke2, k3s, ingress-nginx, grafana, coredns) or the
   GitHub repo's published security advisories → "affected, fixed in X". Blind spot: vulns in bundled
-  OS packages/libs (later: ingest Trivy Operator reports).
+  OS packages/libs → closed by server-side Trivy scanning (agreed 2026-11-25, see "Image scanning (Trivy)").
   - **Ranges are evaluated locally**, never via OSV's per-version query: for modules whose tags aren't
     Go module versions (ingress-nginx `controller-v1.x`, Grafana) that query returns every advisory
     regardless of version (verified: latest ingress-nginx "had" CVE-2025-1974).
@@ -446,7 +447,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   password?" can't cancel an admin's link); invites replace each other. Audit entries carry the user's email.
 
 ## Packaging (agreed 2026-11-17, milestone 9)
-- Production: **Docker Compose on one EC2 instance** (t4g.small, data on its own EBS volume at `/srv/owl`)
+- Production: **Docker Compose on one EC2 instance** (t4g.small; t4g.medium once Trivy scanning lands, data on its own EBS volume at `/srv/owl`)
   with **Caddy** for automatic Let's Encrypt HTTPS (`deploy/compose`). Owl not published; Caddy has a fixed
   IP that is the only trusted proxy. Container read-only, caps dropped, `HEALTHCHECK` via `owl healthcheck`.
 - Alternative: `deploy/server` — one-replica StatefulSet + PVC + example Ingress (documented trade-off: Owl
@@ -512,6 +513,22 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 13. **Bigger built-in catalog** (designed 2026-11-19, see "Bigger built-in catalog"): refresh only running
     components, overrides that survive upgrades, quiet recognition, `bundledWith`, then catalog batches.
 
+## Milestones (v2, agreed 2026-11-25 after the team demo)
+14. **Slim agent image**: agent-only binary and image (plan below). Comes first: the host agent is that binary.
+15. **Image scanning (Trivy), server-side**, clusters first — the team's pain point is in-house images.
+16. **Docker hosts**: their images get scanning for free, because 15 exists by then.
+Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDuty & co.: "Later".
+
+### Slim agent image (milestone 14)
+- Today agent and server share one
+  image (`owl:dev`, ~86 MB: server, UI, CLI downloads for 4 platforms); the role is only the command
+  (`owl agent` / `owl server`). Every cluster pulls all of it, and image scanners in the clusters report
+  findings for server-only libraries (S3 client, Claude SDK, SQLite). Plan: a second Dockerfile target
+  with an agent-only binary (build tag, like `owlclient` — no server, SQLite, UI, Claude or S3 code),
+  distroless static, same version tag; `make image` / `image-push` build both, the agent manifest and
+  `/api/v1/agent/manifest` point to the agent image, `stack-up` imports it into k3d. Check that the
+  agent-only build really drops those deps (`go list -deps`).
+
 ## Docs in the app (agreed 2026-11-20)
 - **What**: `docs/*.md` (all but `development.md`, which is for contributors; README stays the GitHub landing page)
   served inside Owl, for the people who host, run and use it: what each feature does, how it works and **why**.
@@ -534,9 +551,92 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
   Catalog / Notifications / Backups / Users and Account; the level legend. Targets live in `web/src/dochelp.ts`
   and are checked against the built docs by a test.
 
+## Image scanning (Trivy) (agreed 2026-11-25, milestone 15)
+- **Why**: many in-house images, which Owl only lists; and the blind spot of bundled OS packages/libraries in
+  third-party images.
+- **Server-side only.** The server scans each **digest** once (agents already report `imageID`), one shared
+  Trivy DB, so a digest in 3 clusters and 2 hosts is one scan and results never disagree between paths.
+  Rejected: Trivy in the agent (needs `imagePullSecrets` = Secret read, or the containerd socket = root on
+  nodes; ~100 MB binary + DB + >1 GB RAM per scan breaks "lightweight agent"); both agent and server (two DBs,
+  two answers); Trivy Operator (operator per cluster, doesn't cover hosts).
+- **Trivy binary in the server image only** (not the agent image), run as a subprocess with JSON output —
+  not linked as a Go library (huge dependency tree). DB + layer cache in the data volume (`/data/trivy`), DB
+  from `mirror.gcr.io` (Trivy's default). Image grows ~100 MB; production instance → t4g.medium.
+- **Scope**: every running image. In-house images are shown first; for third-party images the findings sit next
+  to the upgrade advice, not instead of it.
+- **Registry credentials**: `OWL_REGISTRY_AUTH_FILE`, a read-only mounted YAML list of
+  `prefix` → `username`/`password` (e.g. one GitLab **group deploy token**, `read_registry` only, per group or
+  organisation — covers subgroups). Longest prefix wins; no match = anonymous (public registries). The
+  credential reaches Trivy per scan through env vars, never arguments (visible in `ps`). Never in the UI, the
+  DB or backups. Auth failures shown per prefix.
+- **When**: a digest is scanned when a source first reports it (the `kickFetch` path); every running digest is
+  rescanned daily after the DB update (layer cache = no re-download). One scan at a time, with a timeout.
+  Digests no longer running anywhere lose their results. **Rescan now** (admin, image row + detail page) puts the
+  digest at the front; a second click while queued/running does nothing; no "rescan all".
+- **Storage**: results in SQLite, **not in backups** (regenerable, like the upstream cache); after a restore
+  everything is rescanned.
+- **Separate signal — priority levels are unchanged.** Nearly every image has some fixable critical OS-package
+  CVE; folding them in would make everything red. Whether a threshold ever feeds priority: decide later on
+  real data.
+- **Overlap with Owl's advisories**: Owl's OSV/GitHub advisories are about the component itself and drive
+  priority; Trivy is about what's inside the image. A Trivy finding whose CVE/GHSA id (or alias) Owl already
+  lists is shown once, in "Component advisories", tagged "Trivy: confirmed", and left out of the Trivy list and
+  counts. Trivy findings Owl's data calls not affected (vendor backports) stay in the Trivy list, no priority.
+- **UI**: a "Vulns" column on image rows — fixable Critical/High (`3C · 12H`), `—` when none, "not scanned
+  yet". A **Vulnerabilities** page: images (in-house first, fixable only by default) → per image CVE, package,
+  installed / fixed version, type (OS or language). Component pages: "Component advisories" + "Image
+  vulnerabilities (Trivy)". Images that can't be pulled: "not scannable — not in a registry".
+- **Scanner panel** (Vulnerabilities page, every signed-in user; polls every few seconds while open — no new
+  transport, CSP unchanged): now scanning (image, digest, reason new/daily/manual, elapsed vs timeout — Trivy
+  gives no percentage), queue (next items + reason, total), last ~20 scans (duration; OK / failed with reason
+  — auth failed for prefix, timeout, not in a registry / cancelled), health (DB version + update time, last
+  finished daily rescan). Admins can **cancel** the running scan or drop a queued one (audit-logged; the next
+  daily rescan picks it up again).
+- **Accepting a finding** (= the team agreed to leave this CVE): admin, per CVE **per image repository** (all
+  tags/digests), reason required, optional expiry (after it, it counts again). Audit-logged, **kept in backups**
+  (a decision, like catalog overrides), left out of the counts.
+- **Notifications**: weekly digest only — fixable Critical/High counts for in-house images and the change since
+  last week. No per-CVE alerts (daily DB updates would make them noise).
+- **CLI**: `owl vulns [--image …] [--fail-on critical]` (read path, like `owl outdated`; a CI gate later).
+
+## Docker hosts (agreed 2026-11-25, milestone 16)
+- **What**: plain Docker / Compose hosts — their containers and images, plus Docker Engine and OS version.
+  Many hosts are being migrated to k8s, some stay; worth it. Containers on RKE2 nodes outside k8s and OS
+  package scanning of hosts: not now.
+- **A source has a kind**: `cluster` | `host`, same name, stage, tenant, token and status (waiting for first
+  report → OK → stale). Hosts appear in the cluster picker (host icon) and tenant presets. A Compose
+  project/service is a workload (`com.docker.compose.*` labels); a container without Compose is its own workload.
+  The host's "platform version" = Docker Engine + OS, **scored** like RKE2/Kubernetes via endoflife.date
+  (verified slugs only; e.g. Ubuntu past EOL → 🔴).
+- **Drift**: hosts take part in stage-order drift within their tenant like clusters (a staging host vs a live
+  cluster) — useful during the migration.
+- **Agent on the host**: one Compose file, generated by the server like the k8s manifest, two containers —
+  `wollomatic/socket-proxy` (pinned) with an exact path allowlist: `GET /containers/json`, `/images/json`,
+  `/version`, `/info`, nothing else; and `owl agent --docker` (the slim agent) talking only to the proxy, never
+  mounting the socket. The Docker socket has no read-only mode (even `:ro` can start a privileged container),
+  so the proxy is the only supported setup. `docker-socket-proxy` was rejected: `CONTAINERS=1` also allows
+  inspect (every container's env = passwords) and logs.
+- **Sent**: container name, image, image ID, state, and only the `com.docker.compose.project`/`service` labels —
+  never other labels (they often hold secrets, e.g. Traefik basic-auth hashes). Identity from the token, as for
+  clusters.
+- **Adding hosts**: UI "Add host" → download the Compose file + a `.env` with the token, `docker compose up -d`;
+  or `owl host add <name> --stage … --tenant … --env-file owl-agent.env` (token straight to a file, through the
+  existing API-token path for `POST /clusters` with a kind). **Owl never deploys to hosts** and never holds SSH
+  keys (that would be root on every host on an internet-facing app — the host version of "no kubeconfigs").
+  No Ansible bundle or example for now.
+- **Notifications**: the "new cluster connected" summary becomes "new source connected", saying host or cluster.
+- **Host-only images** (built on the host, never pushed): "not scannable — not in a registry". **Planned, built
+  only if these turn out common** (after milestone 16): an optional Trivy client container in the host's
+  Compose file reads local images through the proxy (+ the read-only image export endpoint) and sends only
+  package lists to Owl, which checks the agent token and forwards to its internal `trivy server` — one DB, the
+  image never leaves the host. Needs a new authenticated endpoint (a security decision).
+
 ## Later (TODO, parked by the user)
 - **Catalog batch 3** (parked 2026-11-20; confirm the list with the user before starting):
   data: MySQL/MariaDB, MongoDB, RabbitMQ, Kafka/Strimzi, OpenSearch, Memcached, etcd, CloudNativePG;
   policy: Kyverno, Gatekeeper, Trivy Operator, Falco; ops: Keycloak, KEDA, cluster-autoscaler, Rancher, Reloader.
+- **Security single pane (GuardDuty & co.)** (parked 2026-11-25, team idea from the demo): when picked up,
+  ingest **AWS Security Hub** (already aggregates GuardDuty, Inspector, …) rather than each service. Inspector
+  also scans ECR images and EC2 — overlaps with Trivy.
 - **GitOps (Argo CD, Flux) and Harbor** catalog entries (deferred 2026-11-19). Tekton and MinIO stay left out
   (reasons in "Bigger built-in catalog").
