@@ -9,6 +9,8 @@ what to upgrade first and why.
 - The **server** maps images to upstream projects, checks release lines, end-of-life dates and
   security advisories, applies your version policy and gives every component a **priority level**
   with plain-language reasons ("CVE-2025-1974 (critical), fixed in 1.11.5").
+- It **scans the running images with Trivy** on the server — OS packages and libraries, including your
+  in-house images — as a separate signal next to the priority levels.
 - It shows **drift between stages** ("newer in staging, not yet in prod"), keeps a **change history**,
   and backs itself up to S3.
 - Optionally, **Claude summarizes the release notes** of each upgrade you need — breaking changes,
@@ -61,4 +63,5 @@ caps — invite-only sign-in with passwords or Google, email, Docker Compose/Kub
 Mattermost notifications: weekly digest and alerts, adding catalog components from the UI, and the
 `owl` CLI with personal API tokens and users from a file). Milestone 13 — a much longer built-in
 catalog of common infrastructure tools — is under way. v2 has started: the agent has its own slim image
-(milestone 14); next are image vulnerability scanning with Trivy and Docker hosts (roadmap in DESIGN.md).
+(milestone 14) and the server scans running images with Trivy (milestone 15); next are Docker hosts
+(roadmap in DESIGN.md).

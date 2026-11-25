@@ -14,6 +14,9 @@ type Doc struct {
 	Intro    []Line
 	Sections []Section
 	Footer   []Line
+
+	vulns     *VulnSummary // the digest's numbers, stored after a scheduled send
+	vulnsBase string       // what they were compared with
 }
 
 type Section struct {

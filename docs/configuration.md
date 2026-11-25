@@ -31,7 +31,37 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 | — | `GITHUB_TOKEN` | — | GitHub token **with no scopes**. Without it: 60 requests/hour, incomplete data. |
 | — | `OWL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. A level saved in the UI overrides it. |
 | — | `ANTHROPIC_API_KEY` | — | Claude API key for [upgrade summaries](operations.md#claude-upgrade-summaries). Without it summaries can only run in *estimate* mode. Never logged. |
+| — | `OWL_SCAN` | on | `off` switches [image scanning](concepts.md#image-vulnerabilities) off. It's also off with `--no-upstream` or when Trivy isn't found. |
+| — | `OWL_TRIVY` | `trivy` in `PATH` (the image has `/usr/local/bin/trivy`) | The Trivy binary. |
+| — | `OWL_TRIVY_CACHE` | `<db dir>/trivy` | Trivy's vulnerability DB and cache, about **3.5 GB** (DB 1.7 GB + Java DB 1.5 GB). Not in backups. |
+| — | `OWL_REGISTRY_AUTH_FILE` | — | Registry logins for scanning private images (below). Without it only public images can be scanned. A broken file stops the server. |
 | — | `OWL_CLAUDE_MODEL` | `claude-sonnet-5-5` | The *default* model for summaries; admins choose another in Settings → Claude summaries. Must be one Owl has a price for (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-fable-5-2`), otherwise the server refuses to start — it can't enforce the caps for a model it can't price. |
+
+### Registry logins for image scanning
+
+A YAML list of image prefixes and the login to use for them. The longest matching prefix wins; an image
+with no match is pulled anonymously.
+
+```yaml
+# OWL_REGISTRY_AUTH_FILE, e.g. /run/secrets/owl-registries.yaml (mount it read-only, chmod 600)
+- prefix: registry.gitlab.example.com/team-a          # team-a and its subgroups
+  username: gitlab+deploy-token-12                    # a GitLab group deploy token with read_registry only
+  password: <token>
+- prefix: registry.gitlab.example.com/data-science
+  username: gitlab+deploy-token-40
+  password: <token>
+- prefix: registry.gitlab.com/other-org
+  username: <user>
+  password: <token>
+```
+
+- A prefix matches at a path boundary: `…/team-a` covers `…/team-a/app` and `…/team-a/sub/app`, never
+  `…/team-ab/app`. `docker.io`, `index.docker.io` and Docker Hub's short names are the same registry.
+- Use **read-only** credentials: a GitLab **group deploy token** with only `read_registry`, one per group,
+  so nobody needs a token that reads every group.
+- The login reaches Trivy only for that scan, as environment variables — never as command-line arguments
+  (visible in `ps`), never in the UI, the database, backups or logs. The Scanner panel shows the prefixes
+  and any that failed to log in.
 
 ### Sign-in
 
@@ -150,9 +180,10 @@ See [CLI](cli.md).
 │   ├── owl-20261117-030000.db.gz              daily / manual backup (UTC timestamp)
 │   ├── owl-20261117-091502-pre-restore.db.gz  safety backup taken before a restore
 │   └── .owl-20261117-030000.db.gz.uploaded    marker: this copy is in the bucket
-└── logs/
-    ├── server.log                 current log (JSON lines)
-    └── server-20261116-…log.gz    rotated, gzipped
+├── logs/
+│   ├── server.log                 current log (JSON lines)
+│   └── server-20261116-…log.gz    rotated, gzipped
+└── trivy/                         Trivy's vulnerability DB and cache (~3.5 GB; not in backups)
 ```
 
 Back up the whole volume if you like, but the supported way is Owl's own backups — they're

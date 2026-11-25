@@ -7,6 +7,7 @@ import { FLAG, unrecognizedIn, workloadCount, workloadsFor, type WorkloadRow } f
 import LevelHelp from "../components/LevelHelp";
 import { ago, Card, Empty, ErrorBox, LevelBadge, LevelBar, levelLabel, Loading, Msg, Pager, useApi } from "../ui";
 import { clusterCounts, k8sStatus } from "./Overview";
+import { useVulnsByPlace, VulnCell } from "./Vulns";
 
 type Tab = "all" | "third" | "inhouse" | "unrecognized";
 const TABS: [Tab, string][] = [["all", "All"], ["third", "Third-party"], ["inhouse", "In-house"], ["unrecognized", "Unrecognized"]];
@@ -79,7 +80,7 @@ export default function ClusterDetail() {
           ))}
         </div>
       }>
-        {shown.length === 0 ? <Empty>Nothing in this view.</Empty> : <WorkloadTable rows={pg.items} />}
+        {shown.length === 0 ? <Empty>Nothing in this view.</Empty> : <WorkloadTable rows={pg.items} cluster={cl.name} />}
         <FlagLegend rows={rows} />
         <LevelHelp />
         <Pager page={pg.page} pages={pg.pages} start={pg.start} shown={pg.items.length} total={pg.total} size={pageSize}
@@ -104,11 +105,12 @@ function FlagLegend({ rows }: { rows: WorkloadRow[] }) {
   );
 }
 
-function WorkloadTable({ rows }: { rows: WorkloadRow[] }) {
+function WorkloadTable({ rows, cluster }: { rows: WorkloadRow[]; cluster: string }) {
+  const vulnsAt = useVulnsByPlace();
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Namespace / workload</th><th>Kind</th><th>Image</th><th>Component</th><th>Version</th><th>Level and why</th></tr></thead>
+        <thead><tr><th>Namespace / workload</th><th>Kind</th><th>Image</th><th>Component</th><th>Version</th><th>Level and why</th>{vulnsAt && <th title="Trivy: fixable Critical/High in the image (not a priority level)">Vulns</th>}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
@@ -129,6 +131,7 @@ function WorkloadTable({ rows }: { rows: WorkloadRow[] }) {
                   </div>
                 )}
               </td>
+              {vulnsAt && <td><VulnCell images={vulnsAt({ cluster, namespace: r.namespace, kind: r.kind, workload: r.workload, container: r.container })} /></td>}
             </tr>
           ))}
         </tbody>

@@ -16,7 +16,9 @@ services:
       OWL_LISTEN: 0.0.0.0:8080 # inside the Docker network only: no ports are published
       OWL_TRUSTED_PROXIES: 172.30.80.10 # Caddy (fixed address below): real client IPs in logs/audit
     volumes:
-      - ${OWL_DATA_DIR:-/srv/owl}:/data # database, backups, logs — owned by uid 65532
+      - ${OWL_DATA_DIR:-/srv/owl}:/data # database, backups, logs, Trivy DB (~3.5 GB) — owned by uid 65532
+      # Registry logins for image scans (private registries), then set OWL_REGISTRY_AUTH_FILE in .env:
+      # - ./registries.yaml:/run/secrets/owl-registries.yaml:ro
     tmpfs:
       - /tmp:size=256m # SQLite's temporary files (VACUUM INTO for backups)
     read_only: true

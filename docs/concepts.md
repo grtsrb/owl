@@ -179,8 +179,8 @@ Grafana), that query returns every advisory regardless of version.
   metrics-server). Owl says so explicitly; it never shows "no vulnerabilities" for these.
 - Unpinned tags are never evaluated: `redis:7` could be any 7.x.
 
-Blind spot: vulnerabilities in OS packages or libraries bundled into the image are not covered
-(a later version may ingest Trivy Operator reports).
+These are advisories of the **component itself**. What else is inside its image (OS packages, libraries)
+is covered by [image vulnerabilities](#image-vulnerabilities).
 
 > **Why:** silence would read as "no vulnerabilities", which is the one thing Owl must never claim without data. Matching ranges locally gives the same result for every project, whatever its tag format; a range Owl can't decide is shown for review rather than guessed.
 
@@ -267,6 +267,36 @@ is a single `first_snapshot` event rather than hundreds of "added" ones. Replica
 pods are not recorded as changes (too noisy) — only the templates.
 
 > **Why:** the history should answer "what changed and when", not repeat every scaling event. Templates change only when someone deploys; replicas and pods change all the time. One `first_snapshot` event keeps a new cluster from flooding the history.
+
+## Image vulnerabilities
+
+The server scans every running image with [Trivy](https://trivy.dev) for known vulnerabilities in its OS
+packages and libraries — what's *inside* the image, as opposed to the component's own
+[advisories](#advisories).
+
+- **One scan per image digest.** Agents report the exact digest each pod runs; the server pulls that
+  digest from its registry and scans it. The same image in three clusters is one scan. It's scanned for the
+  CPU architecture of the cluster's nodes (amd64/arm64), not the server's.
+- **When**: right after a cluster starts running a new digest, and every running digest again once a day
+  after the vulnerability DB is updated. Admins can **Rescan now**. Digests that no longer run anywhere are
+  forgotten.
+- **Every running image** is scanned; in-house images come first in the lists. Images that were built or
+  imported on a node (no registry digest) are **not scannable**. Workloads scaled to 0 have nothing running,
+  so nothing to scan.
+- **A separate signal.** Image findings never change a component's [priority level](#priority-levels).
+  Nearly every image has some fixable critical OS-package CVE; folding them in would make everything red.
+- **Fixable** = Trivy knows a fixed package version. The lists count fixable Critical/High findings
+  (`3C · 12H`); everything else is one click away.
+- **Overlap with advisories**: when Trivy finds a CVE that Owl already lists as an advisory of the
+  component at that version, it's shown once — in the component's advisories, tagged **Trivy: confirmed**
+  — and not counted again in the image's numbers.
+- **Accepting a finding**: an admin can record that the team agreed to leave a CVE in an image repository
+  (every tag and digest of it), with a reason and optionally an expiry date. Accepted findings don't count;
+  after the date they count again. Acceptances are audit-logged and kept in backups.
+- **No secret scanning**: Trivy runs with vulnerability scanning only, so Owl never collects secrets that
+  happen to be inside an image.
+
+> **Why:** in-house images are scored nowhere else — Owl can't compare them with an upstream — so their OS packages and libraries were a blind spot. Scanning on the server, once per digest, keeps the agent small and read-only (it would otherwise need registry credentials, i.e. Secret access) and gives one answer per image, whichever cluster runs it.
 
 ## Upgrade summaries
 

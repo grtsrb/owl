@@ -11,6 +11,7 @@ import Changes from "./pages/Changes";
 import Clusters from "./pages/Clusters";
 import ClusterDetail from "./pages/ClusterDetail";
 import Settings from "./pages/Settings";
+import VulnsPage, { VulnImagePage } from "./pages/Vulns";
 import Docs, { DocHelp, docsHome } from "./pages/Docs";
 import { DOC_HELP } from "./dochelp";
 import { AcceptPage, LoginPage, takeReturn } from "./pages/Login";
@@ -80,6 +81,7 @@ function Shell() {
           <NavItem to="/" end icon={<Icon.overview />}>Overview</NavItem>
           <NavItem to="/clusters" icon={<Icon.clusters />}>Clusters</NavItem>
           <NavItem to="/changes" icon={<Icon.changes />}>Changes</NavItem>
+          <NavItem to="/vulns" icon={<Icon.shield />}>Vulnerabilities</NavItem>
           <NavItem to="/settings" icon={<Icon.settings />}>Settings</NavItem>
           <NavLink to={docsHome()} className={`nav${pathname.startsWith("/docs") ? " active" : ""}`}><Icon.docs />Docs</NavLink>
           <div className="side-foot">
@@ -102,6 +104,8 @@ function Shell() {
               <Route path="/clusters" element={<Clusters />} />
               <Route path="/clusters/:name" element={<ClusterDetail />} />
               <Route path="/changes" element={<Changes />} />
+              <Route path="/vulns" element={<VulnsPage />} />
+              <Route path="/vulns/:digest" element={<VulnImagePage />} />
               <Route path="/settings" element={<Navigate to="/settings/clusters" replace />} />
               <Route path="/settings/:tab" element={<Settings />} />
               <Route path="/account" element={<AccountPage />} />

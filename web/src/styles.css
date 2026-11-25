@@ -439,3 +439,8 @@ label.btn.disabled { opacity: .45; cursor: not-allowed; }
     box-shadow: -8px 0 30px rgba(0, 0, 0, .15); }
   .topics-tab { position: fixed; top: 50%; right: 0; transform: translateY(-50%); border-radius: 10px 0 0 10px; z-index: 15; }
 }
+
+/* ---------- image vulnerabilities ---------- */
+.vcounts { display: inline-flex; gap: 4px; }
+.vlink { text-decoration: none; }
+.vlink:hover .tag { filter: brightness(.95); text-decoration: underline; }

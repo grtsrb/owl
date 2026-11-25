@@ -197,6 +197,26 @@ var migrations = []string{
 	);`,
 	// Users listed in a users file (`owl users apply`, milestone 12).
 	`ALTER TABLE users ADD COLUMN managed INTEGER NOT NULL DEFAULT 0;`,
+	// Image vulnerability scans (milestone 15). image_scans: dropped from backups, not restored
+	// (regenerable); vuln_acceptances: restored (decisions).
+	`CREATE TABLE image_scans (
+		digest     TEXT PRIMARY KEY,
+		ref        TEXT NOT NULL,
+		scanned_at TEXT,
+		result     TEXT NOT NULL DEFAULT '',
+		error      TEXT NOT NULL DEFAULT '',
+		attempt_at TEXT NOT NULL
+	);
+	CREATE TABLE vuln_acceptances (
+		repository TEXT NOT NULL,
+		vuln_id    TEXT NOT NULL,
+		reason     TEXT NOT NULL,
+		expires_at TEXT,
+		created_by TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (repository, vuln_id)
+	);
+	ALTER TABLE clusters ADD COLUMN node_arch TEXT NOT NULL DEFAULT '';`,
 }
 
 type DB struct{ db *sql.DB }
@@ -331,13 +351,13 @@ func parseTime(s sql.NullString) *time.Time {
 	return &t
 }
 
-const clusterCols = "id, name, stage, tenant, created_at, last_seen_at, kubernetes_version, agent_version"
+const clusterCols = "id, name, stage, tenant, created_at, last_seen_at, kubernetes_version, agent_version, node_arch"
 
 func scanCluster(row interface{ Scan(...any) error }) (*store.Cluster, error) {
 	var c store.Cluster
 	var created string
 	var lastSeen sql.NullString
-	if err := row.Scan(&c.ID, &c.Name, &c.Stage, &c.Tenant, &created, &lastSeen, &c.KubernetesVersion, &c.AgentVersion); err != nil {
+	if err := row.Scan(&c.ID, &c.Name, &c.Stage, &c.Tenant, &created, &lastSeen, &c.KubernetesVersion, &c.AgentVersion, &c.NodeArch); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -594,8 +614,8 @@ func (d *DB) Ingest(ctx context.Context, clusterID int64, snap *snapshot.Snapsho
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE clusters SET last_seen_at=?, kubernetes_version=?, agent_version=? WHERE id=?",
-		at.Format(ts), snap.Cluster.KubernetesVersion, snap.AgentVersion, clusterID); err != nil {
+		"UPDATE clusters SET last_seen_at=?, kubernetes_version=?, agent_version=?, node_arch=? WHERE id=?",
+		at.Format(ts), snap.Cluster.KubernetesVersion, snap.AgentVersion, nodeArch(snap), clusterID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -917,4 +937,20 @@ func (d *DB) SetSetting(ctx context.Context, key, value string) error {
 	_, err := d.db.ExecContext(ctx, `INSERT INTO settings(key, value) VALUES (?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
+}
+
+// nodeArch is the nodes' most common CPU architecture (amd64, arm64): the platform an image is scanned for.
+func nodeArch(snap *snapshot.Snapshot) string {
+	n := map[string]int{}
+	best := ""
+	for _, nd := range snap.Cluster.Nodes {
+		if nd.Architecture == "" {
+			continue
+		}
+		n[nd.Architecture]++
+		if best == "" || n[nd.Architecture] > n[best] || n[nd.Architecture] == n[best] && nd.Architecture < best {
+			best = nd.Architecture
+		}
+	}
+	return best
 }

@@ -112,9 +112,24 @@ What Owl can see, what it stores and sends, and how to run it safely.
 | Your Mattermost (only with `OWL_MATTERMOST_WEBHOOK_URL`) | Digest and alerts: cluster, tenant and stage names, component names, versions, levels, reasons, recommended actions, image repositories, links into Owl. Everyone in the channel sees them. Names are escaped, so nothing in a message can format itself or @-mention people. The webhook URL is a secret and never logged. |
 | Google (only with Google sign-in) | The browser is sent to Google to sign in; the server exchanges the one-time code for the account's ID token. |
 | Claude API (only when summaries are set to manual or automatic) | Only public data: component name (for components added in the UI: their GitHub repository, never the name typed in Owl) and upstream repository, the two versions, upstream release notes. Never cluster names, namespaces, hosts, workloads, tenants, stages, configs or tokens (a test checks every request). |
+| The registries of the running images (image scanning) | Pulls of the exact image digests the agents reported (manifest, config and layers), with the login from `OWL_REGISTRY_AUTH_FILE` for that prefix or anonymously. |
+| `mirror.gcr.io` (image scanning) | Daily download of Trivy's public vulnerability DBs. Nothing about your images is sent: matching happens on the server, and jar hashes are not looked up on Maven Central (`--offline-scan`). |
 | Public container registries (Docker Hub, ghcr.io, quay.io, registry.k8s.io, public.ecr.aws) — only when an admin opens **New component** | Anonymous requests for that one image's manifest and config, to read its source label. Never a private registry, never credentials. |
 | GitHub, endoflife.date — for **New component** suggestions and preview | The repository/product names an admin typed or Owl suggested. |
 | GitHub (raw files), haproxy.org, postgresql.org | Release-note fetches for summaries: public URLs built from the component and its release lines only. |
+
+## Image scanning
+
+- Trivy runs as a separate process with an environment built from scratch: the server's own secrets (S3
+  keys, Claude API key, GitHub token, SMTP password) never reach it. Only proxy and CA settings pass through.
+- It scans for vulnerabilities only — no secret scanning, so secrets inside images are never collected — and
+  reads images only from registries, never from a Docker or containerd socket.
+- Registry logins: read-only tokens, from a file mounted read-only; passed per scan as environment variables;
+  never shown, stored, backed up or logged.
+- The Trivy binary is pinned by digest in the Dockerfile (Trivy's tags were hijacked once, CVE-2026-33634);
+  an upgrade is a reviewed change to that line.
+- Accepting a finding is admin-only and audit-logged; API tokens can read scan results but not accept,
+  rescan or cancel.
 
 ## Reporting a problem
 

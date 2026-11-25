@@ -18,7 +18,8 @@ Running Owl day to day: backups, restore, logs, the audit log, monitoring and ma
 
 **What's in a backup:** everything in the database — clusters, agent token hashes, current
 workloads, change history, stages, tenants, policies, catalog overrides, settings, the audit log —
-**except the upstream cache**, which is refetched (that keeps a backup at ~15 KB instead of ~70 MB).
+**except the upstream cache**, which is refetched (that keeps a backup at ~15 KB instead of ~70 MB), and
+**image scan results**, which are rescanned. Accepted vulnerabilities *are* in backups.
 
 **How:** SQLite `VACUUM INTO` takes a consistent copy while agents keep writing; it's gzipped into
 `backups/owl-<UTC date>-<time>.db.gz` and then uploaded. Always written locally first.
@@ -94,13 +95,14 @@ to upload a `.db.gz` / `.db`. The server then:
    run) — if that fails, nothing is restored,
 3. upgrades the backup to the current schema if it's older,
 4. replaces, **in one transaction**, clusters, agent tokens, current workloads, change history,
-   stages, tenants, policies, catalog overrides and settings,
+   stages, tenants, policies, catalog overrides, accepted vulnerabilities and settings,
 5. applies the restored log settings.
 
 It **keeps**:
 
 - the **audit log** — a restore doesn't rewrite who did what (and the restore itself is audited),
-- the upstream cache,
+- the upstream cache and this server's image scan results (images the restored clusters run that
+  weren't scanned yet are scanned right after),
 - **token revocations**: tokens rotated or belonging to clusters deleted since the backup stay
   revoked. An old backup can't bring a leaked token back to life.
 - **Claude summaries, their request log and their settings** (mode, caps, a pause): summaries cost
@@ -221,6 +223,24 @@ What and when: [User guide → Notifications](user-guide.md#notifications). How 
 
 > **Why:** a notification is only useful when it's news. Recording quietly after a start, a restore or a catalog upgrade means an alert always means something changed in your clusters or upstream — not that Owl restarted.
 
+## Image scanning
+
+How it works: [Concepts → Image vulnerabilities](concepts.md#image-vulnerabilities). Running it:
+
+- **One scan at a time**, 10 minutes at most each. A typical image takes 2–5 seconds once its layers have
+  been seen; the Scanner panel on the Vulnerabilities page shows what's happening.
+- **The vulnerability DB** (Trivy's, from `mirror.gcr.io`) is downloaded at the first start and then once a
+  day, before the daily rescan. Scans never download it themselves, so all scans of a day use the same DB.
+  If an update fails, scans continue with the old copy and the Scanner panel says so.
+- **Disk**: `<data>/trivy` holds about 3.5 GB (DB + Java DB + a small layer-analysis cache). Deleting it is
+  safe: it's downloaded again.
+- **Registry logins** that stop working (expired deploy token) show as *Auth failed for* `<prefix>` in the
+  Scanner panel and as failed scans; the last good result of each image stays shown, marked as failed.
+- **The digest** has one line on in-house images: fixable Critical/High, in how many images, and the numbers
+  of the previous digest.
+- **Upgrading Trivy** means changing the pinned digest in the `Dockerfile` (check the release on GitHub and
+  that Docker Hub and ghcr.io serve the same digest) and building a new Owl image.
+
 ## Bringing back one deleted cluster
 
 Deleting a cluster offers **Export cluster data** (JSON with its settings, current workloads and
@@ -311,4 +331,6 @@ backups but survives a restore unchanged.
 | Cleanup of temp files left by a crash during backup/restore | at startup |
 | Summaries: recompute upgrades, collect notes; in automatic mode write missing ones | after every upstream refresh, on settings changes, and hourly |
 | Notification check (Critical, unrecognized images, new clusters) | after agent reports with changes, upstream refreshes and admin changes |
+| Image scans: a digest that starts running | right after the agent report |
+| Image scans: vulnerability DB update, then every running digest again | daily (checked hourly); at startup if the DB is missing or older than a day |
 | Weekly digest | at the configured time (checked every minute; failed sends retried hourly for 24 h) |

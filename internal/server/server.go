@@ -29,6 +29,7 @@ import (
 	"owl/internal/notify"
 	"owl/internal/policy"
 	"owl/internal/registry"
+	"owl/internal/scan"
 	"owl/internal/snapshot"
 	"owl/internal/store"
 	"owl/internal/summary"
@@ -70,6 +71,9 @@ type Server struct {
 	Summaries *summary.Manager
 	// Registry reads OCI labels from public registries for "New component" suggestions (nil = off).
 	Registry *registry.Client
+	// Scans runs image vulnerability scans (milestone 15); nil = off, ScansOff says why.
+	Scans    *scan.Manager
+	ScansOff string
 	// Notify posts the digest and alerts (milestone 10); nil in tests that don't need it.
 	Notify *notify.Notifier
 	// CLIDir holds the downloadable client builds (owl-<os>-<arch>.gz + SHA256SUMS); "" or missing =
@@ -133,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	s.catalogRoutes(mux)
 	s.signinRoutes(mux)
 	s.tokenRoutes(mux)
+	s.vulnRoutes(mux)
 	mux.HandleFunc("GET /api/v1/docs", s.listDocs)
 	mux.HandleFunc("GET /api/v1/docs/{page}", s.docPage)
 	mux.HandleFunc("GET /api/v1/cli", s.listCLI)
@@ -293,6 +298,9 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		s.kickSummaries() // running versions changed: the upgrades needed may have too
 		s.kickNotify()
 	}
+	// Every push: a new digest often arrives without a template change (pods restarted after the change was
+	// already reported, or a re-pushed mutable tag). The sync is cheap and idempotent.
+	s.kickScans()
 	writeJSON(w, http.StatusAccepted, map[string]any{"cluster": cluster.Name, "changes": len(res.Changes)})
 }
 
@@ -669,8 +677,14 @@ func (s *Server) componentDetail(w http.ResponseWriter, r *http.Request) {
 			advs = append(advs, va)
 		}
 	}
+	scans, confirmed, err := s.componentScans(r.Context(), id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"component": comp, "inventory": view, "upstream": info, "advisoriesByVersion": advs,
+		"imageScans": scans, "trivyConfirmed": confirmed,
 	})
 }
 

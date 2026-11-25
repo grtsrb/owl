@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"owl/internal/logfile"
 	"owl/internal/notify"
 	"owl/internal/registry"
+	"owl/internal/scan"
 	"owl/internal/server"
 	"owl/internal/store"
 	"owl/internal/store/sqlite"
@@ -142,6 +144,9 @@ func runServer(args []string) error {
 	if err := setupNotify(app, db, cat, authCfg, log); err != nil {
 		return err
 	}
+	if err := setupScans(app, db, *dbPath, *noUpstream, log); err != nil {
+		return err
+	}
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           app.Handler(),
@@ -155,6 +160,9 @@ func runServer(args []string) error {
 	go app.Backups.RunScheduler(ctx)
 	go app.RunMaintenance(ctx)
 	go app.Notify.Run(ctx)
+	if app.Scans != nil {
+		go app.Scans.Run(ctx)
+	}
 	if app.Summaries != nil {
 		go app.Summaries.RunScheduler(ctx)
 	}
@@ -374,7 +382,7 @@ func setupSummaries(app *server.Server, db store.Store, cat *catalog.Catalog, lo
 func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authCfg server.AuthConfig, log *slog.Logger) error {
 	n := &notify.Notifier{Store: db, Catalog: cat, CatalogFn: app.CurrentCatalog, Report: app.BuildReport, Ready: app.UpstreamLoaded,
 		Incomplete: app.UpstreamIncomplete, Fetched: func(id string) bool { return app.UpstreamInfo(id) != nil },
-		Mail: authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log}
+		Mail: authCfg.Mail, PublicURL: authCfg.PublicURL, Log: log, Vulns: app.VulnDigest}
 	if raw := os.Getenv("OWL_MATTERMOST_WEBHOOK_URL"); raw != "" {
 		if err := notify.ValidateWebhookURL(raw); err != nil {
 			return fmt.Errorf("OWL_MATTERMOST_WEBHOOK_URL: %w", err)
@@ -388,5 +396,51 @@ func setupNotify(app *server.Server, db store.Store, cat *catalog.Catalog, authC
 		log.Info("OWL_PUBLIC_URL not set: notifications are sent without links")
 	}
 	app.Notify = n
+	return nil
+}
+
+// setupScans turns on image vulnerability scanning (milestone 15) when the trivy binary is there (the
+// server image has it) and OWL_SCAN isn't "off". Registry credentials come only from
+// OWL_REGISTRY_AUTH_FILE; a broken file stops the server (better than scanning with the wrong login).
+func setupScans(app *server.Server, db *sqlite.DB, dbPath string, noUpstream bool, log *slog.Logger) error {
+	switch {
+	case os.Getenv("OWL_SCAN") == "off":
+		app.ScansOff = "OWL_SCAN=off"
+	case noUpstream:
+		app.ScansOff = "--no-upstream"
+	}
+	bin := os.Getenv("OWL_TRIVY")
+	if app.ScansOff == "" {
+		if bin == "" {
+			bin = "trivy"
+		}
+		p, err := exec.LookPath(bin)
+		if err != nil {
+			app.ScansOff = "trivy not found (OWL_TRIVY)"
+		}
+		bin = p
+	}
+	if app.ScansOff != "" {
+		log.Warn("image vulnerability scanning is off", "reason", app.ScansOff)
+		return nil
+	}
+	creds, err := scan.LoadCredentials(os.Getenv("OWL_REGISTRY_AUTH_FILE"))
+	if err != nil {
+		return fmt.Errorf("OWL_REGISTRY_AUTH_FILE: %w", err)
+	}
+	cache := envOr("OWL_TRIVY_CACHE", filepath.Join(filepath.Dir(dbPath), "trivy"))
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		return fmt.Errorf("trivy cache: %w", err)
+	}
+	app.Scans = &scan.Manager{Scanner: &scan.Trivy{Bin: bin, CacheDir: cache}, Store: db, Creds: creds,
+		Targets: app.ScanTargets, Log: log}
+	if err := app.Scans.Load(context.Background()); err != nil {
+		return fmt.Errorf("scan results: %w", err)
+	}
+	prefixes := []string{}
+	for _, c := range creds {
+		prefixes = append(prefixes, c.Prefix)
+	}
+	log.Info("image vulnerability scanning on", "trivy", bin, "cache", cache, "credentialPrefixes", prefixes)
 	return nil
 }

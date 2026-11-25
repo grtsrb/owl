@@ -50,7 +50,7 @@ func (d *DB) PruneAudit(ctx context.Context, before time.Time) (int64, error) {
 }
 
 // Backup uses VACUUM INTO: a consistent snapshot even while agents are writing. The upstream cache
-// (most of the file, and refetchable) is then dropped from the copy.
+// (most of the file, and refetchable) and image scan results (regenerable) are then dropped from the copy.
 func (d *DB) Backup(ctx context.Context, path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("backup target %s already exists", path)
@@ -68,7 +68,7 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	// crackable offline by anyone who can read the bucket: a backup carries none of them. Users (email,
 	// role, Google link) stay, so a backup used as the database file after losing the server keeps
 	// everyone's access — password users then need a reset link (`owl db user reset-link`).
-	for _, q := range []string{"DELETE FROM upstream_cache", "DELETE FROM sessions", "DELETE FROM auth_tokens",
+	for _, q := range []string{"DELETE FROM upstream_cache", "DELETE FROM image_scans", "DELETE FROM sessions", "DELETE FROM auth_tokens",
 		"DELETE FROM api_tokens", "UPDATE users SET password_hash = ''", "VACUUM"} {
 		if _, err := cp.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("trim backup: %w", err)
@@ -77,10 +77,10 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	return nil
 }
 
-// tables restored from a backup; audit_log, revoked_tokens, upstream_cache, summaries and everything
+// tables restored from a backup; audit_log, revoked_tokens, upstream_cache, image_scans, summaries and everything
 // about sign-in (users, sessions, auth_tokens, api_tokens) stay as they are.
 var restoreTables = []string{"stages", "tenants", "clusters", "agent_tokens", "current_images", "changes",
-	"policies", "catalog_overrides", "settings", "custom_components"}
+	"policies", "catalog_overrides", "settings", "custom_components", "vuln_acceptances"}
 
 // Restore migrates a copy of the backup to the current schema (Open does that, and refuses a newer
 // schema), then replaces the restorable tables in one transaction.
@@ -118,10 +118,11 @@ func (d *DB) Restore(ctx context.Context, path string) error {
 	// Children first when deleting, parents first when inserting. Settings named summary* (mode, caps,
 	// a failure pause) are kept as they are: restoring an old backup must not silently unpause paid
 	// requests or bring back a higher cap — like the spend log, they're cost safety, not data. auth*
-	// settings (password sign-in on/off) are kept for the same reason as the users table.
+	// settings (password sign-in on/off) are kept for the same reason as the users table. scan* settings
+	// (when the daily rescan last ran) describe this server's scanner, not data.
 	where := func(t string) string {
 		if t == "settings" {
-			return " WHERE key NOT LIKE 'summary%' AND key NOT LIKE 'auth%'"
+			return " WHERE key NOT LIKE 'summary%' AND key NOT LIKE 'auth%' AND key NOT LIKE 'scan%'"
 		}
 		return ""
 	}

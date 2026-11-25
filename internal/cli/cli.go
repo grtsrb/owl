@@ -61,6 +61,7 @@ func init() {
 		"clusters":     {runClusters, "registered clusters"},
 		"changes":      {runChanges, "recent image changes in the clusters"},
 		"unrecognized": {runUnrecognized, "images Owl doesn't recognize yet"},
+		"vulns":        {runVulns, "image vulnerabilities from Trivy: fixable Critical/High per image (--image, --fail-on)"},
 		"cluster":      {runClusterCmd, "add | rotate-token | delete a cluster (admin token with write scope)"},
 		"backup":       {runBackup, "backup now: take a backup on the server (admin, write scope)"},
 		"users":        {runUsers, "list | export | plan | apply | add | set-role | disable | enable"},
@@ -73,7 +74,7 @@ func Has(name string) bool { _, ok := commands[name]; return ok }
 // Usage lists the client commands (for the binary's usage text).
 func Usage() string {
 	order := []string{"login", "logout", "whoami", "status", "outdated", "component", "clusters", "changes",
-		"unrecognized", "cluster", "users", "backup"}
+		"unrecognized", "vulns", "cluster", "users", "backup"}
 	var b strings.Builder
 	for _, n := range order {
 		fmt.Fprintf(&b, "  %-13s%s\n", n, commands[n].summary)

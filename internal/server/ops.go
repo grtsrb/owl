@@ -274,6 +274,7 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 	}
 	s.ApplyOpsSettings(ctx)
 	s.kickSummaries() // settings (mode, caps) and clusters came back from the backup
+	s.kickScans()     // the restored clusters may run other images
 	s.audit(r, "database restored", "from", from, "safetyBackup", safety)
 	go s.RefreshUpstream(context.Background()) // components the backup added or removed (cached: cheap)
 	writeJSON(w, http.StatusOK, map[string]string{"restored": from, "safetyBackup": safety})

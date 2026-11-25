@@ -722,3 +722,52 @@ func TestCatalogUpgradeIsQuiet(t *testing.T) {
 		t.Errorf("pairs of components gone from the catalog must not read as resolved: %+v", res)
 	}
 }
+
+func TestDigestVulnLine(t *testing.T) {
+	e := newEnv(t)
+	e.now = time.Now().UTC()
+	ctx := context.Background()
+	e.cluster("it-hetzner", "IT", "redis:7.2.4")
+	d, _ := e.n.BuildDigest(ctx)
+	if strings.Contains(d.Markdown(), "Image vulnerabilities") {
+		t.Error("scanning off: no section")
+	}
+	sum := &VulnSummary{Critical: 3, High: 12, Affected: 2, Images: 5, NotScanned: 1}
+	e.n.Vulns = func(context.Context) (*VulnSummary, error) { return sum, nil }
+	d, _ = e.n.BuildDigest(ctx)
+	md := d.Markdown()
+	for _, want := range []string{"Image vulnerabilities", "**3 Critical**, **12 High** with a fix, in 2 of 5 images", "1 not scanned"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %q in:\n%s", want, md)
+		}
+	}
+	if strings.Contains(md, "last week") {
+		t.Errorf("no earlier digest: no comparison\n%s", md)
+	}
+	set, _ := e.n.settings(ctx)
+	slot := set.LastSlot(time.Now())
+	lastWeek := slot.Add(-7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	_ = e.db.SetNotifyMeta(ctx, metaDigestVulns, lastWeek+"|5,10|")
+	d, _ = e.n.BuildDigest(ctx)
+	if md := d.Markdown(); !strings.Contains(md, "last week 5 Critical, 10 High") {
+		t.Errorf("comparison missing:\n%s", md)
+	}
+	// this slot's digest was already recorded (the post failed, email went out): a retry compares with
+	// what that one compared with, not with its own numbers
+	_ = e.db.SetNotifyMeta(ctx, metaDigestVulns, slot.UTC().Format(time.RFC3339)+"|3,12|5,10")
+	if md := d.Markdown(); !strings.Contains(md, "last week 5 Critical, 10 High") {
+		t.Errorf("retry:\n%s", md)
+	}
+	d, _ = e.n.BuildDigest(ctx)
+	if md := d.Markdown(); !strings.Contains(md, "last week 5 Critical, 10 High") || strings.Contains(md, "same as last week") {
+		t.Errorf("retry compares with itself:\n%s", md)
+	}
+	_ = e.db.SetNotifyMeta(ctx, metaDigestVulns, lastWeek+"|3,12|1,1")
+	if d, _ = e.n.BuildDigest(ctx); !strings.Contains(d.Markdown(), "same as last week") {
+		t.Errorf("same numbers:\n%s", d.Markdown())
+	}
+	sum.Images = 0
+	if d, _ = e.n.BuildDigest(ctx); !strings.Contains(d.Markdown(), "No in-house images are running.") {
+		t.Errorf("no images:\n%s", d.Markdown())
+	}
+}

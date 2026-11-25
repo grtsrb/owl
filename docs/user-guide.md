@@ -110,6 +110,31 @@ its page.
 
   The decision applies to that repository in every cluster. Undo in Settings → Catalog.
 
+- **Vulns** column — fixable Critical/High findings in the image the pods run (from
+  [image scanning](concepts.md#image-vulnerabilities)); opens the image. `—` means nothing fixable at that
+  severity, or no running pods.
+
+## Vulnerabilities
+
+What Trivy finds inside the running images. Nothing on these pages changes a priority level.
+
+- **Images** — every running image (by digest), in-house first, then by fixable Critical/High. Filter
+  in-house / third-party, only images with fixable Critical/High, or search an image or workload name.
+  *Runs in* lists the clusters and workloads; *All findings* counts every finding, with or without a fix.
+- **Scanner** — what's being scanned right now (elapsed time against the time limit: Trivy reports no
+  progress), the queue with why each image is in it (*new*, *daily*, *manual*), the last 20 scans with
+  their result, the vulnerability DB's age, the last daily rescan, the registry logins configured (their
+  prefixes only) and any registry that refused a login. Refreshes every 3 seconds while open. Admins can
+  cancel the running scan or remove an image from the queue; that image then waits for the next daily
+  rescan (or **Rescan now**) instead of being queued again by the next agent report.
+- **One image** — its numbers, where it runs, and the findings: severity, CVE (linked), package (OS
+  package, or library with the file it was found in), installed and fixed version. *Fixable only* is on
+  by default; filter by severity. Admins can **Rescan now** and **Accept…** a finding (reason required,
+  expiry optional); accepted findings are listed separately and can be removed again.
+
+The component page shows the same per component: a **Vulns** column in *Where it runs*, an *Image
+vulnerabilities (Trivy)* card, and a **Trivy: confirmed** tag on advisories Trivy found in the image too.
+
 ## Changes
 
 History of what changed in the selected clusters: workloads/containers added or removed, image
