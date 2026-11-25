@@ -569,6 +569,10 @@ Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDu
   vars pass), `--image-src remote` (never a local socket), `--scanners vuln` (no secret scanning: Owl must not
   collect secrets found in images), `--skip-db-update`/`--skip-java-db-update` (DB only from the daily update,
   so a day's scans agree), `--offline-scan` (no jar hashes to Maven Central).
+- **No SSRF through image IDs**: the registry comes from agent-reported image IDs, so a leaked agent token
+  could name any host. Registries that are IP literals, `localhost` or metadata names are refused unless
+  configured (`OWL_INTERNAL_REGISTRIES`, credential prefixes); hostnames resolving to private IPs stay allowed
+  (in-house registries). Node architecture is accepted only from a known list.
 - **Platform**: kubelet image IDs usually point at a multi-arch index; the server (arm64 on t4g) would scan its
   own architecture. Each cluster stores its nodes' most common architecture (`clusters.node_arch`), and a
   digest is scanned with `--platform linux/<arch>` of the first cluster that runs it.

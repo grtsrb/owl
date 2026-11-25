@@ -22,7 +22,7 @@ With [Docker Compose](install.md#docker-compose-on-one-host-recommended) they al
 | `--db` | `OWL_DB` | `owl.db` (image: `/data/owl.db`) | SQLite database file. |
 | — | `OWL_CLI_DIR` | `/cli` | Where the downloadable CLI builds are (`owl-<os>-<arch>.gz` or plain binaries, + `SHA256SUMS`; the image has them). Missing = no downloads in Account. |
 | `--allowed-hosts` | `OWL_ALLOWED_HOSTS` | — | Comma-separated extra host names the UI/API answer to, besides `localhost`, `127.0.0.1`, `::1` and the `OWL_PUBLIC_URL` host. Ports are ignored. |
-| `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. |
+| `--internal-registries` | `OWL_INTERNAL_REGISTRIES` | — | Comma-separated registries whose images are **in-house** (listed, not scored), e.g. `registry.gitlab.example.com`. Image scanning pulls from a registry given as an IP address (`10.0.0.5:5000`) only when it's listed here or in `OWL_REGISTRY_AUTH_FILE`. |
 | `--log-dir` | `OWL_LOG_DIR` | `<db dir>/logs` | Rotated log files. `-` = stderr only. |
 | `--backup-dir` | `OWL_BACKUP_DIR` | `<db dir>/backups` | Local backup folder. |
 | `--no-upstream` | — | off | Don't contact GitHub, endoflife.date or OSV (offline / tests). |

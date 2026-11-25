@@ -34,6 +34,20 @@ func (s *Server) vulnRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/vulns/acceptances", s.requireAdmin(s.deleteAcceptance))
 }
 
+// registryRefused says why the server won't pull from a target's registry ("" = it will): IP literals,
+// localhost and metadata hosts, unless configured (scan.RegistryAllowed).
+func (s *Server) registryRefused(t scan.Target) string {
+	allowed := slices.Clone(s.cat().InternalRegistries)
+	if s.Scans != nil {
+		for _, c := range s.Scans.Creds {
+			host, _, _ := strings.Cut(c.Prefix, "/")
+			allowed = append(allowed, host)
+		}
+	}
+	_, reason := scan.RegistryAllowed(t.Registry(), allowed)
+	return reason
+}
+
 func (s *Server) kickScans() {
 	if s.Scans != nil {
 		s.Scans.Kick()
@@ -57,7 +71,7 @@ func (s *Server) ScanTargets(ctx context.Context) ([]scan.Target, error) {
 		for _, r := range rows {
 			for _, ri := range r.Running {
 				t, ok := scan.TargetFromImageID(ri.ImageID, c.NodeArch)
-				if ok && !seen[t.Digest] {
+				if ok && s.registryRefused(t) == "" && !seen[t.Digest] {
 					seen[t.Digest] = true
 					out = append(out, t)
 				}
@@ -129,6 +143,7 @@ type vulnImageJSON struct {
 	Total        sevCounts   `json:"total"`    // every finding, not accepted
 	Accepted     int         `json:"accepted"` // findings accepted for this repository
 	Confirmed    int         `json:"confirmed"`
+	refused      string      // the registry host isn't allowed (see scan.RegistryAllowed)
 }
 
 type vulnRowJSON struct {
@@ -212,13 +227,17 @@ func (s *Server) loadVulns(ctx context.Context) (*vulnData, error) {
 			if ri.ImageID == "" {
 				continue
 			}
-			key, digest, ref := ri.ImageID, "", ri.Image
+			key, digest, ref, refused := ri.ImageID, "", ri.Image, ""
 			if t, ok := scan.TargetFromImageID(ri.ImageID, arch[in.Cluster]); ok {
-				key, digest, ref = t.Digest, t.Digest, t.Ref
+				if refused = s.registryRefused(t); refused == "" {
+					key, digest, ref = t.Digest, t.Digest, t.Ref
+				} else {
+					ref = t.Ref
+				}
 			}
 			img := d.byKey[key]
 			if img == nil {
-				img = &vulnImageJSON{Key: key, Digest: digest, Ref: ref, Repositories: []string{}, Components: []string{}, Places: []vulnPlace{}}
+				img = &vulnImageJSON{Key: key, Digest: digest, Ref: ref, Repositories: []string{}, Components: []string{}, Places: []vulnPlace{}, refused: refused}
 				d.byKey[key] = img
 				d.images = append(d.images, img)
 			}
@@ -281,6 +300,9 @@ func (s *Server) fillVulnImage(d *vulnData, img *vulnImageJSON, queue map[string
 	if img.Digest == "" {
 		img.State = stateUnscannable
 		img.Error = "not in a registry: built or imported on the node (no registry digest)"
+		if img.refused != "" {
+			img.Error = img.refused
+		}
 		return
 	}
 	img.Queue = queue[img.Digest]

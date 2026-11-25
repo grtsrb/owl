@@ -122,6 +122,10 @@ What Owl can see, what it stores and sends, and how to run it safely.
 
 - Trivy runs as a separate process with an environment built from scratch: the server's own secrets (S3
   keys, Claude API key, GitHub token, SMTP password) never reach it. Only proxy and CA settings pass through.
+- The registry comes from what the agents report, so a leaked agent token could name any host. Owl never
+  pulls from a registry that is an IP address, `localhost` or a cloud metadata name (`169.254.169.254`,
+  `metadata.google.internal`, …) unless it's listed in `OWL_INTERNAL_REGISTRIES` or `OWL_REGISTRY_AUTH_FILE`;
+  such images show as *not scannable*. Registry logins only go to the host in their own prefix.
 - It scans for vulnerabilities only — no secret scanning, so secrets inside images are never collected — and
   reads images only from registries, never from a Docker or containerd socket.
 - Registry logins: read-only tokens, from a file mounted read-only; passed per scan as environment variables;

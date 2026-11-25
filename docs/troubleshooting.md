@@ -146,6 +146,12 @@ The registry refused the login for that prefix (or wants one, for an image with 
 It was built or imported on the node, so there's no registry digest to pull (k3d's `k3d image import`
 does this too). Push it to a registry and deploy it from there to get it scanned.
 
+### "registry host … is an IP address" / "is local or a metadata service"
+
+Owl doesn't pull images from IP-address, `localhost` or metadata-service registries unless you configured
+them (so a leaked agent token can't point the server at its own network). If it's a real registry, add it
+to `OWL_INTERNAL_REGISTRIES` (or give it a login in `OWL_REGISTRY_AUTH_FILE`) and restart the server.
+
 ### "not in the registry (pulled from a mirror, deleted, or built locally)"
 
 The registry doesn't have that digest any more (a re-pushed tag whose old digest was cleaned up), or
