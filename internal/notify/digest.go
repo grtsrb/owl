@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -308,7 +309,7 @@ func expiryBlock(es []CredentialExpiry, now time.Time, link string) []Block {
 	b := Block{Title: "Registry logins to renew"}
 	for _, e := range es {
 		when := "expires " + e.ExpiresAt.Format("2 Jan 2006")
-		if days := int(e.ExpiresAt.Sub(now).Hours() / 24); !e.Expired && days <= 1 {
+		if days := int(math.Ceil(e.ExpiresAt.Sub(now).Hours() / 24)); !e.Expired && days <= 1 {
 			when = "expires within a day"
 		} else if !e.Expired {
 			when += " (in " + strconv.Itoa(days) + " days)"

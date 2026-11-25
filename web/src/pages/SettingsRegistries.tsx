@@ -12,7 +12,7 @@ function expiryTag(iso?: string) {
   if (!iso) return null;
   const left = new Date(iso).getTime() - Date.now();
   if (left <= 0) return <Tag tone="critical" title="Scans with this login fail: replace it">expired {date(iso)}</Tag>;
-  if (left <= 14 * DAY) return <Tag tone="warn" title="Renew the token in the registry, then replace it here">expires in {Math.max(1, Math.round(left / DAY))} days</Tag>;
+  if (left <= 14 * DAY) return <Tag tone="warn" title="Renew the token in the registry, then replace it here">expires in {Math.ceil(left / DAY)} {Math.ceil(left / DAY) === 1 ? "day" : "days"}</Tag>;
   return <span className="subtle" style={{ margin: 0 }}>expires {date(iso)}</span>;
 }
 

@@ -642,6 +642,12 @@ prefix → credential list in **Settings → Registries**; Trivy pulls exactly a
   rescan), and the prefix's auth failure is cleared.
 - **Expiry**: optional date per credential. "Expires in N days" (≤ 14) / "expired" on the page, in the scanner
   panel and in the weekly digest. No separate alert.
+- **Prefix hosts are checked like in-house registries** (`scan.NeverRegistry`: localhost / metadata names,
+  loopback, link-local, unspecified, multicast, known metadata IPs such as `fd00:ec2::254` and
+  `100.100.100.200`): a login's host may be pulled from and receives the password on Test. A login changed
+  while a scan with the old one runs: that scan's auth failure isn't recorded and the image is retried with the
+  new login. Reloads retry only images whose applicable login changed (not at start, not for an expiry edit),
+  after queued manual rescans.
 - Admin only (list included: usernames are half a login), browser only (not in `tokenWrites`), JSON bodies,
   audit-logged (prefix + username, never the password). Prefix rules = the file's; username ≤ 256, password
   ≤ 4096 bytes, no control characters (they go into env vars).

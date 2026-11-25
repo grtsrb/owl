@@ -480,3 +480,85 @@ func TestRegistryAllowed(t *testing.T) {
 		t.Errorf("unknown arch passed on: %q", tg.Platform)
 	}
 }
+
+// A login replaced while a scan with the old one runs: that scan's auth failure isn't recorded against the
+// new login and the image is retried with it (review finding).
+func TestCredentialChangedDuringScan(t *testing.T) {
+	a := Target{Digest: "sha256:" + strings.Repeat("a", 64), Ref: "reg.example.com/team/app@sha256:" + strings.Repeat("a", 64), Repository: "reg.example.com/team/app"}
+	h := newHarness(t, a)
+	old := Credentials{{Prefix: "reg.example.com/team", Username: "old", Password: "expired"}}
+	h.m.SetCredentials(context.Background(), old)
+	release := make(chan struct{})
+	h.sc.errs[a.Ref] = ErrAuth
+	h.sc.block[a.Ref] = release
+	h.start(t)
+	waitFor(t, "scan running", func() bool { return h.m.Status().Current != nil })
+
+	h.sc.mu.Lock()
+	h.sc.errs[a.Ref], h.sc.block[a.Ref] = nil, nil // the new login works
+	h.sc.mu.Unlock()
+	h.m.SetCredentials(context.Background(), Credentials{{Prefix: "reg.example.com/team", Username: "new", Password: "fresh"}})
+	close(release)
+	waitFor(t, "retried with the new login", func() bool { r := h.m.Results()[a.Digest]; return r != nil && r.Error == "" && r.Result != nil })
+	if st := h.m.Status(); len(st.AuthFailures) != 0 {
+		t.Fatalf("old scan's failure recorded against the new login: %+v", st.AuthFailures)
+	}
+	h.sc.mu.Lock()
+	defer h.sc.mu.Unlock()
+	if len(h.sc.creds) != 2 || h.sc.creds[1] != "new" {
+		t.Fatalf("logins used: %v", h.sc.creds)
+	}
+}
+
+// Reloading credentials retries only images whose login changed, never at start, and after manual rescans.
+func TestSetCredentialsRetriesOnlyChanged(t *testing.T) {
+	mk := func(c, repo string) Target {
+		d := "sha256:" + strings.Repeat(c, 64)
+		return Target{Digest: d, Ref: repo + "@" + d, Repository: repo}
+	}
+	a, b := mk("a", "reg.example.com/team-a/app"), mk("b", "reg.example.com/team-b/app")
+	h := newHarness(t, a, b)
+	at := time.Now()
+	for _, x := range []Target{a, b} {
+		h.st.scans[x.Digest] = store.ImageScan{Digest: x.Digest, Ref: x.Ref, Error: authFailedPrefix + "x", AttemptAt: at}
+	}
+	if err := h.m.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ca := Credential{Prefix: "reg.example.com/team-a", Username: "a", Password: "1"}
+	cb := Credential{Prefix: "reg.example.com/team-b", Username: "b", Password: "1"}
+	h.m.SetCredentials(context.Background(), Credentials{ca, cb}) // start: nothing retried
+	if n := h.m.Status().QueueLen; n != 0 {
+		t.Fatalf("start queued %d", n)
+	}
+	exp := time.Now().Add(time.Hour)
+	ca2 := ca
+	ca2.ExpiresAt = &exp
+	h.m.SetCredentials(context.Background(), Credentials{ca2, cb}) // expiry only
+	if n := h.m.Status().QueueLen; n != 0 {
+		t.Fatalf("expiry edit queued %d", n)
+	}
+	h.m.mu.Lock()
+	h.m.queue = []Job{{Target: mk("c", "reg.example.com/x"), Reason: ReasonManual}, {Target: mk("d", "reg.example.com/y"), Reason: ReasonNew}}
+	h.m.mu.Unlock()
+	cb.Password = "2"
+	h.m.SetCredentials(context.Background(), Credentials{ca2, cb}) // b changed
+	q := h.m.Status().Queue
+	if len(q) != 3 || q[0].Digest != mk("c", "").Digest || q[1].Digest != b.Digest || q[2].Reason != ReasonNew {
+		t.Fatalf("queue: %+v", q)
+	}
+}
+
+func TestNeverRegistry(t *testing.T) {
+	for _, h := range []string{"localhost:5000", "x.localhost", "169.254.169.254", "[fd00:ec2::254]", "100.100.100.200", "127.0.0.1:5000",
+		"[::1]:5000", "0.0.0.0", "metadata.google.internal", "[::ffff:169.254.169.254]"} {
+		if NeverRegistry(h) == "" {
+			t.Errorf("%s allowed", h)
+		}
+	}
+	for _, h := range []string{"registry.gitlab.example.com", "10.20.0.5:5000", "100.64.0.7", "[fd00:1::5]:5000"} {
+		if why := NeverRegistry(h); why != "" {
+			t.Errorf("%s refused: %s", h, why)
+		}
+	}
+}

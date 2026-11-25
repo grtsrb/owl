@@ -771,3 +771,33 @@ func TestDigestVulnLine(t *testing.T) {
 		t.Errorf("no images:\n%s", d.Markdown())
 	}
 }
+
+// Days to a login's expiry are rounded up, like the Settings page: 47.5 h is "in 2 days" (review finding).
+func TestExpiryBlockDays(t *testing.T) {
+	now := time.Date(2026, 12, 7, 0, 30, 0, 0, time.UTC)
+	text := func(es []CredentialExpiry) string {
+		bs := expiryBlock(es, now, "")
+		if len(bs) != 1 {
+			t.Fatalf("blocks: %+v", bs)
+		}
+		var sb strings.Builder
+		for _, l := range bs[0].Items {
+			for _, sp := range l {
+				sb.WriteString(sp.Text)
+			}
+		}
+		return sb.String()
+	}
+	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(47*time.Hour + 30*time.Minute)}}); !strings.Contains(s, "in 2 days") {
+		t.Errorf("47.5 h: %q", s)
+	}
+	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(20 * time.Hour)}}); !strings.Contains(s, "within a day") {
+		t.Errorf("20 h: %q", s)
+	}
+	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(-time.Hour), Expired: true}}); !strings.Contains(s, "expired") {
+		t.Errorf("expired: %q", s)
+	}
+	if expiryBlock(nil, now, "") != nil {
+		t.Error("block without expiring logins")
+	}
+}

@@ -96,7 +96,10 @@ func TestRegistryCredentials(t *testing.T) {
 		t.Fatalf("file prefix: %d %v", code, out)
 	}
 	for _, b := range []string{`{"prefix":"bad prefix","username":"u","password":"p"}`, `{"prefix":"r.example.com","username":"u","password":""}`,
-		`{"prefix":"r.example.com","username":"u","password":"a\nb"}`, `{"prefix":"r.example.com","username":"u","password":"p","expiresAt":"soon"}`} {
+		`{"prefix":"r.example.com","username":"u","password":"a\nb"}`, `{"prefix":"r.example.com","username":"u","password":"p","expiresAt":"soon"}`,
+		// a login's host may be pulled from and gets the password on Test: never a local or metadata host
+		`{"prefix":"169.254.169.254","username":"u","password":"p"}`, `{"prefix":"localhost:5000/team","username":"u","password":"p"}`,
+		`{"prefix":"[fd00:ec2::254]/x","username":"u","password":"p"}`, `{"prefix":"metadata.google.internal","username":"u","password":"p"}`} {
 		if code, _ := call(t, "POST", base, b, true); code != http.StatusBadRequest {
 			t.Fatalf("%s: %d", b, code)
 		}
@@ -202,7 +205,7 @@ func TestInternalRegistries(t *testing.T) {
 	if code, _ := call(t, "PUT", base, `{"registries":["a.example.com"]}`, false); code != http.StatusForbidden {
 		t.Fatalf("viewer put: %d", code)
 	}
-	for _, bad := range []string{"169.254.169.254", "127.0.0.1:5000", "localhost:5000", "metadata.google.internal", "reg.example.com/team", "a b", "[::1]:5000", "reg.example.com:http"} {
+	for _, bad := range []string{"169.254.169.254", "127.0.0.1:5000", "localhost:5000", "metadata.google.internal", "reg.example.com/team", "a b", "[::1]:5000", "reg.example.com:http", "[fd00:ec2::254]", "100.100.100.200"} {
 		if code, _ := call(t, "PUT", base, `{"registries":["`+bad+`"]}`, true); code != http.StatusBadRequest {
 			t.Fatalf("%s accepted: %d", bad, code)
 		}

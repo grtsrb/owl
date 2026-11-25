@@ -178,6 +178,12 @@ func (s *Server) checkRegistryBody(w http.ResponseWriter, b *registryBody, needL
 		return nil, false
 	}
 	b.Prefix = p
+	// A login's host is allowed to be pulled from (registryRefused) and Test sends the password there: the
+	// same hosts as for in-house registries are refused.
+	if host, _, _ := strings.Cut(p, "/"); scan.NeverRegistry(host) != "" {
+		httpError(w, http.StatusBadRequest, "prefix: "+scan.NeverRegistry(host))
+		return nil, false
+	}
 	b.Username = strings.TrimSpace(b.Username)
 	if needLogin || b.Username != "" || b.Password != "" {
 		if !validCredField(b.Username, 256) {
@@ -436,17 +442,14 @@ func normRegistryHost(h string) (string, string) {
 			return bad("the port must be a number")
 		}
 	}
-	if ip, err := netip.ParseAddr(host); err == nil {
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
-			return bad("a local or link-local address (e.g. the metadata service) is never a registry")
-		}
+	if why := scan.NeverRegistry(h); why != "" {
+		return bad(why)
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
 		return h, ""
 	}
 	if !reRegistryHost.MatchString(host) {
 		return bad("a registry host like registry.gitlab.example.com (no path: the whole registry is in-house)")
-	}
-	if ok, _ := scan.RegistryAllowed(host, nil); !ok {
-		return bad("localhost and metadata names are never a registry")
 	}
 	return h, ""
 }

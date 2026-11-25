@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// neverRegistry is NeverRegistry (tests with a registry on 127.0.0.1 replace it).
+var neverRegistry = NeverRegistry
+
 // Login results (Test in Settings → Registries).
 const (
 	LoginOK         = "ok"
@@ -52,6 +55,9 @@ func TestLogin(ctx context.Context, client *http.Client, c Credential) LoginResu
 	}
 	res := func(outcome, msg string) LoginResult {
 		return LoginResult{Outcome: outcome, Message: msg, At: time.Now()}
+	}
+	if why := neverRegistry(host); why != "" {
+		return res(LoginUnexpected, host+": "+why)
 	}
 	get := func(u string, basic bool) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -142,7 +148,7 @@ func safeURL(u *url.URL, registry string) error {
 	if h := strings.ToLower(u.Host); h == registry || u.Hostname() == registry {
 		return nil
 	}
-	if ok, _ := RegistryAllowed(u.Host, nil); !ok {
+	if ok, _ := RegistryAllowed(u.Host, nil); !ok || NeverRegistry(u.Host) != "" {
 		return errors.New("the registry pointed the login at a local, metadata or IP address — refused")
 	}
 	return nil

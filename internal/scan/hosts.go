@@ -34,6 +34,27 @@ func RegistryAllowed(host string, allowed []string) (ok bool, reason string) {
 	return true, ""
 }
 
+// metadataIPs are cloud metadata services outside the link-local range (AWS IPv6 IMDS, Alibaba Cloud).
+var metadataIPs = []netip.Addr{netip.MustParseAddr("fd00:ec2::254"), netip.MustParseAddr("100.100.100.200")}
+
+// NeverRegistry says why host (may carry a port) can never be a registry an admin configures in the UI
+// ("" = it can be): localhost and metadata names, loopback, link-local, unspecified and multicast
+// addresses, and known metadata IPs. Allowing them would let a leaked agent token point scans at the
+// server's own network.
+func NeverRegistry(host string) string {
+	name := strings.TrimSuffix(hostOnly(strings.ToLower(strings.TrimSpace(host))), ".")
+	if name == "localhost" || strings.HasSuffix(name, ".localhost") || slices.Contains(metadataHosts, name) {
+		return "localhost and metadata names are never a registry"
+	}
+	if ip, err := netip.ParseAddr(strings.Trim(name, "[]")); err == nil {
+		ip = ip.Unmap()
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() || slices.Contains(metadataIPs, ip) {
+			return "a local, link-local or metadata address is never a registry"
+		}
+	}
+	return ""
+}
+
 func hostOnly(h string) string {
 	if strings.HasPrefix(h, "[") {
 		if i := strings.Index(h, "]"); i > 0 {

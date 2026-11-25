@@ -34,6 +34,8 @@ func fakeRegistry(t *testing.T, challenge func(host string) string, tokenOK func
 }
 
 func TestTestLogin(t *testing.T) {
+	neverRegistry = func(string) string { return "" } // the fake registries run on 127.0.0.1
+	t.Cleanup(func() { neverRegistry = NeverRegistry })
 	var scope string
 	bearer := func(host string) string {
 		return `Bearer realm="https://` + host + `/jwt/auth",service="container_registry"`
@@ -98,5 +100,13 @@ func TestCredentialExpiry(t *testing.T) {
 	}
 	if e := cs.Expiring(day("2027-01-11")); len(e) != 1 || !e[0].Expired {
 		t.Fatalf("expired: %+v", e)
+	}
+}
+
+func TestTestLoginRefusesLocalHosts(t *testing.T) {
+	for _, p := range []string{"169.254.169.254", "localhost:5000/team", "[fd00:ec2::254]"} {
+		if r := TestLogin(context.Background(), &http.Client{Timeout: time.Second}, Credential{Prefix: p, Username: "u", Password: "pw"}); r.Outcome != LoginUnexpected || !strings.Contains(r.Message, "never a registry") {
+			t.Errorf("%s: %+v", p, r)
+		}
 	}
 }

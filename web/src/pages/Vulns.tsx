@@ -253,11 +253,11 @@ function ScannerHealth({ s }: { s: ScannerStatus }) {
       {s.db.updating && s.db.updatedAt && <div className="callout info">Updating the vulnerability DB…</div>}
       {s.db.error && <div className="callout warn"><span>DB update failed: {s.db.error}{s.db.updatedAt ? " — scans use the copy from " + date(s.db.updatedAt) : ""}</span></div>}
       {s.authFailures.map((a) => (
-        <div key={a.prefix} className="callout critical"><span><b>Auth failed for {a.prefix}</b> ({ago(a.at)}, {shortRef(a.ref)}): check the credential in <Link to="/settings/registries">Settings → Registries</Link>.</span></div>
+        <div key={a.prefix} className="callout critical"><span><b>Auth failed for {a.prefix}</b> ({ago(a.at)}, {shortRef(a.ref)}): check the login in <Link to="/settings/registries">Settings → Registries</Link> (or in OWL_REGISTRY_AUTH_FILE, for a login from the file).</span></div>
       ))}
       {(s.credentialsExpiring ?? []).map((e) => (
         <div key={e.prefix} className={`callout ${e.expired ? "critical" : "warn"}`}><span><b>Registry login {e.prefix} {e.expired ? "expired" : "expires"} {date(e.expiresAt)}</b>
-          {e.expired ? " — scans with it fail" : ""}: renew the token and replace it in <Link to="/settings/registries">Settings → Registries</Link>.</span></div>
+          {e.expired ? " — scans with it fail" : ""}: renew the token and replace it in <Link to="/settings/registries">Settings → Registries</Link> (or in OWL_REGISTRY_AUTH_FILE).</span></div>
       ))}
     </div>
   );
