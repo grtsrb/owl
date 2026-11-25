@@ -9,6 +9,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 IMAGE=${IMAGE:-owl:dev}
+AGENT_IMAGE=${AGENT_IMAGE:-owl-agent:dev}  # the slim agent image (make image builds both)
+# Check both images before touching anything (a failed import later would leave a rotated token behind).
+for img in "$IMAGE" "$AGENT_IMAGE"; do
+  docker image inspect "$img" >/dev/null 2>&1 || { echo "error: image $img not found — run make image" >&2; exit 1; }
+done
 clusters="it-hetzner:staging it-aws-test:prelive it-aws-prod:live"
 
 # Secrets come from .env (gitignored), passed by name so they never appear in `ps`/shell history.
@@ -58,14 +63,14 @@ for entry in $clusters; do
     token=$(docker exec owl-server /owl db cluster add --name "$name" --stage "$stage" --tenant IT 2>/dev/null)
   fi
 
-  k3d image import "$IMAGE" -c "$name" >/dev/null 2>&1
+  k3d image import "$AGENT_IMAGE" -c "$name" >/dev/null 2>&1
   kubectl --context "$ctx" apply -f deploy/agent/agent.yaml >/dev/null
   kubectl --context "$ctx" -n owl create secret generic owl-agent \
     --from-literal=OWL_SERVER_URL="http://$ip:8080" --from-literal=OWL_TOKEN="$token" \
     --from-literal=OWL_ALLOW_INSECURE_HTTP=true --dry-run=client -o yaml | kubectl --context "$ctx" apply -f - >/dev/null
   # Local image: never pull from a registry.
   kubectl --context "$ctx" -n owl patch deploy owl-agent --type=json -p \
-    "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"$IMAGE\"},
+    "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"$AGENT_IMAGE\"},
       {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Never\"}]" >/dev/null
   kubectl --context "$ctx" -n owl rollout restart deploy/owl-agent >/dev/null
   echo "agent: $name ($stage) -> http://$ip:8080"

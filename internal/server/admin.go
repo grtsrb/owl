@@ -466,7 +466,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		b.ServerURL = strings.TrimRight(b.ServerURL, "/")
 	}
 	if b.AgentImage != "" && !reImage.MatchString(b.AgentImage) {
-		httpError(w, http.StatusBadRequest, "agentImage: an image reference like registry.example.com/team/owl:0.7.0")
+		httpError(w, http.StatusBadRequest, "agentImage: an image reference like registry.example.com/team/owl-agent:0.7.0")
 		return
 	}
 	if err := s.saveSettings(r.Context(), map[string]string{settingServerURL: b.ServerURL, settingAgentImage: b.AgentImage}); err != nil {

@@ -137,7 +137,7 @@ tenants, Catalog and Version policy read-only, and don't see the admin-only sect
   data.
 - **Delete** — type the cluster name to confirm. Offers **Export cluster data** first (JSON: settings,
   current workloads, full history; no token). Deleting removes all of the cluster's data.
-- **Agent settings** — the agent image (e.g. `registry.example.com/team/owl:0.7.0`) and the server URL
+- **Agent settings** — the agent image (e.g. `registry.example.com/team/owl-agent:0.7.0`) and the server URL
   agents should use. Until set, generated files contain placeholders and a warning.
 
 > **Why:** the agent token is stored only as a hash, so Owl can't show it again — if it's lost, rotate it. The token goes into a Secret file you download, not into a command, so it never lands in your shell history. Rotating cuts an agent off but keeps the cluster's history; deleting removes everything, which is why the export is offered first.

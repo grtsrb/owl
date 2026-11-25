@@ -2,6 +2,16 @@
 
 What each milestone shipped. Newest first.
 
+## Slim agent image (milestone 14)
+
+- The agent has its own image, `owl-agent:<version>`, next to the server's `owl:<version>` (same version
+  tag; `make image` / `make image-push` build both). It contains only `owl agent` — no server, database,
+  UI, Claude, S3 or CLI code — so clusters pull less and their image scanners no longer report findings
+  for libraries the agent never runs.
+- `agent.yaml`'s default image is now `owl-agent`. A saved **Agent settings** image is kept as it is: if it
+  is the full `owl` image, Settings shows a warning — change it to `owl-agent` of the same version. Agents
+  on the full image keep working until you switch them.
+
 ## Version policy picker
 
 - Settings → Version policy and the component page choose the policy from a list that says what each one

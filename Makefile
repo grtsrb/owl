@@ -1,5 +1,6 @@
 VERSION  ?= 0.1.0-dev
 IMAGE    ?= owl:dev
+AGENT_IMAGE ?= owl-agent:dev
 CLUSTERS := it-hetzner it-aws-test it-aws-prod
 # Different k3s versions per cluster so the demo shows Kubernetes drift/EOL (staging newest, prod oldest).
 K3S_it-hetzner  := v1.36.4-k3s1
@@ -37,8 +38,10 @@ lint:
 	go vet ./...
 	@test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 
+## Both images: the server (owl) and the slim agent (owl-agent, --target agent).
 image:
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+	docker build --build-arg VERSION=$(VERSION) --target agent -t $(AGENT_IMAGE) .
 
 ## Multi-arch image (amd64 + arm64, e.g. Graviton) pushed to a registry you're logged in to:
 ##   make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0
@@ -46,6 +49,8 @@ image-push:
 	@test -n "$(REGISTRY)" || (echo "set REGISTRY, e.g. make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0"; exit 1)
 	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) \
 	  -t $(REGISTRY)/owl:$(VERSION) --push .
+	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) --target agent \
+	  -t $(REGISTRY)/owl-agent:$(VERSION) --push .
 
 ## Local dev clusters (k3d). Contexts: k3d-<name>. Does not switch your current kube context.
 dev-up:

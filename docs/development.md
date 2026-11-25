@@ -23,7 +23,7 @@ These are the **only** clusters to touch from this repository during development
 ```bash
 make dev-up          # create the clusters (doesn't switch your kube context) and seed them
 make seed            # re-apply seed workloads (dev/seed/seed.sh: per-cluster version tables)
-make stack-up        # build the image, run server + S3 test server + Mailpit in Docker, agents in every cluster
+make stack-up        # build both images (owl:dev, owl-agent:dev; IMAGE / AGENT_IMAGE override), run server + S3 + Mailpit in Docker, agents in every cluster
 make stack-down      # remove server, S3, Mailpit and agents (keeps the owl-data volume)
 make dev-down        # delete the clusters
 make mattermost-up   # optional: throwaway Mattermost (≈1 GB, amd64 image) with a webhook; then make stack-up

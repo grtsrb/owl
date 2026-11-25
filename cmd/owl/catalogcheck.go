@@ -1,4 +1,4 @@
-//go:build !owlclient
+//go:build !owlclient && !owlagent
 
 package main
 

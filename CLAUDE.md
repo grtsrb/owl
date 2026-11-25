@@ -20,7 +20,8 @@ from a file) done; v1 roadmap complete — v2 ideas at the bottom of `DESIGN.md`
 catalog, DESIGN.md "Bigger built-in catalog") in progress: plumbing + batch 1 (Elastic, networking, certs,
 monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batch 3 (data/policy/ops) and
 GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-25 (DESIGN.md "Milestones (v2)"):
-14 slim agent image → 15 server-side Trivy image scanning → 16 Docker hosts. Keep this file's commands and
+14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
+scanning → 16 Docker hosts. Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -35,14 +36,14 @@ go test ./internal/agent -run TestCollect -v    # single test
 make dev-up                 # create the 3 k3d clusters (different k3s versions) + seed them
 make seed                   # re-apply seed workloads (dev/seed/seed.sh — bash 3.2 compatible)
 make agent-print CLUSTER=it-aws-prod   # what the agent would send, as JSON (uses k3d-<name> context)
-make image                  # Docker image (same image for agent and server)
+make image                  # Docker images: owl:dev (server) + owl-agent:dev (slim agent, --target agent)
 make stack-up               # server + S3Mock + Mailpit (127.0.0.1:8025) in Docker, agent in every k3d cluster
                             # first run prints the admin@owl.local invite link
 docker exec owl-server /owl db cluster list         # registered clusters, last seen
 docker exec owl-server /owl db user reset-link --email admin@owl.local   # lost the dev password
 make mattermost-up          # optional throwaway Mattermost + webhook (dev/.mattermost.env); then make stack-up
 make mattermost-down
-make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # amd64+arm64
+make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # owl + owl-agent, amd64+arm64
 # API: a personal token from Account → API tokens (or a session cookie from /api/v1/auth/login)
 ./bin/owl login --server http://127.0.0.1:8080      # then: owl status / outdated / component coredns / users plan …
 curl -s -H "Authorization: Bearer $OWL_TOKEN" 127.0.0.1:8080/api/v1/report   # levels + reasons + targets + drift
@@ -59,7 +60,9 @@ make dev-down
   file, refuse a missing one: first admin, emergencies), `healthcheck` (Docker HEALTHCHECK; distroless
   has no curl), `upstream` (debug). `legacy()` keeps `owl user …` / `owl cluster … --name|--db|list`
   working with a warning for one release. `-tags owlclient` = the downloadable client (no server,
-  agent, k8s or SQLite code — keep it that way).
+  agent, k8s or SQLite code); `-tags owlagent` = the slim agent image (`owl agent` only — no server, CLI,
+  catalog or auth code). Commands register themselves (`commands`, `client` in main.go) from files whose
+  build tags pick the builds; `TestBuildDeps` (`go list -deps`) keeps both small builds small.
 - `internal/cli` — the client (milestone 12): stdlib + sigs.k8s.io/yaml + x/term only. Config
   `~/.config/owl/config.yaml` (0600), `OWL_SERVER`/`OWL_TOKEN` override; refuses `http://` except
   loopback, never follows redirects, token never as an argument. Local JSON structs for API answers

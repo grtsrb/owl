@@ -1,4 +1,4 @@
-//go:build !owlclient
+//go:build !owlclient && !owlagent
 
 package main
 
@@ -10,16 +10,12 @@ import (
 )
 
 func init() {
-	fullCommands["agent"] = runAgent
-	fullCommands["server"] = runServer
-	fullCommands["db"] = runDB
-	fullCommands["healthcheck"] = runHealthcheck
-	fullCommands["upstream"] = runUpstream
-	fullCommands["catalog-check"] = runCatalogCheck
-	fullUsage = `
-server-side commands:
-  agent        collect workload inventory from a cluster and push it to the server
-  server       run the central inventory server
+	commands["server"] = runServer
+	commands["db"] = runDB
+	commands["healthcheck"] = runHealthcheck
+	commands["upstream"] = runUpstream
+	commands["catalog-check"] = runCatalogCheck
+	commandUsage = agentUsage + `  server       run the central inventory server
   db           operator commands on the database file: cluster (add, list, rotate-token, delete),
                user (invite, list, reset-link, delete) — the first admin and emergencies
   healthcheck  exit 0 if the local server answers /healthz (for Docker HEALTHCHECK)

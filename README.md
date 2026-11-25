@@ -60,4 +60,5 @@ UI, cluster management, backups/logging/audit, Claude upgrade summaries — off 
 caps — invite-only sign-in with passwords or Google, email, Docker Compose/Kubernetes packaging, and
 Mattermost notifications: weekly digest and alerts, adding catalog components from the UI, and the
 `owl` CLI with personal API tokens and users from a file). Milestone 13 — a much longer built-in
-catalog of common infrastructure tools — is under way. See the roadmap in DESIGN.md for v2.
+catalog of common infrastructure tools — is under way. v2 has started: the agent has its own slim image
+(milestone 14); next are image vulnerability scanning with Trivy and Docker hosts (roadmap in DESIGN.md).
