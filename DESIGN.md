@@ -514,7 +514,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
     components, overrides that survive upgrades, quiet recognition, `bundledWith`, then catalog batches.
 
 ## Milestones (v2, agreed 2026-11-25 after the team demo)
-14. **Slim agent image**: agent-only binary and image (plan below). Comes first: the host agent is that binary.
+14. **Slim agent image** (built 2026-11-25): agent-only binary and image (plan below). Comes first: the host agent is that binary.
 15. **Image scanning (Trivy), server-side**, clusters first — the team's pain point is in-house images.
 16. **Docker hosts**: their images get scanning for free, because 15 exists by then.
 Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDuty & co.: "Later".

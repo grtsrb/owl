@@ -19,6 +19,8 @@ import (
 	"owl/internal/agent"
 )
 
+func init() { commands["agent"] = runAgent }
+
 func runAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)
 	kubeconfig := fs.String("kubeconfig", "", "path to kubeconfig (default: in-cluster, then $KUBECONFIG / ~/.kube/config)")

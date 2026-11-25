@@ -1,10 +1,11 @@
 # Installation
 
-Owl is one binary/image with two modes: `owl server` (central, with the UI) and `owl agent` (one per
-cluster). The same image `owl:<version>` runs both.
+Owl is one binary with two modes: `owl server` (central, with the UI) and `owl agent` (one per
+cluster). It ships as two images with the same version tag: `owl:<version>` for the server and the slim
+`owl-agent:<version>` for the clusters.
 
 - [Requirements](#requirements)
-- [1. Build and push the image](#1-build-and-push-the-image)
+- [1. Build and push the images](#1-build-and-push-the-images)
 - [2. Run the server](#2-run-the-server) — [Docker Compose on one host](#docker-compose-on-one-host-recommended),
   [inside a cluster](#inside-a-cluster), [plain `docker run`](#plain-docker-run)
 - [3. First admin and first-time setup](#3-first-admin-and-first-time-setup)
@@ -35,18 +36,26 @@ cluster). The same image `owl:<version>` runs both.
 
 > **Why:** Owl decides who may sign in with `Secure` cookies and rate limits per client, and agents send tokens; all of that is only safe over HTTPS. A GitHub token with no scopes can read nothing private — it only raises the rate limit.
 
-## 1. Build and push the image
+## 1. Build and push the images
 
-The image is distroless, runs as non-root (UID 65532), contains only `/owl`, and is the same for the
-server and the agents. Build it from a checkout of the Owl source, for both CPU architectures (amd64, and arm64 for Graviton instances
-like `t4g`) and push it to your registry (log in first, e.g. `docker login registry.gitlab.example.com`):
+Both images are distroless and run as non-root (UID 65532):
+
+- `owl` — the server: `/owl` (UI, database, backups, Claude summaries; `owl agent` too), the CLI
+  downloads for four platforms in `/cli`, and the data directory `/data`.
+- `owl-agent` — what every cluster runs: only `/owl`, built with nothing but `owl agent`.
+
+Build them from a checkout of the Owl source, for both CPU architectures (amd64, and arm64 for Graviton
+instances like `t4g`) and push them to your registry (log in first, e.g. `docker login registry.gitlab.example.com`):
 
 ```bash
 make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0
-# -> registry.gitlab.example.com/devops/owl:0.9.0 (linux/amd64 + linux/arm64)
+# -> registry.gitlab.example.com/devops/owl:0.9.0       (linux/amd64 + linux/arm64)
+# -> registry.gitlab.example.com/devops/owl-agent:0.9.0 (linux/amd64 + linux/arm64)
 ```
 
-`make image` builds a local single-architecture image (`owl:dev`) instead.
+`make image` builds local single-architecture images (`owl:dev`, `owl-agent:dev`) instead.
+
+> **Why:** every cluster pulls the agent image, and image scanners in the clusters report what's inside it. With one shared image they pulled the whole server (UI, CLI downloads for four platforms) and reported findings for libraries the agent never runs — S3 client, Claude SDK, SQLite. The agent image has none of them.
 
 ## 2. Run the server
 
@@ -157,7 +166,7 @@ you're signed in. Then:
    the link by email; otherwise copy it and send it yourself (e.g. on Mattermost).
 2. **Settings → Stages & tenants**: adjust the stage list and order (default `staging → prelive → live`).
 3. On the same page, add your tenants (e.g. `IT`, `DS`).
-4. **Settings → Clusters → Agent settings**: set the **agent image** (as pushed above) and the
+4. **Settings → Clusters → Agent settings**: set the **agent image** (`owl-agent`, as pushed above) and the
    **server URL** agents use (usually the same as `OWL_PUBLIC_URL`).
 5. Optional: **Settings → Version policy** — change the global default if `lts-or-n-1` doesn't fit.
 
@@ -289,6 +298,8 @@ including keeping users in a `users.yaml` (`owl users plan/apply`) and failing C
    the pre-upgrade backup, not by downgrading over the migrated database.
 3. Update the agents: set the new agent image in **Agent settings**, re-download `agent.yaml`, apply it
    in each cluster (or `kubectl -n owl set image deploy/owl-agent agent=<image>`).
+   Agents set up before the slim image still run the full `owl` image — that keeps working; switch them
+   to `owl-agent` with the same command.
 
 Agents and servers of different versions work together as long as the snapshot schema version is
 the same; the server rejects an incompatible agent with a clear `400` in the agent's logs.

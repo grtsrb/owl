@@ -12,4 +12,4 @@ var AgentManifest string
 
 // AgentImagePlaceholder is the image line in AgentManifest that the server replaces with the
 // configured agent image.
-const AgentImagePlaceholder = "image: owl:dev # replace with your registry image"
+const AgentImagePlaceholder = "image: owl-agent:dev # replace with your registry image"

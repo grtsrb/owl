@@ -196,17 +196,25 @@ function Status({ c }: { c: Cluster }) {
   );
 }
 
+// isFullOwlImage: the saved agent image is the server image (repository named "owl"), set before milestone 14.
+function isFullOwlImage(ref: string): boolean {
+  const repo = ref.split("@")[0].replace(/:[^/:]*$/, "");
+  return repo === "owl" || repo.endsWith("/owl");
+}
+
 function AgentSettings({ initial, onSaved, canWrite }: { initial: ServerSettings; onSaved: () => void; canWrite: boolean }) {
   const [v, setV] = useState(initial);
   const w = useWrite();
   const dirty = v.serverURL !== initial.serverURL || v.agentImage !== initial.agentImage;
+  const fullImage = isFullOwlImage(initial.agentImage);
   return (
     <Card title="Agent install settings">
       <p className="subtle" style={{ margin: 0 }}>Used in the files Add cluster and Rotate token give you.</p>
-      {(!initial.serverURL || !initial.agentImage) && (
+      {(!initial.serverURL || !initial.agentImage || fullImage) && (
         <div className="callout warn"><Icon.warn /><span>
           {!initial.serverURL && "No server URL yet: the token Secret will contain a placeholder. "}
-          {!initial.agentImage && "No agent image yet: agent.yaml uses owl:dev, which only exists on dev clusters."}
+          {!initial.agentImage && "No agent image yet: agent.yaml uses owl-agent:dev, which only exists on dev clusters."}
+          {fullImage && "This is the full server image (owl). It still works, but agents should run the slim owl-agent image of the same version."}
         </span></div>
       )}
       <form className="grid-2" style={{ gap: 16 }} onSubmit={async (e) => {
@@ -217,7 +225,7 @@ function AgentSettings({ initial, onSaved, canWrite }: { initial: ServerSettings
           <input className="input mono" placeholder="https://inventory.example.internal" value={v.serverURL} onChange={(e) => setV({ ...v, serverURL: e.target.value })} />
         </label>
         <label className="field">Agent image
-          <input className="input mono" placeholder="registry.example.com/devops/owl:0.7.0" value={v.agentImage} onChange={(e) => setV({ ...v, agentImage: e.target.value })} />
+          <input className="input mono" placeholder="registry.example.com/devops/owl-agent:0.7.0" value={v.agentImage} onChange={(e) => setV({ ...v, agentImage: e.target.value })} />
         </label>
         <div className="row"><button className="btn primary" disabled={!canWrite || !dirty || w.busy}>Save</button><Msg msg={w.msg} /></div>
       </form>

@@ -72,7 +72,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: agent
-          image: owl:dev # replace with your registry image
+          image: owl-agent:dev # replace with your registry image
           args: [agent]
           envFrom:
             - secretRef: {name: owl-agent}
