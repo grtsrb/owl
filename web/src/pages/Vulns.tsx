@@ -163,8 +163,16 @@ function Places({ places }: { places: VulnPlace[] }) {
 }
 
 function SevSummary({ c, accepted }: { c: Record<Severity, number>; accepted: number }) {
-  const parts = (["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => c[s] > 0).map((s) => `${c[s]} ${sevLabel[s]}`);
-  return <span title={`Every finding, with or without a fix (accepted ones not counted).${c.unknown > 0 ? " Unrated: " + UNRATED_HINT : ""}`}>{parts.join(" · ") || "none"}{accepted > 0 && <span className="muted"> · {accepted} accepted</span>}</span>;
+  const sevs = (["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => c[s] > 0);
+  // Only "N Unrated" explains what unrated means; the rest keeps the general hint.
+  return (
+    <span title="Every finding, with or without a fix (accepted ones not counted)">
+      {sevs.length === 0 ? "none" : sevs.map((s, k) => (
+        <span key={s}>{k > 0 && " · "}<span title={s === "unknown" ? UNRATED_HINT : undefined}>{c[s]} {sevLabel[s]}</span></span>
+      ))}
+      {accepted > 0 && <span className="muted"> · {accepted} accepted</span>}
+    </span>
+  );
 }
 
 /** What the scanner is doing right now, its queue, recent scans and health. Polls while open. */
