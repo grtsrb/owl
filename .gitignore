@@ -11,3 +11,4 @@
 !/internal/docs/dist/.keep
 *.tsbuildinfo
 dev/.mattermost.env
+dev/.registry/

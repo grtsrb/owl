@@ -15,6 +15,7 @@ for img in "$IMAGE" "$AGENT_IMAGE"; do
   docker image inspect "$img" >/dev/null 2>&1 || { echo "error: image $img not found — run make image" >&2; exit 1; }
 done
 clusters="it-hetzner:staging it-aws-test:prelive it-aws-prod:live"
+. dev/registry.sh
 
 # Secrets come from .env (gitignored), passed by name so they never appear in `ps`/shell history.
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
@@ -34,11 +35,15 @@ docker run -d --name owl-s3 --network owl-net -e initialBuckets=owl-backups adob
 docker rm -f owl-mailpit >/dev/null 2>&1 || true
 docker run -d --name owl-mailpit --network owl-net -p 127.0.0.1:8025:8025 axllent/mailpit:v1.27.0 >/dev/null
 
+# Dev registry: the clusters pull the agent image from it, so Owl scans its own agent (dev/registry.sh).
+registry_up "$IMAGE" "$AGENT_IMAGE"
+
 docker rm -f owl-server >/dev/null 2>&1 || true
 # Docker's own copy of the logs is capped (the server also writes rotated files to /data/logs).
 docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-data:/data \
+  -v "$PWD/$REG_DIR/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro" \
   --log-opt max-size=10m --log-opt max-file=3 \
-  -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example -e GITHUB_TOKEN \
+  -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example,$REG_HOST -e GITHUB_TOKEN \
   -e OWL_PUBLIC_URL=http://127.0.0.1:8080 \
   -e OWL_SMTP_HOST=owl-mailpit -e OWL_SMTP_PORT=1025 -e OWL_SMTP_TLS=none -e "OWL_SMTP_FROM=Owl <owl@owl.local>" \
   -e OWL_SECRET_KEY -e OWL_GOOGLE_CLIENT_ID -e OWL_GOOGLE_CLIENT_SECRET -e OWL_GOOGLE_DOMAIN -e OWL_MATTERMOST_WEBHOOK_URL \
@@ -64,15 +69,15 @@ for entry in $clusters; do
     token=$(docker exec owl-server /owl db cluster add --name "$name" --stage "$stage" --tenant IT 2>/dev/null)
   fi
 
-  k3d image import "$AGENT_IMAGE" -c "$name" >/dev/null 2>&1
+  registry_cluster "$name"
   kubectl --context "$ctx" apply -f deploy/agent/agent.yaml >/dev/null
   kubectl --context "$ctx" -n owl create secret generic owl-agent \
     --from-literal=OWL_SERVER_URL="http://$ip:8080" --from-literal=OWL_TOKEN="$token" \
     --from-literal=OWL_ALLOW_INSECURE_HTTP=true --dry-run=client -o yaml | kubectl --context "$ctx" apply -f - >/dev/null
-  # Local image: never pull from a registry.
+  # Pulled from the dev registry (always: the dev tag moves with every make image).
   kubectl --context "$ctx" -n owl patch deploy owl-agent --type=json -p \
-    "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"$AGENT_IMAGE\"},
-      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Never\"}]" >/dev/null
+    "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"$REG_HOST/owl-agent:dev\"},
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Always\"}]" >/dev/null
   kubectl --context "$ctx" -n owl rollout restart deploy/owl-agent >/dev/null
   echo "agent: $name ($stage) -> http://$ip:8080"
 done

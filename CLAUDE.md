@@ -228,7 +228,9 @@ make dev-down
 - SQLite migrations: append-only list in `sqlite.go` (`PRAGMA user_version`); never edit a shipped one.
 - Agent refuses `http://` server URLs unless `OWL_ALLOW_INSECURE_HTTP=true` (local dev only).
 - `dev/stack-up.sh` — server container joins each `k3d-<name>` Docker network; agents use that IP.
-  Also runs S3Mock and Mailpit; invites the first admin when there are no users.
+  Also runs S3Mock and Mailpit; invites the first admin when there are no users. `dev/registry.sh`: dev
+  registry `owl-registry:5000` (TLS, dev CA in `dev/.registry/`); agents pull `owl-agent:dev` from it so Owl
+  scans its own agent image.
 - `deploy/compose` — production on one host: Owl + Caddy (Let's Encrypt), `.env` from `owl.env.example`,
   Caddy at fixed IP 172.30.80.10 = `OWL_TRUSTED_PROXIES`. `deploy/server` — in-cluster StatefulSet +
   example Ingress.
