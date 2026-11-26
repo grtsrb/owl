@@ -288,6 +288,11 @@ packages and libraries — what's *inside* the image, as opposed to the componen
 - **Fixable** = Trivy knows a fixed package version. The lists count fixable Critical/High findings
   (`3C · 12H`); everything else is one click away. **✓ no C/H** = nothing fixable at Critical/High (other
   findings may exist), **✓ clean** = no findings at all.
+- **Severity** is the rating of the package's source (e.g. Debian's own rating for a Debian package), so it
+  can differ from NVD's CVSS score. Roughly: **Critical** (CVSS 9–10) exploitable remotely with little
+  effort — fix first; **High** (7–8.9) serious but needs some condition (a login, a config) — fix soon;
+  **Medium** (4–6.9) limited impact or hard to exploit; **Low** (below 4) minor. Hover a severity in the UI
+  for the same text.
 - **Unrated** findings have no severity from their source. Most are **update notices** — Debian DLA/DSA
   entries for routine package updates (`tzdata`, `ca-certificates`), not CVEs. They never count in the
   Critical/High numbers and disappear once the base image is updated upstream and your image is rebuilt on
