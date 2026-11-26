@@ -45,7 +45,14 @@ writes its URL to `dev/.mattermost.env` (gitignored), which `make stack-up` pass
   `http://127.0.0.1:8080/auth/google/callback` works locally — Google allows http for loopback),
 - joins the server to each `k3d-<name>` Docker network; agents use that IP over plain HTTP
   (`OWL_ALLOW_INSECURE_HTTP=true`),
-- rotates the agents' tokens on every run.
+- rotates the agents' tokens on every run,
+- runs a dev registry (`owl-registry`, `dev/registry.sh`): pushes `owl-agent:dev` to it (host:
+  `https://127.0.0.1:5050`, in the clusters `owl-registry:5000`) and the agents **pull** from it, so Owl scans
+  its own agent image on the Vulnerabilities page (in-house: it's in the dev `OWL_INTERNAL_REGISTRIES`). TLS
+  with a throwaway CA in `dev/.registry/` (gitignored): the k3d nodes trust it through
+  `/etc/rancher/k3s/registries.yaml` (each node restarts once when that's first written) and the dev server
+  gets the system CA bundle plus that CA. Delete `dev/.registry/` to get a new CA (the nodes then restart
+  again). The server image itself isn't scanned in dev: it runs outside the clusters (milestone 16 covers it).
 
 Heavy components (Longhorn, Redpanda) are seeded scaled to 0 — Owl still counts them.
 
