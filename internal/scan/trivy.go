@@ -39,9 +39,9 @@ type Result struct {
 
 // DBInfo describes Trivy's vulnerability DB.
 type DBInfo struct {
-	Version    string    `json:"version"` // Trivy's version, e.g. 0.76.2
-	UpdatedAt  time.Time `json:"updatedAt"`
-	Downloaded time.Time `json:"downloadedAt"`
+	Version    string    `json:"version"`            // Trivy's version, e.g. 0.76.2
+	UpdatedAt  time.Time `json:"updatedAt,omitzero"` // omitted until a DB was downloaded (the UI says so)
+	Downloaded time.Time `json:"downloadedAt,omitzero"`
 }
 
 var (

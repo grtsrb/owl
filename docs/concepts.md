@@ -286,7 +286,12 @@ packages and libraries — what's *inside* the image, as opposed to the componen
 - **A separate signal.** Image findings never change a component's [priority level](#priority-levels).
   Nearly every image has some fixable critical OS-package CVE; folding them in would make everything red.
 - **Fixable** = Trivy knows a fixed package version. The lists count fixable Critical/High findings
-  (`3C · 12H`); everything else is one click away.
+  (`3C · 12H`); everything else is one click away. **✓ no C/H** = nothing fixable at Critical/High (other
+  findings may exist), **✓ clean** = no findings at all.
+- **Unrated** findings have no severity from their source. Most are **update notices** — Debian DLA/DSA
+  entries for routine package updates (`tzdata`, `ca-certificates`), not CVEs. They never count in the
+  Critical/High numbers and disappear once the base image is updated upstream and your image is rebuilt on
+  it (`docker build --pull`).
 - **Overlap with advisories**: when Trivy finds a CVE that Owl already lists as an advisory of the
   component at that version, it's shown once — in the component's advisories, tagged **Trivy: confirmed**
   — and not counted again in the image's numbers.

@@ -40,16 +40,16 @@ lint:
 
 ## Both images: the server (owl) and the slim agent (owl-agent, --target agent).
 image:
-	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
-	docker build --build-arg VERSION=$(VERSION) --target agent -t $(AGENT_IMAGE) .
+	docker build --pull --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+	docker build --pull --build-arg VERSION=$(VERSION) --target agent -t $(AGENT_IMAGE) .
 
 ## Multi-arch image (amd64 + arm64, e.g. Graviton) pushed to a registry you're logged in to:
 ##   make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0
 image-push:
 	@test -n "$(REGISTRY)" || (echo "set REGISTRY, e.g. make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0"; exit 1)
-	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) \
+	docker buildx build --pull --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) \
 	  -t $(REGISTRY)/owl:$(VERSION) --push .
-	docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) --target agent \
+	docker buildx build --pull --platform linux/amd64,linux/arm64 --build-arg VERSION=$(VERSION) --target agent \
 	  -t $(REGISTRY)/owl-agent:$(VERSION) --push .
 
 ## Local dev clusters (k3d). Contexts: k3d-<name>. Does not switch your current kube context.

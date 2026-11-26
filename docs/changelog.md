@@ -17,6 +17,9 @@ What each milestone shipped. Newest first.
 - `OWL_REGISTRY_AUTH_FILE` still works; its entries are listed read-only and win over the UI.
 - Dependency fix: `golang.org/x/net` 0.62.0 (CVE-2026-78661, CVE-2026-97045 in its HTML parser, which reads
   PostgreSQL release notes) — found by Owl scanning its own agent image.
+- Vulnerabilities: findings without a severity are labelled **Unrated**, Debian DLA/DSA entries **Update
+  notice** (routine package updates, not CVEs). `make image` / `make image-push` build with `--pull`, so the
+  base image is current. Images without fixable Critical/High show **✓ no C/H** (or **✓ clean**) instead of `—`.
 - **In-house registries** on the same page: every image from them is in-house (and a registry given as an IP
   address can be scanned), applied at once. `OWL_INTERNAL_REGISTRIES` still works and is shown read-only.
 
