@@ -13,7 +13,16 @@ import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } fr
 const sevLabel: Record<Severity, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low", unknown: "Unrated" };
 // Findings without a severity: mostly distribution update notices (Debian DLA/DSA — routine package updates such
 // as tzdata or ca-certificates, no CVE). They never count in the Critical/High numbers.
-const UNRATED_HINT = "No severity from the source. Mostly Debian update notices (DLA/DSA): routine package updates such as tzdata or ca-certificates, not a CVE. They go away once the base image is rebuilt upstream and your image is rebuilt on it.";
+// What each severity means (hover text). Trivy takes the rating of the package's source (e.g. Debian's own
+// rating for a Debian package), so it can differ from the CVSS score on NVD.
+const SEV_HINT: Record<Severity, string> = {
+  critical: "Critical (CVSS 9.0–10): usually exploitable remotely with little effort, often without a login — e.g. remote code execution. Fix first.",
+  high: "High (CVSS 7.0–8.9): serious, but needs some condition — a login, a specific config or user action. Fix soon.",
+  medium: "Medium (CVSS 4.0–6.9): limited impact or hard to exploit, e.g. a denial of service needing unusual input. Fix with regular updates.",
+  low: "Low (CVSS 0.1–3.9): minor impact, or needs local access or an unlikely setup. Fix when convenient.",
+  unknown: "Unrated: no severity from the source. Mostly Debian update notices (DLA/DSA): routine package updates such as tzdata or ca-certificates, not a CVE. They go away once the base image is rebuilt upstream and your image is rebuilt on it.",
+};
+const SEV_SOURCE = " The rating comes from the package's source (e.g. Debian), so it can differ from NVD.";
 const isUpdateNotice = (v: Vuln) => v.severity === "unknown" && /^(DLA|DSA)-/.test(v.id);
 export const sevTone = (s: string) => (s === "critical" ? "critical" : s === "high" ? "warn" : "neutral");
 
@@ -164,11 +173,11 @@ function Places({ places }: { places: VulnPlace[] }) {
 
 function SevSummary({ c, accepted }: { c: Record<Severity, number>; accepted: number }) {
   const sevs = (["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => c[s] > 0);
-  // Only "N Unrated" explains what unrated means; the rest keeps the general hint.
+  // Each count explains its own severity.
   return (
     <span title="Every finding, with or without a fix (accepted ones not counted)">
       {sevs.length === 0 ? "none" : sevs.map((s, k) => (
-        <span key={s}>{k > 0 && " · "}<span title={s === "unknown" ? UNRATED_HINT : undefined}>{c[s]} {sevLabel[s]}</span></span>
+        <span key={s}>{k > 0 && " · "}<span title={SEV_HINT[s]}>{c[s]} {sevLabel[s]}</span></span>
       ))}
       {accepted > 0 && <span className="muted"> · {accepted} accepted</span>}
     </span>
@@ -365,7 +374,7 @@ export function VulnImagePage() {
           <div className="row" role="group" aria-label="Severity">
             <button className={`chip${sev === "" ? " on" : ""}`} aria-pressed={sev === ""} onClick={() => { setSev(""); setPage(1); }}>All</button>
             {(["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => bySev(s) > 0).map((s) => (
-              <button key={s} className={`chip${sev === s ? " on" : ""}`} aria-pressed={sev === s} onClick={() => { setSev(s); setPage(1); }} title={s === "unknown" ? UNRATED_HINT : undefined}>{sevLabel[s]} {bySev(s)}</button>
+              <button key={s} className={`chip${sev === s ? " on" : ""}`} aria-pressed={sev === s} onClick={() => { setSev(s); setPage(1); }} title={SEV_HINT[s]}>{sevLabel[s]} {bySev(s)}</button>
             ))}
           </div>
           <button className={`chip${fixableOnly ? " on" : ""}`} aria-pressed={fixableOnly} onClick={() => { setFixableOnly(!fixableOnly); setPage(1); }}>Fixable only</button>
@@ -398,7 +407,7 @@ function VulnTable({ rows, accepted, action }: { rows: Vuln[]; accepted?: boolea
         <tbody>
           {rows.map((v, k) => (
             <tr key={`${v.id}/${v.package}/${v.installed}/${k}`}>
-              <td><Tag tone={sevTone(v.severity)} title={v.severity === "unknown" ? UNRATED_HINT : undefined}>{isUpdateNotice(v) ? "Update notice" : sevLabel[v.severity]}</Tag></td>
+              <td><Tag tone={sevTone(v.severity)} title={SEV_HINT[v.severity] + (v.severity === "unknown" ? "" : SEV_SOURCE)}>{isUpdateNotice(v) ? "Update notice" : sevLabel[v.severity]}</Tag></td>
               <td>{v.url ? <a href={v.url} target="_blank" rel="noreferrer noopener" className="mono">{v.id}</a> : <span className="mono">{v.id}</span>}
                 {v.title && <div className="subtle" style={{ margin: 0 }}>{v.title}</div>}
                 {v.expiredAcceptance && <Tag tone="warn" title="An acceptance existed but its date passed">acceptance expired</Tag>}</td>
