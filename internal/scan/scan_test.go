@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -560,5 +561,16 @@ func TestNeverRegistry(t *testing.T) {
 		if why := NeverRegistry(h); why != "" {
 			t.Errorf("%s refused: %s", h, why)
 		}
+	}
+}
+
+// Before a DB was ever downloaded the status has no timestamps (the panel said "updated 2,027 years ago").
+func TestStatusWithoutDB(t *testing.T) {
+	m := &Manager{}
+	m.init()
+	m.setDB(DBInfo{}, errors.New("download failed"))
+	b, _ := json.Marshal(m.Status())
+	if strings.Contains(string(b), "0001-01-01") || strings.Contains(string(b), "updatedAt") {
+		t.Fatalf("zero DB time serialized: %s", b)
 	}
 }

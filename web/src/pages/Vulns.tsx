@@ -10,7 +10,11 @@ import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } fr
 // Image vulnerabilities from Trivy (milestone 15). A separate signal from the priority levels: nothing on
 // these pages changes a component's level.
 
-const sevLabel: Record<Severity, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low", unknown: "Unknown" };
+const sevLabel: Record<Severity, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low", unknown: "Unrated" };
+// Findings without a severity: mostly distribution update notices (Debian DLA/DSA — routine package updates such
+// as tzdata or ca-certificates, no CVE). They never count in the Critical/High numbers.
+const UNRATED_HINT = "No severity from the source. Mostly Debian update notices (DLA/DSA): routine package updates such as tzdata or ca-certificates, not a CVE. They go away once the base image is rebuilt upstream and your image is rebuilt on it.";
+const isUpdateNotice = (v: Vuln) => v.severity === "unknown" && /^(DLA|DSA)-/.test(v.id);
 export const sevTone = (s: string) => (s === "critical" ? "critical" : s === "high" ? "warn" : "neutral");
 
 /** "3C · 12H" for an image's fixable Critical/High findings; a state when there's no result. */
@@ -20,7 +24,10 @@ export function VulnCounts({ img, link = true }: { img: VulnImage; link?: boolea
   if (!scanned) {
     body = <span className="subtle" style={{ margin: 0 }} title={img.error}>{img.state === "not scannable" ? "not scannable" : img.state}</span>;
   } else if (img.fixable.critical + img.fixable.high === 0) {
-    body = <span className="muted" title="No fixable Critical or High findings">—</span>;
+    const other = Object.values(img.total).reduce((a, n) => a + n, 0);
+    body = other === 0
+      ? <span className="tag tone-ok" title="No findings at all">✓ clean</span>
+      : <span className="tag tone-ok" title={`No fixable Critical or High findings (${other} other — lower severity, no fix yet, or update notices)`}>✓ no C/H</span>;
   } else {
     body = (
       <span className="vcounts" title={`Fixable, not accepted: ${img.fixable.critical} Critical, ${img.fixable.high} High`}>
@@ -157,7 +164,7 @@ function Places({ places }: { places: VulnPlace[] }) {
 
 function SevSummary({ c, accepted }: { c: Record<Severity, number>; accepted: number }) {
   const parts = (["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => c[s] > 0).map((s) => `${c[s]} ${sevLabel[s]}`);
-  return <span title="Every finding, with or without a fix (accepted ones not counted)">{parts.join(" · ") || "none"}{accepted > 0 && <span className="muted"> · {accepted} accepted</span>}</span>;
+  return <span title={`Every finding, with or without a fix (accepted ones not counted).${c.unknown > 0 ? " Unrated: " + UNRATED_HINT : ""}`}>{parts.join(" · ") || "none"}{accepted > 0 && <span className="muted"> · {accepted} accepted</span>}</span>;
 }
 
 /** What the scanner is doing right now, its queue, recent scans and health. Polls while open. */
@@ -350,7 +357,7 @@ export function VulnImagePage() {
           <div className="row" role="group" aria-label="Severity">
             <button className={`chip${sev === "" ? " on" : ""}`} aria-pressed={sev === ""} onClick={() => { setSev(""); setPage(1); }}>All</button>
             {(["critical", "high", "medium", "low", "unknown"] as Severity[]).filter((s) => bySev(s) > 0).map((s) => (
-              <button key={s} className={`chip${sev === s ? " on" : ""}`} aria-pressed={sev === s} onClick={() => { setSev(s); setPage(1); }}>{sevLabel[s]} {bySev(s)}</button>
+              <button key={s} className={`chip${sev === s ? " on" : ""}`} aria-pressed={sev === s} onClick={() => { setSev(s); setPage(1); }} title={s === "unknown" ? UNRATED_HINT : undefined}>{sevLabel[s]} {bySev(s)}</button>
             ))}
           </div>
           <button className={`chip${fixableOnly ? " on" : ""}`} aria-pressed={fixableOnly} onClick={() => { setFixableOnly(!fixableOnly); setPage(1); }}>Fixable only</button>
@@ -383,7 +390,7 @@ function VulnTable({ rows, accepted, action }: { rows: Vuln[]; accepted?: boolea
         <tbody>
           {rows.map((v, k) => (
             <tr key={`${v.id}/${v.package}/${v.installed}/${k}`}>
-              <td><Tag tone={sevTone(v.severity)}>{sevLabel[v.severity]}</Tag></td>
+              <td><Tag tone={sevTone(v.severity)} title={v.severity === "unknown" ? UNRATED_HINT : undefined}>{isUpdateNotice(v) ? "Update notice" : sevLabel[v.severity]}</Tag></td>
               <td>{v.url ? <a href={v.url} target="_blank" rel="noreferrer noopener" className="mono">{v.id}</a> : <span className="mono">{v.id}</span>}
                 {v.title && <div className="subtle" style={{ margin: 0 }}>{v.title}</div>}
                 {v.expiredAcceptance && <Tag tone="warn" title="An acceptance existed but its date passed">acceptance expired</Tag>}</td>

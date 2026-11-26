@@ -114,7 +114,7 @@ export interface ScannerStatus {
   current: (ScanJob & { startedAt: string; timeoutSeconds: number }) | null;
   queue: ScanJob[]; queueLength: number;
   recent: (ScanJob & { startedAt: string; tookMs: number; outcome: "ok" | "failed" | "cancelled" | "timeout" | "removed from queue"; error?: string })[];
-  db: { version: string; updatedAt: string; downloadedAt: string; error?: string; updating: boolean };
+  db: { version: string; updatedAt?: string; downloadedAt?: string; error?: string; updating: boolean };
   lastDaily: string | null;
   authFailures: { prefix: string; ref: string; at: string }[];
   credentialPrefixes: string[];
