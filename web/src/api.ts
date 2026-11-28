@@ -99,6 +99,8 @@ export interface VulnPlace { cluster: string; stage: string; tenant: string; nam
 export interface VulnImage {
   key: string; digest?: string; ref: string; repositories: string[]; inHouse: boolean; components: string[];
   places: VulnPlace[]; state: VulnState; queue?: "scanning" | "queued"; scannedAt?: string; error?: string; os?: string;
+  /** The last scan couldn't log in to the registry: offer "Add login" (admins). */
+  needsLogin?: boolean;
   /** Not accepted findings; fixable = with a fixed version. */
   fixable: SevCounts; total: SevCounts; accepted: number; confirmed: number;
 }
@@ -118,18 +120,22 @@ export interface ScannerStatus {
   lastDaily: string | null;
   authFailures: { prefix: string; ref: string; at: string }[];
   credentialPrefixes: string[];
-  credentialsExpiring: { prefix: string; expiresAt: string; expired: boolean }[];
+  credentialsExpiring: { login: string; prefix: string; expiresAt: string; expired: boolean }[];
 }
 
-// Registry credentials Trivy pulls with (milestone 15.1, internal/server/registries.go). Write-only: a
-// password is sent once and never comes back.
+// Registry logins Trivy pulls with (milestones 15.1 + 15.2, internal/server/registries.go). Write-only: a
+// password is sent once and never comes back. One login can be used for several prefixes.
 export type LoginOutcome = "ok" | "rejected" | "dns" | "connect" | "tls" | "unexpected";
 export interface LoginResult { outcome: LoginOutcome; message: string; at: string }
-export interface RegistryCredential {
-  prefix: string; username: string; source: "ui" | "file"; expiresAt?: string; updatedAt?: string; updatedBy?: string;
-  problem?: string; authFailedAt?: string; lastTest?: LoginResult;
+/** lastTest: the last Test of this prefix with this login (read access is checked per repository). */
+export interface RegistryScope { prefix: string; problem?: string; authFailedAt?: string; images: number; lastTest?: LoginResult }
+export interface RegistryLogin {
+  key: string; id?: number; name: string; username: string; source: "ui" | "file"; expiresAt?: string; updatedAt?: string; updatedBy?: string;
+  problem?: string; scopes: RegistryScope[];
 }
-export interface RegistriesView { credentials: RegistryCredential[]; canEdit: boolean; scanning: boolean; scansOff: string }
+export interface RegistriesView { logins: RegistryLogin[]; canEdit: boolean; scanning: boolean; scansOff: string }
+export interface ScopeOption { prefix: string; failing: number; usedBy?: string; fromFile?: boolean; suggested?: boolean }
+export interface ScopeSuggestion { repository: string; options: ScopeOption[]; current: string }
 
 export interface ComponentView {
   id: string; name: string; github?: string; eol?: string; notes?: string; instances: Instance[];
@@ -330,9 +336,14 @@ export const api = {
   cancelScan: (digest: string) => request("POST", "/api/v1/vulns/scanner/cancel", { digest }),
   acceptances: () => request<Acceptance[]>("GET", "/api/v1/vulns/acceptances"),
   registries: () => request<RegistriesView>("GET", "/api/v1/registries"),
-  addRegistry: (b: { prefix: string; username: string; password: string; expiresAt: string }) => request("POST", "/api/v1/registries", b),
-  updateRegistry: (b: { prefix: string; username?: string; password?: string; expiresAt: string }) => request("PUT", "/api/v1/registries", b),
-  deleteRegistry: (prefix: string) => request("DELETE", "/api/v1/registries", { prefix }),
+  addRegistry: (b: { name: string; prefix: string; username: string; password: string; expiresAt: string }) =>
+    request<{ id: number }>("POST", "/api/v1/registries", b),
+  updateRegistry: (id: number, b: { name?: string; username?: string; password?: string; expiresAt: string }) =>
+    request("PUT", `/api/v1/registries/${id}`, b),
+  deleteRegistry: (id: number) => request("DELETE", `/api/v1/registries/${id}`),
+  addRegistryScope: (id: number, prefix: string) => request("POST", `/api/v1/registries/${id}/scopes`, { prefix }),
+  deleteRegistryScope: (prefix: string) => request("DELETE", "/api/v1/registries/scopes", { prefix }),
+  suggestRegistryScopes: (ref: string) => request<ScopeSuggestion>("GET", `/api/v1/registries/suggest?ref=${encodeURIComponent(ref)}`),
   internalRegistries: () => request<{ server: string[]; ui: string[] }>("GET", "/api/v1/registries/internal"),
   setInternalRegistries: (registries: string[]) => request<{ ui: string[] }>("PUT", "/api/v1/registries/internal", { registries }),
   testRegistry: (prefix: string) => request<LoginResult>("POST", "/api/v1/registries/test", { prefix }),

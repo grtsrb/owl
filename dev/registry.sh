@@ -12,17 +12,22 @@ REG_NAME=owl-registry
 REG_HOST=$REG_NAME:5000
 REG_IMAGE=registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 # registry:2
 
+dev_cert() { # $1 = output path without extension (.crt/.key), $2 = CN, $3 = subjectAltName list — signed by the dev CA
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=$2" -keyout "$1.key" -out "$1.csr" 2>/dev/null
+  printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$3" > "$1.ext"
+  openssl x509 -req -in "$1.csr" -CA "$REG_DIR/ca.pem" -CAkey "$REG_DIR/ca.key" -CAcreateserial \
+    -days 825 -extfile "$1.ext" -out "$1.crt" 2>/dev/null
+  rm -f "$1.csr" "$1.ext"
+  chmod 600 "$1.key"
+}
+
 registry_up() { # $1 = server image (its CA bundle is extended), $2 = agent image (pushed)
   mkdir -p "$REG_DIR"
   if [[ ! -f $REG_DIR/ca.pem ]]; then
     openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Owl dev registry CA" \
       -keyout "$REG_DIR/ca.key" -out "$REG_DIR/ca.pem" 2>/dev/null
-    openssl req -newkey rsa:2048 -nodes -subj "/CN=$REG_NAME" -keyout "$REG_DIR/registry.key" \
-      -out "$REG_DIR/registry.csr" 2>/dev/null
-    printf 'subjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' "$REG_NAME" > "$REG_DIR/ext.cnf"
-    openssl x509 -req -in "$REG_DIR/registry.csr" -CA "$REG_DIR/ca.pem" -CAkey "$REG_DIR/ca.key" -CAcreateserial \
-      -days 825 -extfile "$REG_DIR/ext.cnf" -out "$REG_DIR/registry.pem" 2>/dev/null
-    chmod 600 "$REG_DIR"/*.key
+    dev_cert "$REG_DIR/registry" "$REG_NAME" "DNS:$REG_NAME,DNS:localhost,IP:127.0.0.1"
+    mv "$REG_DIR/registry.crt" "$REG_DIR/registry.pem"
   fi
   if [[ -z $(docker ps -q -f name="^$REG_NAME$") ]]; then
     docker rm -f "$REG_NAME" >/dev/null 2>&1 || true
@@ -50,12 +55,19 @@ registry_cluster() { # $1 = cluster name: the node trusts the registry (restarts
   docker network connect "k3d-$1" "$REG_NAME" >/dev/null 2>&1 || true
   want=$(printf 'mirrors:\n  "%s":\n    endpoint: ["https://%s"]\nconfigs:\n  "%s":\n    tls:\n      ca_file: /etc/rancher/k3s/owl-dev-ca.pem\n' \
     "$REG_HOST" "$REG_HOST" "$REG_HOST")
+  # The optional dev GitLab (dev/gitlab.sh): its registry, reached under its Docker alias, signed by the same CA.
+  if [[ -f dev/.gitlab/up ]]; then
+    docker network connect --alias gitlab.owl.test --alias registry.owl.test "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
+    want+=$(printf '\n  "registry.owl.test":\n    tls:\n      ca_file: /etc/rancher/k3s/owl-dev-ca.pem\n')
+  else
+    docker network disconnect "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
+  fi
   if [[ $(docker exec "$node" cat /etc/rancher/k3s/registries.yaml 2>/dev/null) != "$want" ]] ||
      [[ $(docker exec "$node" cat /etc/rancher/k3s/owl-dev-ca.pem 2>/dev/null) != "$(cat "$REG_DIR/ca.pem")" ]]; then
     docker cp "$REG_DIR/ca.pem" "$node:/etc/rancher/k3s/owl-dev-ca.pem"
     printf '%s\n' "$want" | docker exec -i "$node" sh -c 'cat > /etc/rancher/k3s/registries.yaml'
     docker restart "$node" >/dev/null
     until kubectl --context "k3d-$1" get --raw /readyz >/dev/null 2>&1; do sleep 2; done
-    echo "cluster $1: trusts $REG_HOST (node restarted)"
+    echo "cluster $1: registry config updated ($REG_HOST$([[ -f dev/.gitlab/up ]] && echo ", registry.owl.test")) — node restarted"
   fi
 }

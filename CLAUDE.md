@@ -22,7 +22,9 @@ monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batc
 GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-25 (DESIGN.md "Milestones (v2)"):
 14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
 scanning (done: `internal/scan`, Vulnerabilities page) → 15.1 registry logins in the UI (Settings → Registries,
-`OWL_SECRET_KEY`) → 16 Docker hosts. Keep this file's commands and
+`OWL_SECRET_KEY`) → 15.2 add a login where the scan fails (in progress, branch `m15c-add-login`: logins reusable
+across prefixes, Add login dialog, Test checks read access; dev GitLab done, dev OpenZiti next) → 16 Docker hosts.
+Keep this file's commands and
 layout in sync as milestones land.
 
 ## Commands
@@ -44,6 +46,8 @@ docker exec owl-server /owl db cluster list         # registered clusters, last 
 docker exec owl-server /owl db user reset-link --email admin@owl.local   # lost the dev password
 make mattermost-up          # optional throwaway Mattermost + webhook (dev/.mattermost.env); then make stack-up
 make mattermost-down
+make gitlab-up              # optional dev GitLab CE + registry (gitlab.owl.test / registry.owl.test), after make stack-up
+make gitlab-down
 make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # owl + owl-agent, amd64+arm64
 # API: a personal token from Account → API tokens (or a session cookie from /api/v1/auth/login)
 ./bin/owl login --server http://127.0.0.1:8080      # then: owl status / outdated / component coredns / users plan …
@@ -194,10 +198,14 @@ make dev-down
   is an Owl advisory of that component version are "confirmed" and not counted. Findings **never** feed
   `ScoreInstance`. Writes (rescan, cancel, acceptances) are admin, browser-only (not in `tokenWrites`).
   `image_scans` dropped from backups; `vuln_acceptances` restored.
-  Registry logins (milestone 15.1, `server/registries.go`): file entries + `registry_credentials` rows sealed
-  with `internal/secretbox` (AES-GCM, `OWL_SECRET_KEY`, prefix as AD); merged by `Server.credentials`, pushed
-  to the scanner with `ReloadCredentials` (start, change, restore) → `Manager.SetCredentials` (re-queues
-  "auth failed" digests). Write-only: no endpoint returns a password; admin + browser only (`browserOnly`,
+  Registry logins (milestones 15.1/15.2, `server/registries.go`): file entries + `registry_logins` (sealed with
+  `internal/secretbox`, AES-GCM, `OWL_SECRET_KEY`, AD = `credAD(seal_id)`: a migrated 15.1 row's old prefix, else
+  random `login:…` — never re-seal with another id) used for the prefixes in `registry_scopes`; `Server.credentials`
+  expands them to one `scan.Credential` per prefix (`Login` = name), pushed to the scanner with `ReloadCredentials`
+  (start, change, restore) → `Manager.SetCredentials` (re-queues "auth failed" digests). Test results are per
+  prefix (+ login key); Test picks a running repository below the prefix and `TestLogin` checks the JWT
+  `access` claim (a token endpoint says 200 to any valid login). `GET /registries/suggest` = the Add login
+  dialog's prefix choices (`web/src/pages/AddLogin.tsx`). Write-only: no endpoint returns a password; admin + browser only (`browserOnly`,
   reads too). Kept in backups (ciphertext) and restored. `scan.TestLogin` = the Test button (OCI token auth,
   realm checked with `RegistryAllowed`). Trivy is pinned by digest in the
   Dockerfile (CVE-2026-33634: hijacked tags) — upgrade only by changing that line after checking both registries.

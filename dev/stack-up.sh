@@ -43,7 +43,7 @@ docker rm -f owl-server >/dev/null 2>&1 || true
 docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-data:/data \
   -v "$PWD/$REG_DIR/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro" \
   --log-opt max-size=10m --log-opt max-file=3 \
-  -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example,$REG_HOST -e GITHUB_TOKEN \
+  -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example,registry.owl.test,$REG_HOST -e GITHUB_TOKEN \
   -e OWL_PUBLIC_URL=http://127.0.0.1:8080 \
   -e OWL_SMTP_HOST=owl-mailpit -e OWL_SMTP_PORT=1025 -e OWL_SMTP_TLS=none -e "OWL_SMTP_FROM=Owl <owl@owl.local>" \
   -e OWL_SECRET_KEY -e OWL_GOOGLE_CLIENT_ID -e OWL_GOOGLE_CLIENT_SECRET -e OWL_GOOGLE_DOMAIN -e OWL_MATTERMOST_WEBHOOK_URL \

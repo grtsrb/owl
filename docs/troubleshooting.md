@@ -138,9 +138,10 @@ run outside the Owl image — set `OWL_TRIVY` to a Trivy binary).
 ### "Auth failed for registry.example.com/team-a"
 
 The registry refused the login for that prefix (or wants one, for an image with no matching prefix:
-`anonymous: <registry>`). Check the deploy token hasn't expired and has `read_registry`, then in
-**Settings → Registries** use **Replace** (or **Add credential** for a new prefix) and **Test**: the images
-that failed are scanned again at once. For a login from `OWL_REGISTRY_AUTH_FILE`, fix the file and restart
+`anonymous: <registry>`). Admins: **Add login** on the image (Vulnerabilities page) picks the prefix from the
+image's path. For an existing login, check the deploy token hasn't expired, has `read_registry` and belongs
+to the image's group, then **Replace** it in **Settings → Registries** and **Test**: the images that failed
+are scanned again at once. For a login from `OWL_REGISTRY_AUTH_FILE`, fix the file and restart
 the server. The image's last good result stays shown.
 
 ### Settings → Registries: Test says "can't resolve" or "can't connect"
@@ -151,6 +152,19 @@ the container's DNS reaches the tunneller's resolver (Docker's embedded DNS forw
 servers, which can skip a local stub resolver) — or run the tunneller as a sidecar sharing the container's
 network. "TLS … failed" means the registry's certificate isn't trusted by the server: mount your CA and set
 `SSL_CERT_FILE` (Trivy gets it too).
+
+### Test: "the login works, but … gives it no read access to …"
+
+The registry accepted the username and password but won't let them pull that image — usually a token of
+another group (a GitLab group deploy token reads only its own group and subgroups) or a project deploy token
+used for a group. Add the right group's token for that prefix (**Add login** on the image), or use one that
+reads both groups.
+
+### Test: "… answered, but its login service on … didn't"
+
+The registry is reachable but the host it sends logins to isn't — GitLab logs in on its web host
+(`https://<gitlab>/jwt/auth`), not on the registry host. Behind a VPN or OpenZiti, expose and resolve that
+host for the Owl server as well.
 
 ### Settings → Registries: "can't decrypt" or "OWL_SECRET_KEY isn't set"
 

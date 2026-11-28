@@ -3,12 +3,14 @@ package scan
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -34,11 +36,15 @@ type LoginResult struct {
 }
 
 // TestLogin logs in to the credential's registry the way a pull would (OCI distribution auth): GET
-// https://<host>/v2/; on a Bearer challenge, the token endpoint with Basic auth and a pull scope for the
-// prefix's path; on a Basic challenge, /v2/ again with Basic auth. client nil = a default client with a
-// short timeout. Redirects and token realms that point at IP literals, localhost or metadata hosts are
-// refused (unless they're the registry host itself): the realm is the registry's to choose.
-func TestLogin(ctx context.Context, client *http.Client, c Credential) LoginResult {
+// https://<host>/v2/; on a Bearer challenge, the token endpoint with Basic auth and a pull scope for repo
+// (a repository path on that host, e.g. "devops/billing/api"; "" = the prefix's path, unchecked); on a Basic
+// challenge, /v2/ again with Basic auth. client nil = a default client with a short timeout. Redirects and
+// token realms that point at IP literals, localhost or metadata hosts are refused (unless they're the
+// registry host itself): the realm is the registry's to choose.
+//
+// A token endpoint answers 200 for any valid login, also for a repository it can't read (GitLab: a token
+// with an empty "access" list). So with a repo, a JWT's access claim must grant pull on it.
+func TestLogin(ctx context.Context, client *http.Client, c Credential, repo string) LoginResult {
 	host, path, _ := strings.Cut(c.Prefix, "/")
 	if host == "docker.io" {
 		host = "registry-1.docker.io"
@@ -102,7 +108,10 @@ func TestLogin(ctx context.Context, client *http.Client, c Credential) LoginResu
 		if params["service"] != "" {
 			q.Set("service", params["service"])
 		}
-		repo := path
+		checked := repo != ""
+		if !checked {
+			repo = path
+		}
 		if repo == "" {
 			repo = "owl-login-check"
 		}
@@ -110,7 +119,14 @@ func TestLogin(ctx context.Context, client *http.Client, c Credential) LoginResu
 		realm.RawQuery = q.Encode()
 		r2, err := get(realm.String(), true)
 		if err != nil {
-			return res(classifyLogin(err, realm.Hostname()))
+			outcome, msg := classifyLogin(err, realm.Hostname())
+			if !strings.EqualFold(realm.Hostname(), strings.Split(host, ":")[0]) {
+				// GitLab & co. log in on another host (/jwt/auth on the web host). Behind a VPN / ziti that host
+				// must be reachable too, or every pull looks like a wrong password.
+				msg = host + " answered, but its login service on " + realm.Hostname() + " didn't: " + msg +
+					". Owl needs both hosts (with a VPN / ziti, the login host must be exposed too)"
+			}
+			return res(outcome, msg)
 		}
 		defer r2.Body.Close()
 		if r2.StatusCode == http.StatusOK {
@@ -121,10 +137,65 @@ func TestLogin(ctx context.Context, client *http.Client, c Credential) LoginResu
 			if json.NewDecoder(io.LimitReader(r2.Body, 1<<20)).Decode(&tok) != nil || tok.Token == "" && tok.AccessToken == "" {
 				return res(LoginUnexpected, "the token endpoint answered without a token")
 			}
+			switch {
+			case !checked:
+				r := statusResult(r2.StatusCode, r2.Status, host)
+				r.Message += " (read access not checked: no running image below this prefix yet)"
+				return r
+			case grantsPull(cmpOr(tok.Token, tok.AccessToken), repo) == accessDenied:
+				return res(LoginRejected, "the login works, but "+host+" gives it no read access to "+repo+
+					" — a token of another group or project? (GitLab: a group deploy token reads only its own group)")
+			}
+			r := statusResult(r2.StatusCode, r2.Status, host)
+			r.Message += ", with read access to " + repo
+			return r
 		}
 		return statusResult(r2.StatusCode, r2.Status, host)
 	}
 	return res(LoginUnexpected, host+" asks for an unknown kind of login")
+}
+
+type access int
+
+const (
+	accessUnknown access = iota // not a JWT, or no access claim: can't tell
+	accessGranted
+	accessDenied
+)
+
+// grantsPull reads the (unverified — it's only a hint for Test) access claim of a registry JWT.
+func grantsPull(token, repo string) access {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return accessUnknown
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return accessUnknown
+	}
+	var claims struct {
+		Access *[]struct {
+			Type    string   `json:"type"`
+			Name    string   `json:"name"`
+			Actions []string `json:"actions"`
+		} `json:"access"`
+	}
+	if json.Unmarshal(b, &claims) != nil || claims.Access == nil {
+		return accessUnknown
+	}
+	for _, a := range *claims.Access {
+		if a.Type == "repository" && a.Name == repo && (slices.Contains(a.Actions, "pull") || slices.Contains(a.Actions, "*")) {
+			return accessGranted
+		}
+	}
+	return accessDenied
+}
+
+func cmpOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func statusResult(code int, status, host string) LoginResult {

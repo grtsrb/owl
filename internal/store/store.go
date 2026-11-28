@@ -309,16 +309,21 @@ type VulnAcceptance struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 }
 
-// RegistryCredential is a registry login managed in the UI (milestone 15.1). Secret is the password sealed
-// with OWL_SECRET_KEY (bound to the prefix); the store never sees it in clear. Restored with backups.
-type RegistryCredential struct {
-	Prefix    string
+// RegistryLogin is a registry login managed in the UI (milestones 15.1/15.2): stored once, used for every
+// prefix in Scopes (longest prefix wins across all logins). Secret is the password sealed with
+// OWL_SECRET_KEY, bound to SealID (a migrated 15.1 row's old prefix, else a random "login:…" id); the store
+// never sees it in clear. Restored with backups.
+type RegistryLogin struct {
+	ID        int64
+	Name      string // unique, shown in the "use an existing login" picker
 	Username  string
 	Secret    []byte
+	SealID    string
 	ExpiresAt *time.Time
 	UpdatedBy string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Scopes    []string // prefixes, sorted
 }
 
 // Summary is a Claude-written upgrade summary for one jump (milestone 8). Content is the validated
@@ -567,12 +572,17 @@ type Store interface {
 	ListVulnAcceptances(ctx context.Context) ([]VulnAcceptance, error)
 	PutVulnAcceptance(ctx context.Context, a VulnAcceptance) error
 	DeleteVulnAcceptance(ctx context.Context, repository, vulnID string) error
-	// Registry credentials (milestone 15.1, restored with backups). AddRegistryCredential returns ErrExists
-	// for a known prefix; Update and Delete return ErrNotFound for an unknown one.
-	ListRegistryCredentials(ctx context.Context) ([]RegistryCredential, error)
-	AddRegistryCredential(ctx context.Context, c RegistryCredential) error
-	UpdateRegistryCredential(ctx context.Context, c RegistryCredential) error
-	DeleteRegistryCredential(ctx context.Context, prefix string) error
+	// Registry logins (milestones 15.1/15.2, restored with backups). AddRegistryLogin stores the login with its
+	// Scopes (at least one) and returns its id; ErrExists = the name or a prefix is taken. UpdateRegistryLogin
+	// changes name, username, secret, seal id and expiry (not scopes). DeleteRegistryLogin removes its scopes
+	// too. AddRegistryScope: ErrNotFound = no such login, ErrExists = the prefix is taken. Update, Delete and
+	// DeleteRegistryScope return ErrNotFound for an unknown id / prefix.
+	ListRegistryLogins(ctx context.Context) ([]RegistryLogin, error)
+	AddRegistryLogin(ctx context.Context, l RegistryLogin) (int64, error)
+	UpdateRegistryLogin(ctx context.Context, l RegistryLogin) error
+	DeleteRegistryLogin(ctx context.Context, id int64) error
+	AddRegistryScope(ctx context.Context, loginID int64, prefix string) error
+	DeleteRegistryScope(ctx context.Context, prefix string) error
 
 	// Upstream response cache (release lists, EOL data, advisories).
 	GetCache(ctx context.Context, key string) (*CacheEntry, error)

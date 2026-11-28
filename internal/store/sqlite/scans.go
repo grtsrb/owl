@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -104,45 +105,102 @@ func (d *DB) DeleteVulnAcceptance(ctx context.Context, repository, vulnID string
 	return nil
 }
 
-func (d *DB) ListRegistryCredentials(ctx context.Context) ([]store.RegistryCredential, error) {
-	rows, err := d.db.QueryContext(ctx, "SELECT prefix, username, secret, expires_at, updated_by, created_at, updated_at FROM registry_credentials ORDER BY prefix")
+func (d *DB) ListRegistryLogins(ctx context.Context) ([]store.RegistryLogin, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT id, name, username, secret, seal_id, expires_at, updated_by, created_at, updated_at
+		FROM registry_logins ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []store.RegistryCredential{}
+	out := []store.RegistryLogin{}
+	idx := map[int64]int{}
 	for rows.Next() {
-		var c store.RegistryCredential
+		var l store.RegistryLogin
 		var exp sql.NullString
 		var created, updated string
-		if err := rows.Scan(&c.Prefix, &c.Username, &c.Secret, &exp, &c.UpdatedBy, &created, &updated); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &l.Username, &l.Secret, &l.SealID, &exp, &l.UpdatedBy, &created, &updated); err != nil {
 			return nil, err
 		}
-		c.ExpiresAt = parseTime(exp)
+		l.ExpiresAt = parseTime(exp)
 		if t := parseTime(sql.NullString{String: created, Valid: true}); t != nil {
-			c.CreatedAt = *t
+			l.CreatedAt = *t
 		}
 		if t := parseTime(sql.NullString{String: updated, Valid: true}); t != nil {
-			c.UpdatedAt = *t
+			l.UpdatedAt = *t
 		}
-		out = append(out, c)
+		l.Scopes = []string{}
+		idx[l.ID] = len(out)
+		out = append(out, l)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	srows, err := d.db.QueryContext(ctx, "SELECT prefix, login_id FROM registry_scopes ORDER BY prefix")
+	if err != nil {
+		return nil, err
+	}
+	defer srows.Close()
+	for srows.Next() {
+		var p string
+		var id int64
+		if err := srows.Scan(&p, &id); err != nil {
+			return nil, err
+		}
+		if i, ok := idx[id]; ok {
+			out[i].Scopes = append(out[i].Scopes, p)
+		}
+	}
+	return out, srows.Err()
 }
 
-func (d *DB) AddRegistryCredential(ctx context.Context, c store.RegistryCredential) error {
+func (d *DB) AddRegistryLogin(ctx context.Context, l store.RegistryLogin) (int64, error) {
+	if len(l.Scopes) == 0 {
+		return 0, fmt.Errorf("%w: a login needs at least one prefix", store.ErrInvalid)
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
 	t := now().Format(ts)
-	_, err := d.db.ExecContext(ctx, `INSERT INTO registry_credentials(prefix, username, secret, expires_at, updated_by, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?)`, c.Prefix, c.Username, c.Secret, fmtTime(c.ExpiresAt), c.UpdatedBy, t, t)
+	res, err := tx.ExecContext(ctx, `INSERT INTO registry_logins(name, username, secret, seal_id, expires_at, updated_by, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?)`, l.Name, l.Username, l.Secret, l.SealID, fmtTime(l.ExpiresAt), l.UpdatedBy, t, t)
+	if isUnique(err) {
+		return 0, store.ErrExists
+	} else if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range l.Scopes {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO registry_scopes(prefix, login_id) VALUES (?,?)", p, id); isUnique(err) {
+			return 0, store.ErrExists
+		} else if err != nil {
+			return 0, err
+		}
+	}
+	return id, tx.Commit()
+}
+
+func (d *DB) UpdateRegistryLogin(ctx context.Context, l store.RegistryLogin) error {
+	res, err := d.db.ExecContext(ctx, `UPDATE registry_logins SET name=?, username=?, secret=?, seal_id=?, expires_at=?, updated_by=?, updated_at=?
+		WHERE id=?`, l.Name, l.Username, l.Secret, l.SealID, fmtTime(l.ExpiresAt), l.UpdatedBy, now().Format(ts), l.ID)
 	if isUnique(err) {
 		return store.ErrExists
+	} else if err != nil {
+		return err
 	}
-	return err
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
-func (d *DB) UpdateRegistryCredential(ctx context.Context, c store.RegistryCredential) error {
-	res, err := d.db.ExecContext(ctx, `UPDATE registry_credentials SET username=?, secret=?, expires_at=?, updated_by=?, updated_at=?
-		WHERE prefix=?`, c.Username, c.Secret, fmtTime(c.ExpiresAt), c.UpdatedBy, now().Format(ts), c.Prefix)
+func (d *DB) DeleteRegistryLogin(ctx context.Context, id int64) error {
+	res, err := d.db.ExecContext(ctx, "DELETE FROM registry_logins WHERE id=?", id)
 	if err != nil {
 		return err
 	}
@@ -152,8 +210,19 @@ func (d *DB) UpdateRegistryCredential(ctx context.Context, c store.RegistryCrede
 	return nil
 }
 
-func (d *DB) DeleteRegistryCredential(ctx context.Context, prefix string) error {
-	res, err := d.db.ExecContext(ctx, "DELETE FROM registry_credentials WHERE prefix=?", prefix)
+func (d *DB) AddRegistryScope(ctx context.Context, loginID int64, prefix string) error {
+	_, err := d.db.ExecContext(ctx, "INSERT INTO registry_scopes(prefix, login_id) VALUES (?,?)", prefix, loginID)
+	switch {
+	case isUnique(err):
+		return store.ErrExists
+	case isForeignKey(err):
+		return store.ErrNotFound
+	}
+	return err
+}
+
+func (d *DB) DeleteRegistryScope(ctx context.Context, prefix string) error {
+	res, err := d.db.ExecContext(ctx, "DELETE FROM registry_scopes WHERE prefix=?", prefix)
 	if err != nil {
 		return err
 	}

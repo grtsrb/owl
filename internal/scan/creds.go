@@ -21,6 +21,16 @@ type Credential struct {
 
 	ExpiresAt *time.Time `json:"-"` // end of the expiry day (UTC)
 	FromFile  bool       `json:"-"`
+	// Login names the UI login this entry comes from (one login can cover several prefixes); "" = the file.
+	Login string `json:"-"`
+}
+
+// Label is how people know the login: its name in the UI, the prefix for a file entry.
+func (c Credential) Label() string {
+	if c.Login != "" {
+		return c.Login
+	}
+	return c.Prefix
 }
 
 // ExpiryWarning: a credential expires within this long.
@@ -37,7 +47,8 @@ func EndOfDay(day string) (time.Time, error) {
 
 // Expiring is a credential that has expired or expires within ExpiryWarning.
 type Expiring struct {
-	Prefix    string    `json:"prefix"`
+	Login     string    `json:"login"`  // Credential.Label
+	Prefix    string    `json:"prefix"` // the first prefix it covers
 	ExpiresAt time.Time `json:"expiresAt"`
 	Expired   bool      `json:"expired"`
 }
@@ -45,9 +56,11 @@ type Expiring struct {
 // Expiring lists the credentials that need renewing soon, soonest first.
 func (cs Credentials) Expiring(now time.Time) []Expiring {
 	out := []Expiring{}
+	seen := map[string]bool{}
 	for _, c := range cs {
-		if c.ExpiresAt != nil && c.ExpiresAt.Sub(now) <= ExpiryWarning {
-			out = append(out, Expiring{Prefix: c.Prefix, ExpiresAt: *c.ExpiresAt, Expired: !c.ExpiresAt.After(now)})
+		if c.ExpiresAt != nil && c.ExpiresAt.Sub(now) <= ExpiryWarning && !seen[c.Label()] {
+			seen[c.Label()] = true // a login with several prefixes is renewed once
+			out = append(out, Expiring{Login: c.Label(), Prefix: c.Prefix, ExpiresAt: *c.ExpiresAt, Expired: !c.ExpiresAt.After(now)})
 		}
 	}
 	slices.SortFunc(out, func(a, b Expiring) int { return a.ExpiresAt.Compare(b.ExpiresAt) })
@@ -160,3 +173,32 @@ func matches(name, prefix string) bool {
 	}
 	return false
 }
+
+// RepositoryOf is the repository of an image reference, without tag or digest, normalized like a prefix
+// (Docker Hub short names become docker.io/library/…). "" = not a reference.
+func RepositoryOf(ref string) string {
+	n := normPrefix(ref)
+	if n == "" || strings.ContainsAny(n, " \t") {
+		return ""
+	}
+	if i := strings.Index(n, "@"); i >= 0 {
+		n = n[:i]
+	}
+	if i := strings.LastIndex(n, ":"); i > strings.LastIndex(n, "/") && strings.Contains(n, "/") {
+		n = n[:i] // a tag (a colon before the last slash is a port)
+	}
+	host, rest, ok := strings.Cut(n, "/")
+	if !ok || !strings.ContainsAny(host, ".:") && host != "localhost" {
+		if !ok { // "nginx"
+			if i := strings.Index(n, ":"); i >= 0 {
+				n = n[:i]
+			}
+			return "docker.io/library/" + n
+		}
+		return "docker.io/" + host + "/" + rest
+	}
+	return n
+}
+
+// IsAuthFailure: a scan error that says the registry login failed (or none was there).
+func IsAuthFailure(scanError string) bool { return strings.HasPrefix(scanError, authFailedPrefix) }

@@ -127,6 +127,10 @@ What Trivy finds inside the running images. Nothing on these pages changes a pri
   prefixes only) and any registry that refused a login. Refreshes every 3 seconds while open. Admins can
   cancel the running scan or remove an image from the queue; that image then waits for the next daily
   rescan (or **Rescan now**) instead of being queued again by the next agent report.
+- **Add login** (admins) — on an image whose scan couldn't log in to its registry (*registry login failed*):
+  choose what the login is for from the image's path (the group is suggested; each choice says how many
+  failing images it fixes), then an existing login or a new token. Owl tests it before keeping it, and the
+  images are scanned again right away.
 - **One image** — its numbers, where it runs, and the findings: severity, CVE (linked), package (OS
   package, or library with the file it was found in), installed and fixed version. *Fixable only* is on
   by default; filter by severity. Admins can **Rescan now** and **Accept…** a finding (reason required,
@@ -263,6 +267,15 @@ Several findings of one check go out as one message. Switching an alert on doesn
 Critical or already known. **Send test message** checks the webhook; **Send digest now** posts this
 week's digest at once (Mattermost only; the scheduled one still goes out). The card shows the last
 message, the last error and when the next digest is due.
+
+### Registries
+
+- **In-house registries** — hosts whose images are your own (listed, not compared with upstream).
+- **Registry logins** (admins) — each login with the prefixes it's *used for*, how many running images each
+  covers, a failed scan login, the last **Test** per prefix and the expiry. **Use for another prefix** reuses a
+  token that reads several groups; **Replace** sets a new username + password; **Edit** renames it or changes
+  the expiry. Logins from `OWL_REGISTRY_AUTH_FILE` are read-only. See
+  [registry logins](configuration.md#registry-logins-for-image-scanning).
 
 ### Logs & audit
 

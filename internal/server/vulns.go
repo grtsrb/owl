@@ -138,6 +138,7 @@ type vulnImageJSON struct {
 	Queue        string      `json:"queue,omitempty"` // scanning | queued (also while an older result is shown)
 	ScannedAt    *time.Time  `json:"scannedAt,omitempty"`
 	Error        string      `json:"error,omitempty"`
+	NeedsLogin   bool        `json:"needsLogin,omitempty"` // the last scan couldn't log in: offer "Add login"
 	OS           string      `json:"os,omitempty"`
 	Fixable      sevCounts   `json:"fixable"`  // findings with a fixed version, not accepted
 	Total        sevCounts   `json:"total"`    // every finding, not accepted
@@ -321,6 +322,7 @@ func (s *Server) fillVulnImage(d *vulnData, img *vulnImageJSON, queue map[string
 	default:
 		img.State = stateOK
 	}
+	img.NeedsLogin = st != nil && scan.IsAuthFailure(st.Error)
 	if st == nil || st.Result == nil {
 		return
 	}
@@ -397,7 +399,7 @@ func (s *Server) VulnDigest(ctx context.Context) (*notify.VulnSummary, error) {
 		}
 	}
 	for _, e := range s.Scans.Credentials().Expiring(time.Now()) {
-		v.Expiring = append(v.Expiring, notify.CredentialExpiry{Prefix: e.Prefix, ExpiresAt: e.ExpiresAt, Expired: e.Expired})
+		v.Expiring = append(v.Expiring, notify.CredentialExpiry{Name: e.Login, ExpiresAt: e.ExpiresAt, Expired: e.Expired})
 	}
 	return v, nil
 }

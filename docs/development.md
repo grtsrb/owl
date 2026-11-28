@@ -28,7 +28,18 @@ make stack-down      # remove server, S3, Mailpit and agents (keeps the owl-data
 make dev-down        # delete the clusters
 make mattermost-up   # optional: throwaway Mattermost (≈1 GB, amd64 image) with a webhook; then make stack-up
 make mattermost-down # remove it, its data and dev/.mattermost.env
+make gitlab-up       # optional: throwaway GitLab CE + registry (~4 GB RAM) with groups, deploy tokens, images; after make stack-up
+make gitlab-down     # remove it, its data, dev/.gitlab and its workloads (the k3d nodes restart once)
 ```
+
+`make gitlab-up` (`dev/gitlab.sh`) runs GitLab CE as `owl-gitlab` under two Docker network aliases —
+`gitlab.owl.test` (web + the registry's login endpoint) and `registry.owl.test` — with a certificate from
+the dev CA (so run `make stack-up` first). It creates the groups `devops` (subgroup `billing`) and
+`platform`, a `read_registry` group deploy token each (in `dev/.gitlab/tokens.env`, 0600), copies old public
+images into `registry.owl.test/devops/billing/api`, `devops/web` and `platform/tools`, and runs them in
+`it-aws-test` namespace `corp-apps` with pull secrets. Owl gets no login, so their scans fail with *auth
+failed* — the case **Add login** is for. Root password: `dev/.gitlab/root-password` (the UI is reachable only
+inside Docker).
 
 `make mattermost-up` runs `mattermost/mattermost-preview` as `owl-mattermost` on <http://127.0.0.1:8065>
 (sign in as `owladmin` / `Owl-dev-only-1234`, channel "Owl alerts"), creates an incoming webhook and
