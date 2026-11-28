@@ -51,7 +51,9 @@ export function AddLoginDialog({ imageRef, onClose, onDone }: { imageRef: string
   useEffect(() => {
     Promise.all([api.suggestRegistryScopes(imageRef), api.registries()]).then(([s, r]) => {
       setSugg(s);
-      const usable = r.logins.filter((l) => l.source === "ui" && !l.problem);
+      // A login only ever goes to its own registry host (the server refuses other hosts).
+      const host = s.repository.split("/")[0];
+      const usable = r.logins.filter((l) => l.source === "ui" && !l.problem && l.scopes.some((sc) => sc.prefix.split("/")[0] === host));
       setLogins(usable);
       setCanEdit(r.canEdit);
       const free = s.options.filter((o) => !o.usedBy);

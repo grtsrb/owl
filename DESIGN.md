@@ -679,6 +679,11 @@ image (or the one that does is rejected).
   prefix as stored AD until replaced (the migration can't re-seal: it has no key). Deleting a login deletes its
   scopes (the confirm lists them). Expiry, Test result and auth failures belong to the login; the page shows
   them on each scope. File logins stay prefix-bound and can't be picked for other scopes.
+- **A login is bound to its registry host** (security review 2026-11-28): otherwise an admin, or a stolen admin
+  session, could add a prefix on their own host and press Test to receive a stored token — write-only would be
+  void. New seal ids are `login:<random>@<host>` (the host is in the additional data, so editing the row breaks
+  decryption; migrated rows have their prefix). A prefix on another host is refused, and ignored if written
+  into the database directly. Reuse across groups of the same registry — the point — still works.
 - **Test** runs against a scope (it needs a repository path for the pull scope). Its result names the host that
   failed — the registry or the **token realm** (GitLab's `/jwt/auth` host): with ziti/VPN the realm host can be
   unreachable while the registry works, which otherwise looks like a wrong token.

@@ -200,7 +200,8 @@ make dev-down
   `image_scans` dropped from backups; `vuln_acceptances` restored.
   Registry logins (milestones 15.1/15.2, `server/registries.go`): file entries + `registry_logins` (sealed with
   `internal/secretbox`, AES-GCM, `OWL_SECRET_KEY`, AD = `credAD(seal_id)`: a migrated 15.1 row's old prefix, else
-  random `login:…` — never re-seal with another id) used for the prefixes in `registry_scopes`; `Server.credentials`
+  random `login:<rand>@<host>` — a login is bound to that host: scopes on another host are refused/ignored, never
+  re-seal with another id) used for the prefixes in `registry_scopes`; `Server.credentials`
   expands them to one `scan.Credential` per prefix (`Login` = name), pushed to the scanner with `ReloadCredentials`
   (start, change, restore) → `Manager.SetCredentials` (re-queues "auth failed" digests). Test results are per
   prefix (+ login key); Test picks a running repository below the prefix and `TestLogin` checks the JWT

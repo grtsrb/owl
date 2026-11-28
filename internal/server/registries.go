@@ -52,13 +52,31 @@ func (s *Server) registryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/registries/suggest", s.requireAdmin(s.suggestRegistryScopes))
 }
 
-// credAD binds a sealed password to its login's seal id (a migrated 15.1 login: its old prefix).
+// credAD binds a sealed password to its login's seal id (a migrated 15.1 login: its old prefix; else
+// "login:<random>@<registry host>").
 func credAD(sealID string) []byte { return []byte("owl registry credential\x00" + sealID) }
 
-func newSealID() string {
+// newSealID binds a new login to its registry host: the password is never sent anywhere else, so an admin
+// (or a stolen session) can't add a prefix on another host and press Test to receive it — write-only stays
+// write-only. The host is part of the sealed data, so editing seal_id in the database breaks decryption.
+func newSealID(host string) string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
-	return "login:" + hex.EncodeToString(b)
+	return "login:" + hex.EncodeToString(b) + "@" + host
+}
+
+// sealHost is the registry host a login's password may go to.
+func sealHost(sealID string) string {
+	if rest, ok := strings.CutPrefix(sealID, "login:"); ok {
+		_, host, _ := strings.Cut(rest, "@")
+		return host
+	}
+	return prefixHost(sealID)
+}
+
+func prefixHost(prefix string) string {
+	host, _, _ := strings.Cut(prefix, "/")
+	return host
 }
 
 func uiKey(id int64) string        { return "ui:" + strconv.FormatInt(id, 10) }
@@ -115,6 +133,8 @@ func (s *Server) credentials(ctx context.Context) (scan.Credentials, []loginRow,
 			sr := scopeRow{Prefix: p}
 			if rc.fileHas(p) {
 				sr.Problem = "not used: OWL_REGISTRY_AUTH_FILE has the same prefix (the file wins)"
+			} else if h := sealHost(l.SealID); prefixHost(p) != h {
+				sr.Problem = "not used: this login is for " + h + " only"
 			} else if row.Problem == "" {
 				creds = append(creds, scan.Credential{Prefix: p, Username: l.Username, Password: string(pw), ExpiresAt: l.ExpiresAt, Login: l.Name})
 			}
@@ -323,7 +343,7 @@ func (s *Server) addRegistry(w http.ResponseWriter, r *http.Request) {
 		host, _, _ := strings.Cut(p, "/")
 		b.Name = b.Username + " @ " + host
 	}
-	seal := newSealID()
+	seal := newSealID(prefixHost(p))
 	id, err := s.Store.AddRegistryLogin(r.Context(), store.RegistryLogin{Name: b.Name, Username: b.Username,
 		Secret: s.Registries.Box.Seal([]byte(b.Password), credAD(seal)), SealID: seal, ExpiresAt: exp,
 		UpdatedBy: actorOf(r), Scopes: []string{p}})
@@ -445,6 +465,10 @@ func (s *Server) addRegistryScope(w http.ResponseWriter, r *http.Request) {
 	}
 	l, ok := s.uiLogin(w, r)
 	if !ok {
+		return
+	}
+	if h := sealHost(l.SealID); prefixHost(p) != h {
+		httpError(w, http.StatusBadRequest, strconv.Quote(l.Name)+" is a login for "+h+": it's never sent to another registry (add a new login for "+prefixHost(p)+")")
 		return
 	}
 	if err := s.Store.AddRegistryScope(r.Context(), l.ID, p); errors.Is(err, store.ErrExists) {

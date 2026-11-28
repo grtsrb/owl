@@ -120,7 +120,7 @@ func TestRegistryCredentials(t *testing.T) {
 	waitFor(t, "retry after the credential was added", func() bool { return scanError(s, appDigest) == "" })
 	rows, _ := db.ListRegistryLogins(ctx)
 	if len(rows) != 1 || rows[0].Name != "gitlab+deploy-token-1 @ registry.gitlab.example.com" || !slices.Equal(rows[0].Scopes, []string{"registry.gitlab.example.com/team"}) ||
-		bytes.Contains(rows[0].Secret, []byte("s3cret-pw")) || rows[0].UpdatedBy != "admin@example.com" || !strings.HasPrefix(rows[0].SealID, "login:") {
+		bytes.Contains(rows[0].Secret, []byte("s3cret-pw")) || rows[0].UpdatedBy != "admin@example.com" || !strings.HasPrefix(rows[0].SealID, "login:") || !strings.HasSuffix(rows[0].SealID, "@registry.gitlab.example.com") {
 		t.Fatalf("stored: %+v", rows)
 	}
 	code, body := rawGET(t, base)
@@ -147,6 +147,25 @@ func TestRegistryCredentials(t *testing.T) {
 			t.Fatalf("scope %s: %d", b, code)
 		}
 	}
+	// A login's password only ever goes to its own registry: a prefix on another host is refused (else an
+	// admin could add evil.example.com and press Test to receive the token), and one written straight into
+	// the database isn't used.
+	if code, _ := call(t, "POST", base+"/"+id+"/scopes", `{"prefix":"evil.example.com/x"}`, true); code != http.StatusBadRequest {
+		t.Fatalf("scope on another host: %d", code)
+	}
+	nid, _ := strconv.ParseInt(id, 10, 64)
+	if err := db.AddRegistryScope(ctx, nid, "evil.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.ReloadCredentials(ctx)
+	if c := s.Scans.Credentials().For("evil.example.com/x/y:1"); c != nil {
+		t.Fatalf("a login used for another host: %+v", c)
+	}
+	if _, body := rawGET(t, base); !strings.Contains(body, "this login is for registry.gitlab.example.com only") {
+		t.Fatalf("no problem shown: %s", body)
+	}
+	_ = db.DeleteRegistryScope(ctx, "evil.example.com")
+	_ = s.ReloadCredentials(ctx)
 	if code, _ := call(t, "POST", base+"/999/scopes", `{"prefix":"r.example.com/z"}`, true); code != http.StatusNotFound {
 		t.Fatalf("unknown login: %d", code)
 	}

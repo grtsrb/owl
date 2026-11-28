@@ -50,7 +50,8 @@ path — the whole registry, its group (suggested: `registry.gitlab.example.com/
 `…/devops/billing/api`) or a subgroup — then use an **existing login** or add a **new** one (name, username,
 password/token, optional expiry). Owl tests it at once and doesn't keep a login the registry rejects.
 **Settings → Registries** lists every login with the prefixes it's used for: **Add login**, **Use for another
-prefix** (one token that reads several groups), **Remove** a prefix, **Replace** (new username + password),
+prefix** (one token that reads several groups of the same registry — a login is never sent to another
+registry host), **Remove** a prefix, **Replace** (new username + password),
 **Edit** (name, expiry), **Delete**. The password is stored encrypted and never shown again.
 **Test** logs in from the Owl server the way a pull would and checks the token may pull a running image
 below the prefix (a token of another group logs in fine but can read nothing there). It also catches DNS
