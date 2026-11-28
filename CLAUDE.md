@@ -23,7 +23,7 @@ GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-2
 14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
 scanning (done: `internal/scan`, Vulnerabilities page) → 15.1 registry logins in the UI (Settings → Registries,
 `OWL_SECRET_KEY`) → 15.2 add a login where the scan fails (done: logins reusable
-across prefixes, Add login dialog, Test checks read access; done) → 16 Docker hosts.
+across prefixes, Add login dialog, Test checks read access, dev GitLab + OpenZiti) → 16 Docker hosts.
 Keep this file's commands and
 layout in sync as milestones land.
 
