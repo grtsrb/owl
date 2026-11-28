@@ -141,8 +141,17 @@ var reNetURL = regexp.MustCompile(`(?i)\b(?:get|head|post)\s+"?https?://([^/"\s:
 // anything). A host that isn't the registry's /v2/ API is its login service (GitLab: /jwt/auth on the web
 // host) — behind a VPN / ziti that one has to be reachable too. "" = not a network error.
 func networkError(stderr string) string {
-	low := strings.ToLower(stderr)
-	m := reNetURL.FindStringSubmatch(stderr)
+	var low string
+	var m []string
+	for _, l := range strings.Split(stderr, "\n") { // the line with the network error; its last URL is the
+		ll := strings.ToLower(l) // innermost request (Trivy wraps: GET /v2/…: Get "…/jwt/auth": dial tcp …)
+		if !netFailure(ll) {
+			continue
+		}
+		if ms := reNetURL.FindAllStringSubmatch(l, -1); len(ms) > 0 {
+			low, m = ll, ms[len(ms)-1]
+		}
+	}
 	if m == nil {
 		return ""
 	}
@@ -159,6 +168,16 @@ func networkError(stderr string) string {
 		return "can't connect to " + host + what + " from the Owl server (refused, unreachable or timeout)"
 	}
 	return ""
+}
+
+func netFailure(low string) bool {
+	for _, s := range []string{"no such host", "server misbehaving", "connection refused", "i/o timeout", "no route to host",
+		"network is unreachable", "connection reset"} {
+		if strings.Contains(low, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateDB downloads the vulnerability DB and the Java DB (from Trivy's default source, mirror.gcr.io).

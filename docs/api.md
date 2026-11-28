@@ -176,7 +176,7 @@ returned. A login is used for one or more prefixes (`scopes`).
 | Endpoint | |
 |---|---|
 | `GET /registries` | `{logins[], canEdit, scanning, scansOff}` — a login: `key, id?` (UI logins), `name, username, source (ui\|file), expiresAt?, updatedAt?, updatedBy?, problem?` (why it isn't used), `scopes[]`: `{prefix, problem?, authFailedAt?, images, lastTest?}` (`images` = running images that pull with this prefix; `lastTest` = `{outcome, message, at}`) |
-| `POST /registries` | `{"name"?, "prefix", "username", "password", "expiresAt": "2027-03-31" \| ""}` → `201 {id}`; `409` for a taken name or prefix, a prefix from the file, or without `OWL_SECRET_KEY`. `name` defaults to `username @ host`. |
+| `POST /registries` | `{"name"?, "prefix", "username", "password", "expiresAt": "2027-03-31" \| ""}` → `201 {id}`; `409` for a taken name or prefix, a prefix from the file, or without `OWL_SECRET_KEY`. `name` defaults to `username @ prefix`. |
 | `PUT /registries/{id}` | `{"name"?, "expiresAt", "username"?, "password"?}` — username + password together replace the login → `204` |
 | `DELETE /registries/{id}` | → `204` (its prefixes go too), `404` |
 | `POST /registries/{id}/scopes` | `{"prefix"}` → `204`; `409` if a login already uses it (or the file has it) |
@@ -184,7 +184,7 @@ returned. A login is used for one or more prefixes (`scopes`).
 | `GET /registries/suggest?ref=<image>` | `{repository, current, options[]}` — the prefixes along the image's path: `{prefix, failing, usedBy?, fromFile?, suggested?}` (`failing` = images whose scan couldn't log in that would pull with it) |
 | `GET /registries/internal` | `{server[], ui[]}` — in-house registries from `OWL_INTERNAL_REGISTRIES` (read-only) and from the UI. Any signed-in user. |
 | `PUT /registries/internal` | `{"registries": ["registry.gitlab.example.com", "10.20.0.5:5000"]}` → `{ui[]}`: replaces the UI's list (host[:port], at most 50; entries already in the server's list are dropped). Admin. |
-| `POST /registries/test` | `{"prefix"}` → `{outcome: ok\|rejected\|dns\|connect\|tls\|unexpected, message, at, prefix}` — tests the login used for that prefix against a running image below it (read access checked) |
+| `POST /registries/test` | `{"prefix", "ref"?}` → `{outcome: ok\|rejected\|dns\|connect\|tls\|unexpected, message, at, prefix}` — tests the login used for that prefix and checks read access on `ref` (an image that prefix covers), else on a running image below it (one that failed to log in first) |
 
 ## Agent ingest
 

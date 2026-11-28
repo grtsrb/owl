@@ -119,7 +119,7 @@ func TestRegistryCredentials(t *testing.T) {
 	id := strconv.Itoa(int(out["id"].(float64)))
 	waitFor(t, "retry after the credential was added", func() bool { return scanError(s, appDigest) == "" })
 	rows, _ := db.ListRegistryLogins(ctx)
-	if len(rows) != 1 || rows[0].Name != "gitlab+deploy-token-1 @ registry.gitlab.example.com" || !slices.Equal(rows[0].Scopes, []string{"registry.gitlab.example.com/team"}) ||
+	if len(rows) != 1 || rows[0].Name != "gitlab+deploy-token-1 @ registry.gitlab.example.com/team" || !slices.Equal(rows[0].Scopes, []string{"registry.gitlab.example.com/team"}) ||
 		bytes.Contains(rows[0].Secret, []byte("s3cret-pw")) || rows[0].UpdatedBy != "admin@example.com" || !strings.HasPrefix(rows[0].SealID, "login:") || !strings.HasSuffix(rows[0].SealID, "@registry.gitlab.example.com") {
 		t.Fatalf("stored: %+v", rows)
 	}
@@ -129,7 +129,7 @@ func TestRegistryCredentials(t *testing.T) {
 		t.Fatalf("list: %d %s", code, body)
 	}
 	for _, b := range []string{`{"prefix":"registry.gitlab.example.com/team","username":"u","password":"p"}`, // prefix taken
-		`{"prefix":"r.example.com","name":"gitlab+deploy-token-1 @ registry.gitlab.example.com","username":"u","password":"p"}`} { // name taken
+		`{"prefix":"r.example.com","name":"gitlab+deploy-token-1 @ registry.gitlab.example.com/team","username":"u","password":"p"}`} { // name taken
 		if code, _ := call(t, "POST", base, b, true); code != http.StatusConflict {
 			t.Fatalf("add twice %s: %d", b, code)
 		}
@@ -208,7 +208,7 @@ func TestRegistryCredentials(t *testing.T) {
 			}
 		}
 	}
-	if want := []string{"gitlab+deploy-token-1 @ registry.gitlab.example.com registry.gitlab.example.com/team"}; !slices.Equal(shown, want) {
+	if want := []string{"gitlab+deploy-token-1 @ registry.gitlab.example.com/team registry.gitlab.example.com/team"}; !slices.Equal(shown, want) {
 		t.Fatalf("test results shown for %v, want %v", shown, want)
 	}
 	for _, l := range call2(t, "GET", base, "")["logins"].([]any) {
@@ -406,4 +406,47 @@ func call2(t *testing.T, method, url, body string) map[string]any {
 		t.Fatalf("%s %s: %d %v", method, url, code, out)
 	}
 	return out
+}
+
+// Review findings: the default name is unique per prefix (one username per group, e.g. a bot account's
+// tokens, must not clash); Test checks the image Add login was opened on, not just any image below a wide
+// prefix; a restore forgets test results (the restored rows have the same ids but maybe older passwords).
+func TestRegistryLoginReviewFixes(t *testing.T) {
+	srv, _, s, _ := setupVulns(t)
+	ctx := context.Background()
+	base := srv.URL + "/api/v1/registries"
+	s.Registries = &RegistryCreds{Box: testBox(t, 1)}
+	_ = s.ReloadCredentials(ctx)
+	for _, p := range []string{"registry.gitlab.example.com/team", "registry.gitlab.example.com/other"} {
+		if code, out := call(t, "POST", base, `{"prefix":"`+p+`","username":"owl-scanner","password":"pw"}`, true); code != http.StatusCreated {
+			t.Fatalf("same username, %s: %d %v", p, code, out)
+		}
+	}
+
+	var repo string
+	loginTester = func(_ context.Context, _ scan.Credential, r string) scan.LoginResult {
+		repo = r
+		return scan.LoginResult{Outcome: scan.LoginOK, At: time.Now()}
+	}
+	t.Cleanup(func() {
+		loginTester = func(ctx context.Context, c scan.Credential, repo string) scan.LoginResult {
+			return scan.TestLogin(ctx, nil, c, repo)
+		}
+	})
+	_ = call2(t, "POST", base, `{"prefix":"registry.gitlab.example.com","username":"wide","password":"pw"}`)
+	_ = call2(t, "POST", base+"/test", `{"prefix":"registry.gitlab.example.com","ref":"registry.gitlab.example.com/x/clicked:1"}`)
+	if repo != "x/clicked" {
+		t.Fatalf("tested %q, want the clicked image's repository", repo)
+	}
+	// A ref the prefix doesn't cover (another login wins for it) is ignored.
+	_ = call2(t, "POST", base+"/test", `{"prefix":"registry.gitlab.example.com","ref":"registry.gitlab.example.com/team/app:1"}`)
+	if repo == "team/app" {
+		t.Fatal("tested an image another login pulls")
+	}
+
+	_ = call2(t, "POST", base+"/test", `{"prefix":"registry.gitlab.example.com/team"}`)
+	s.afterRestore(ctx)
+	if _, body := rawGET(t, base); strings.Contains(body, `"lastTest"`) {
+		t.Fatalf("test results survived a restore: %s", body)
+	}
 }

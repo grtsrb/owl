@@ -154,9 +154,10 @@ func TestExpiringOncePerLogin(t *testing.T) {
 		{Prefix: "r/a", Login: "team", ExpiresAt: &soon},
 		{Prefix: "r/b", Login: "team", ExpiresAt: &soon},
 		{Prefix: "r/file", ExpiresAt: &soon, FromFile: true},
+		{Prefix: "r/other", Login: "r/file", ExpiresAt: &soon}, // a UI login named like a file prefix (review)
 	}
 	got := cs.Expiring(now)
-	if len(got) != 2 || got[0].Login != "team" || got[1].Login != "r/file" {
+	if len(got) != 3 || got[0].Login != "team" || got[1].Login != "r/file" || got[2].Login != "r/file" {
 		t.Fatalf("expiring = %+v", got)
 	}
 }

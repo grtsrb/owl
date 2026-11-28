@@ -16,7 +16,7 @@ export function LoginFields({ name, setName, username, setUsername, expires, set
     <>
       {showName && setName && <label className="field">Name (optional)
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="devops group deploy token" maxLength={100} />
-        <span className="subtle" style={{ fontWeight: 400 }}>How you'll find it when another group needs the same login. Default: username @ registry.</span>
+        <span className="subtle" style={{ fontWeight: 400 }}>How you'll find it when another group needs the same login. Default: username @ prefix.</span>
       </label>}
       <label className="field">Username
         <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="gitlab+deploy-token-12" autoComplete="off" required />
@@ -96,7 +96,7 @@ export function AddLoginDialog({ imageRef, onClose, onDone }: { imageRef: string
             label = name.trim() || `${username.trim()} @ ${prefix.split("/")[0]}`;
             undo = () => api.deleteRegistry(id);
           }
-          const t = await api.testRegistry(prefix).catch(() => null);
+          const t = await api.testRegistry(prefix, imageRef).catch(() => null);
           if (t?.outcome === "rejected") {
             // A definite no (wrong token, or no read access to this group): don't keep it — fix it right here.
             await undo().catch(() => undefined);
@@ -132,7 +132,7 @@ export function AddLoginDialog({ imageRef, onClose, onDone }: { imageRef: string
         <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="subtle" style={{ marginBottom: 4 }}>Login</legend>
           <label className="check-row">
-            <input type="radio" name="use" checked={use === "existing"} disabled={logins.length === 0} onChange={() => setUse("existing")} />
+            <input type="radio" name="use" checked={use === "existing"} disabled={logins.length === 0} onChange={() => { setUse("existing"); setHasPw(false); }} />
             <span><b>Use an existing login</b> <span className="subtle">{logins.length === 0 ? "none yet" : "e.g. a token that can read several groups"}</span></span>
           </label>
           {use === "existing" && logins.length > 0 && (
@@ -141,7 +141,7 @@ export function AddLoginDialog({ imageRef, onClose, onDone }: { imageRef: string
             </select>
           )}
           <label className="check-row">
-            <input type="radio" name="use" checked={use === "new"} onChange={() => setUse("new")} />
+            <input type="radio" name="use" checked={use === "new"} onChange={() => { setUse("new"); setHasPw(false); /* the token input mounts empty */ }} />
             <span><b>Add a new one</b></span>
           </label>
         </fieldset>

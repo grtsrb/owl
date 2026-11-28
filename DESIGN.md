@@ -673,7 +673,7 @@ image (or the one that does is rejected).
 - **Use an existing login** or **add a new one** (name, username, token, optional expiry → Test → save). After
   saving, the covered failed images are queued again at once (existing 15.1 behaviour).
 - **Model change: a login is stored once and used under several scopes.** `registry_credentials` gets an id and
-  a **name** (default `username @ host`; shown in the picker); a new `registry_scopes` table maps prefix →
+  a **name** (default `username @ prefix` — unique, since a prefix has one login; shown in the picker); a new `registry_scopes` table maps prefix →
   credential id (prefix unique; a file prefix still wins and can't be added in the UI). The sealed password's
   additional data becomes the credential id (`cred:<id>`) instead of the prefix; migrated rows keep their old
   prefix as stored AD until replaced (the migration can't re-seal: it has no key). Deleting a login deletes its

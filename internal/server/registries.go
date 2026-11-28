@@ -339,9 +339,8 @@ func (s *Server) addRegistry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if b.Name == "" {
-		host, _, _ := strings.Cut(p, "/")
-		b.Name = b.Username + " @ " + host
+	if b.Name == "" { // with the prefix: unique (a prefix has one login), also for one username per group
+		b.Name = b.Username + " @ " + p
 	}
 	seal := newSealID(prefixHost(p))
 	id, err := s.Store.AddRegistryLogin(r.Context(), store.RegistryLogin{Name: b.Name, Username: b.Username,
@@ -555,6 +554,7 @@ func (s *Server) testRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Prefix string `json:"prefix"`
+		Ref    string `json:"ref"` // optional: the image Add login was opened on — its read access is checked
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -584,15 +584,28 @@ func (s *Server) testRegistry(w http.ResponseWriter, r *http.Request) {
 			key = row.Key
 		}
 	}
-	// A running image that pulls with this prefix: the token's read access is checked on a real repository
-	// (a group path like "devops" is never a repository, so a registry grants nothing on it).
+	// The token's read access is checked on a real repository (a group path like "devops" is never one, so a
+	// registry grants nothing on it): the image Add login was opened on, else a running image that pulls with
+	// this prefix — one that failed to log in first (it's what the login is for).
 	repo := ""
-	if s.Scans != nil {
+	if b.Ref != "" && creds.For(b.Ref) != nil && creds.For(b.Ref).Prefix == p {
+		_, repo, _ = strings.Cut(scan.RepositoryOf(b.Ref), "/")
+	}
+	if repo == "" && s.Scans != nil {
 		if ts, err := s.ScanTargets(r.Context()); err == nil {
+			results := s.Scans.Results()
+			best := -1
 			for _, t := range ts {
-				if c := creds.For(t.Ref); c != nil && c.Prefix == p {
+				if c := creds.For(t.Ref); c == nil || c.Prefix != p {
+					continue
+				}
+				rank := 0
+				if st := results[t.Digest]; st != nil && scan.IsAuthFailure(st.Error) {
+					rank = 1
+				}
+				if rank > best {
+					best = rank
 					_, repo, _ = strings.Cut(scan.RepositoryOf(t.Ref), "/")
-					break
 				}
 			}
 		}

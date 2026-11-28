@@ -184,12 +184,12 @@ function LoginDialog({ mode, onClose, onDone }: { mode: Mode; onClose: () => voi
         try {
           const p = prefix.trim();
           if (mode.kind === "add") await api.addRegistry({ name, prefix: p, username, password, expiresAt: expires });
-          else if (mode.kind === "replace") await api.updateRegistry(login!.id!, { username, password, expiresAt: login!.expiresAt?.slice(0, 10) ?? "" });
+          else if (mode.kind === "replace") await api.updateRegistry(login!.id!, { username, password, expiresAt: expires }); // a renewed token: new date
           else if (mode.kind === "edit") await api.updateRegistry(login!.id!, { name, expiresAt: expires });
           else await api.addRegistryScope(login!.id!, p);
           form.reset();
-          const testWith = needPrefix ? p : mode.kind === "replace" ? login!.scopes[0]?.prefix : undefined;
-          onDone(mode.kind === "edit" ? `Saved: ${name.trim() || login!.name}.` : `Saved. Testing the login for ${testWith}…`, testWith);
+          const testWith = needPrefix ? p : mode.kind === "replace" ? login!.scopes.find((sc) => !sc.problem)?.prefix : undefined;
+          onDone(mode.kind === "edit" || !testWith ? `Saved: ${name.trim() || login!.name}.` : `Saved. Testing the login for ${testWith}…`, testWith);
         } catch (x) {
           setErr(writeErrorText(x));
         } finally { setBusy(false); }
@@ -200,7 +200,6 @@ function LoginDialog({ mode, onClose, onDone }: { mode: Mode; onClose: () => voi
         </label>}
         {needLogin && <LoginFields name={name} setName={setName} username={username} setUsername={setUsername}
           expires={expires} setExpires={setExpires} onPw={setHasPw} showName={mode.kind === "add"} />}
-        {mode.kind === "replace" && <p className="subtle" style={{ margin: 0 }}>The expiry stays {login!.expiresAt ? date(login!.expiresAt) : "unset"}: change it with Edit.</p>}
         {mode.kind === "edit" && <>
           <label className="field">Name
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />

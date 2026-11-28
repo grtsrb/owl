@@ -58,8 +58,12 @@ func (cs Credentials) Expiring(now time.Time) []Expiring {
 	out := []Expiring{}
 	seen := map[string]bool{}
 	for _, c := range cs {
-		if c.ExpiresAt != nil && c.ExpiresAt.Sub(now) <= ExpiryWarning && !seen[c.Label()] {
-			seen[c.Label()] = true // a login with several prefixes is renewed once
+		key := "file:" + c.Prefix
+		if c.Login != "" {
+			key = "ui:" + c.Login
+		}
+		if c.ExpiresAt != nil && c.ExpiresAt.Sub(now) <= ExpiryWarning && !seen[key] {
+			seen[key] = true // a login with several prefixes is renewed once
 			out = append(out, Expiring{Login: c.Label(), Prefix: c.Prefix, ExpiresAt: *c.ExpiresAt, Expired: !c.ExpiresAt.After(now)})
 		}
 	}

@@ -241,6 +241,26 @@ func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request) {
 	s.restore(w, r, http.MaxBytesReader(w, r.Body, maxRestoreBodyBytes), "uploaded file")
 }
 
+// afterRestore reloads what a restore brought back. The restore itself succeeded either way, so a failure
+// here is logged, not reported as one.
+func (s *Server) afterRestore(ctx context.Context) {
+	// Custom components come back with the backup: rebuild the catalog before anything reads it.
+	// The restore itself succeeded either way, so a failure here is logged, not reported as one.
+	if err := s.ReloadCatalog(ctx); err != nil {
+		s.Log.Error("catalog reload after restore failed", "err", err)
+	}
+	// Registry credentials (sealed) come back too — with the ids they had, maybe older passwords: test
+	// results made since then don't describe them.
+	if s.Registries != nil {
+		s.Registries.mu.Lock()
+		s.Registries.tests = nil
+		s.Registries.mu.Unlock()
+	}
+	if err := s.ReloadCredentials(ctx); err != nil {
+		s.Log.Error("registry credentials reload after restore failed", "err", err)
+	}
+}
+
 func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader, from string) {
 	ctx := context.WithoutCancel(r.Context()) // don't abort half-way if the browser goes away
 	var safety string
@@ -248,15 +268,7 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request, body io.Reader,
 		if safety, err = s.Backups.Restore(ctx, body); err != nil {
 			return err
 		}
-		// Custom components come back with the backup: rebuild the catalog before anything reads it.
-		// The restore itself succeeded either way, so a failure here is logged, not reported as one.
-		if err := s.ReloadCatalog(ctx); err != nil {
-			s.Log.Error("catalog reload after restore failed", "err", err)
-		}
-		// Registry credentials (sealed) come back too.
-		if err := s.ReloadCredentials(ctx); err != nil {
-			s.Log.Error("registry credentials reload after restore failed", "err", err)
-		}
+		s.afterRestore(ctx)
 		return nil
 	}
 	var err error

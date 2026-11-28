@@ -346,7 +346,8 @@ export const api = {
   suggestRegistryScopes: (ref: string) => request<ScopeSuggestion>("GET", `/api/v1/registries/suggest?ref=${encodeURIComponent(ref)}`),
   internalRegistries: () => request<{ server: string[]; ui: string[] }>("GET", "/api/v1/registries/internal"),
   setInternalRegistries: (registries: string[]) => request<{ ui: string[] }>("PUT", "/api/v1/registries/internal", { registries }),
-  testRegistry: (prefix: string) => request<LoginResult>("POST", "/api/v1/registries/test", { prefix }),
+  /** ref: the image Add login was opened on — its read access is checked (else a running image below the prefix). */
+  testRegistry: (prefix: string, ref?: string) => request<LoginResult & { prefix: string }>("POST", "/api/v1/registries/test", { prefix, ref }),
   acceptVuln: (a: { repository: string; vulnId: string; reason: string; expiresAt: string }) => request("PUT", "/api/v1/vulns/acceptances", a),
   unacceptVuln: (repository: string, vulnId: string) => request("DELETE", "/api/v1/vulns/acceptances", { repository, vulnId }),
 

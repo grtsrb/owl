@@ -22,8 +22,8 @@ monitoring) and batch 2 (CI runners, storage/backup — 71 built-ins) done; batc
 GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-25 (DESIGN.md "Milestones (v2)"):
 14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
 scanning (done: `internal/scan`, Vulnerabilities page) → 15.1 registry logins in the UI (Settings → Registries,
-`OWL_SECRET_KEY`) → 15.2 add a login where the scan fails (in progress, branch `m15c-add-login`: logins reusable
-across prefixes, Add login dialog, Test checks read access; dev GitLab + dev OpenZiti done; next: /code-review, merge) → 16 Docker hosts.
+`OWL_SECRET_KEY`) → 15.2 add a login where the scan fails (done: logins reusable
+across prefixes, Add login dialog, Test checks read access; done) → 16 Docker hosts.
 Keep this file's commands and
 layout in sync as milestones land.
 
