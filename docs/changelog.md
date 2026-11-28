@@ -18,8 +18,13 @@ What each milestone shipped. Newest first.
 - Test names the **login host** when that's what's unreachable (GitLab logs in on its web host, not the
   registry host) — behind a VPN or OpenZiti both have to be reachable from Owl.
 - Expiry warnings come once per login (not per prefix) and show its name.
+- Scan errors name the host that couldn't be reached (and whether it's the registry's login service) instead
+  of Trivy's raw output.
+- Checked against a registry reachable only through **OpenZiti**, both with a tunneller sidecar and with a
+  Ziti router as gateway (dev setup: `make ziti-up`); the configuration docs list what Owl needs.
 - Fix: a scan could run twice when an agent report arrived just as the scanner picked the image up.
-- Dev: `make gitlab-up` / `gitlab-down` for a throwaway GitLab with a registry, groups and deploy tokens.
+- Dev: `make gitlab-up` / `gitlab-down` for a throwaway GitLab with a registry, groups and deploy tokens;
+  `make ziti-up [MODE=router]` / `ziti-case` / `ziti-down` put it behind OpenZiti.
 
 ## Registry logins in the UI (milestone 15.1)
 

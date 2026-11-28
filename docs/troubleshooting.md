@@ -160,6 +160,13 @@ another group (a GitLab group deploy token reads only its own group and subgroup
 used for a group. Add the right group's token for that prefix (**Add login** on the image), or use one that
 reads both groups.
 
+### Scan failed: "can't resolve …" / "can't connect to … from the Owl server"
+
+The server couldn't reach that host — the registry, or (*the registry's login service*) the host it sends
+logins to, e.g. GitLab's web host. Adding a login won't help: fix DNS / routing for the Owl container (see
+the next entry and [registries behind a VPN or OpenZiti](configuration.md#registry-logins-for-image-scanning)),
+then **Rescan now**. Test in Settings → Registries shows the same.
+
 ### Test: "… answered, but its login service on … didn't"
 
 The registry is reachable but the host it sends logins to isn't — GitLab logs in on its web host

@@ -55,9 +55,12 @@ registry_cluster() { # $1 = cluster name: the node trusts the registry (restarts
   docker network connect "k3d-$1" "$REG_NAME" >/dev/null 2>&1 || true
   want=$(printf 'mirrors:\n  "%s":\n    endpoint: ["https://%s"]\nconfigs:\n  "%s":\n    tls:\n      ca_file: /etc/rancher/k3s/owl-dev-ca.pem\n' \
     "$REG_HOST" "$REG_HOST" "$REG_HOST")
-  # The optional dev GitLab (dev/gitlab.sh): its registry, reached under its Docker alias, signed by the same CA.
+  # The optional dev GitLab (dev/gitlab.sh): its registry, signed by the same CA. No Docker DNS alias on the
+  # cluster network — the Owl server joins it too and must not resolve GitLab's names there (with dev/ziti.sh
+  # it may only reach them through Ziti); the node gets /etc/hosts entries instead (gitlab_hosts, below).
   if [[ -f dev/.gitlab/up ]]; then
-    docker network connect --alias gitlab.owl.test --alias registry.owl.test "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
+    docker network disconnect "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
+    docker network connect "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
     want+=$(printf '\n  "registry.owl.test":\n    tls:\n      ca_file: /etc/rancher/k3s/owl-dev-ca.pem\n')
   else
     docker network disconnect "k3d-$1" owl-gitlab >/dev/null 2>&1 || true
@@ -70,4 +73,11 @@ registry_cluster() { # $1 = cluster name: the node trusts the registry (restarts
     until kubectl --context "k3d-$1" get --raw /readyz >/dev/null 2>&1; do sleep 2; done
     echo "cluster $1: registry config updated ($REG_HOST$([[ -f dev/.gitlab/up ]] && echo ", registry.owl.test")) — node restarted"
   fi
+  gitlab_hosts "$1"
+}
+
+gitlab_hosts() { # $1 = cluster: the node resolves the dev GitLab's names to its address on the cluster network
+  local node=k3d-$1-server-0 ip=""
+  [[ -f dev/.gitlab/up ]] && ip=$(docker inspect -f "{{(index .NetworkSettings.Networks \"k3d-$1\").IPAddress}}" owl-gitlab 2>/dev/null || true)
+  docker exec -e IP="$ip" "$node" sh -c 'grep -v "owl\.test" /etc/hosts > /tmp/hosts.owl; [ -z "$IP" ] || echo "$IP gitlab.owl.test registry.owl.test" >> /tmp/hosts.owl; cat /tmp/hosts.owl > /etc/hosts'
 }

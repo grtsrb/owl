@@ -30,6 +30,9 @@ make mattermost-up   # optional: throwaway Mattermost (≈1 GB, amd64 image) wit
 make mattermost-down # remove it, its data and dev/.mattermost.env
 make gitlab-up       # optional: throwaway GitLab CE + registry (~4 GB RAM) with groups, deploy tokens, images; after make stack-up
 make gitlab-down     # remove it, its data, dev/.gitlab and its workloads (the k3d nodes restart once)
+make ziti-up         # optional, after gitlab-up: Owl reaches the dev GitLab only through OpenZiti (MODE=sidecar|router)
+make ziti-case CASE=no-login-host   # or host-down / ok: break it on purpose and look at Test and scan errors
+make ziti-down       # back to direct access
 ```
 
 `make gitlab-up` (`dev/gitlab.sh`) runs GitLab CE as `owl-gitlab` under two Docker network aliases —
@@ -40,6 +43,20 @@ images into `registry.owl.test/devops/billing/api`, `devops/web` and `platform/t
 `it-aws-test` namespace `corp-apps` with pull secrets. Owl gets no login, so their scans fail with *auth
 failed* — the case **Add login** is for. Root password: `dev/.gitlab/root-password` (the UI is reachable only
 inside Docker).
+
+`make ziti-up` (`dev/ziti.sh`) runs an OpenZiti controller + edge router (`owl-ziti`, quickstart), a hosting
+tunneller next to GitLab on `owl-corp` (services `registry.owl.test:443` and `gitlab.owl.test:443`), takes
+GitLab off `owl-net`, and restarts the Owl server so that it reaches GitLab only through Ziti:
+- `MODE=sidecar` (default): `owl-server` shares the network of `owl-ziti-client` (ziti-edge-tunnel, which puts
+  its resolver first in `resolv.conf` and publishes :8080),
+- `MODE=router`: `owl-ziti-gw` (a Ziti router in tproxy mode) is the gateway: `owl-server` gets
+  `--dns <router> --dns $OWL_DEV_DNS` (default 1.1.1.1 — the router refuses non-Ziti names) and a short-lived
+  NET_ADMIN container adds the `100.64.0.0/10` route.
+
+`make ziti-case CASE=no-login-host` exposes only the registry (not GitLab's `/jwt/auth` host),
+`CASE=host-down` stops the hosting tunneller, `CASE=ok` restores both. The cluster nodes always reach GitLab
+directly (`/etc/hosts` entries; GitLab has no DNS alias or hostname on the cluster networks, which the Owl
+server joins too). Identities' enrollment tokens are in `dev/.ziti/` (gitignored).
 
 `make mattermost-up` runs `mattermost/mattermost-preview` as `owl-mattermost` on <http://127.0.0.1:8065>
 (sign in as `owladmin` / `Owl-dev-only-1234`, channel "Owl alerts"), creates an incoming webhook and

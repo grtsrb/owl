@@ -705,6 +705,13 @@ image (or the one that does is rejected).
   NET_ADMIN init container in its namespace; Owl itself never gets NET_ADMIN). Cases: OK, realm service missing
   (only the registry exposed), tunneler/router down. Proves Owl's networking assumptions and error messages,
   not the team's real network — Test against the real registry once afterwards.
+  Built 2026-11-28 (`dev/ziti.sh`, `make ziti-up [MODE=router]`, `make ziti-case`). Learned: a Ziti resolver
+  (tunneller or router) answers only Ziti names and REFUSES the rest — Owl needs a normal resolver after it
+  (sidecar: ziti-edge-tunnel puts itself first in resolv.conf, Docker's stays second; router: `--dns <gw>
+  --dns <resolver>`); the router image must run as root for its tproxy rules; Docker's DNS answers a
+  container's *hostname* on every network it joins — the dev GitLab must not use its public name as hostname,
+  or Owl (which joins the k3d networks) bypasses Ziti. Scan errors now name the unreachable host and say when
+  it's the login service (`scan.networkError`).
 - **Docs**: a "Private registries over OpenZiti / VPN" section in the deploy docs: DNS must resolve inside the
   Owl container, both the registry and the GitLab host must be reachable, internal CA via `SSL_CERT_FILE`, and
   `100.100.100.200` (refused as a metadata address) lies inside Ziti's default range — rare, but if Ziti ever

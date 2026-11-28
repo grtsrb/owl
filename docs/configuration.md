@@ -89,7 +89,9 @@ a UI entry with the same prefix.
 - **Registries behind a VPN or OpenZiti**: Owl needs nothing special — only that both the registry host and
   its login host (GitLab: the web host, `/jwt/auth`) resolve and route *inside the Owl container*. Run a
   tunneller as a sidecar sharing the container's network, or route the overlay's range (OpenZiti:
-  `100.64.0.0/10`) through a router and point the container's DNS at it. An internal CA goes in via
+  `100.64.0.0/10`) through a router and point the container's DNS at it — **plus a normal resolver after it**:
+  a Ziti resolver answers only Ziti names and refuses the rest (GitHub, endoflife.date, public registries), and
+  Docker then asks the next server (`--dns <router> --dns <your resolver>`). An internal CA goes in via
   `SSL_CERT_FILE` (Trivy uses it too). Test shows which host failed. Rare: `100.100.100.200` is refused as a
   cloud metadata address but lies in OpenZiti's default range — if Ziti ever hands it out, change the
   tunneller's DNS range.

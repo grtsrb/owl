@@ -23,7 +23,7 @@ GitOps (Argo/Flux) parked by the user — DESIGN.md "Later". v2 agreed 2026-11-2
 14 slim agent image (done: `-tags owlagent`, Dockerfile `--target agent`) → 15 server-side Trivy image
 scanning (done: `internal/scan`, Vulnerabilities page) → 15.1 registry logins in the UI (Settings → Registries,
 `OWL_SECRET_KEY`) → 15.2 add a login where the scan fails (in progress, branch `m15c-add-login`: logins reusable
-across prefixes, Add login dialog, Test checks read access; dev GitLab done, dev OpenZiti next) → 16 Docker hosts.
+across prefixes, Add login dialog, Test checks read access; dev GitLab + dev OpenZiti done; next: /code-review, merge) → 16 Docker hosts.
 Keep this file's commands and
 layout in sync as milestones land.
 
@@ -48,6 +48,8 @@ make mattermost-up          # optional throwaway Mattermost + webhook (dev/.matt
 make mattermost-down
 make gitlab-up              # optional dev GitLab CE + registry (gitlab.owl.test / registry.owl.test), after make stack-up
 make gitlab-down
+make ziti-up [MODE=router]  # optional, after gitlab-up: Owl reaches the dev GitLab only through OpenZiti
+make ziti-case CASE=no-login-host|host-down|ok   # break it on purpose; make ziti-down = direct again
 make image-push REGISTRY=registry.gitlab.example.com/devops VERSION=0.9.0   # owl + owl-agent, amd64+arm64
 # API: a personal token from Account → API tokens (or a session cookie from /api/v1/auth/login)
 ./bin/owl login --server http://127.0.0.1:8080      # then: owl status / outdated / component coredns / users plan …

@@ -459,6 +459,21 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+// Network failures name the host — and say when it's the registry's login service (GitLab's /jwt/auth on
+// the web host), which behind a VPN / ziti has to be reachable as well as the registry.
+func TestClassifyNetwork(t *testing.T) {
+	other := errors.New("exit status 1")
+	for stderr, want := range map[string]string{
+		`* remote error: Get "https://gitlab.owl.test/jwt/auth?scope=repository%3Adevops%2Fweb%3Apull&service=container_registry": dial tcp 100.64.0.4:443: connect: connection refused`: "can't connect to gitlab.owl.test (the registry's login service) from the Owl server (refused, unreachable or timeout)",
+		`GET https://registry.owl.test/v2/devops/web/manifests/sha256:ab: dial tcp: lookup registry.owl.test on 127.0.0.11:53: no such host`:                                             "can't resolve registry.owl.test from the Owl server — check its DNS (VPN / ziti / split DNS)",
+		`Get "https://reg.example.com:5000/v2/": dial tcp 10.0.0.1:5000: i/o timeout`:                                                                                                    "can't connect to reg.example.com from the Owl server (refused, unreachable or timeout)",
+	} {
+		if err := classify(stderr, other); err.Error() != want || strings.Contains(err.Error(), "scope=") {
+			t.Errorf("%q\n→ %v\nwant %s", stderr, err, want)
+		}
+	}
+}
+
 func TestRegistryAllowed(t *testing.T) {
 	for host, want := range map[string]bool{
 		"docker.io": true, "registry.gitlab.example.com": true, "ghcr.io": true, "registry.local:5000": true,

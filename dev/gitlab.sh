@@ -7,9 +7,10 @@
 #   make gitlab-down       # removes all of it again (the k3d nodes restart once to forget the registry)
 #
 # Two hostnames, like a real GitLab: gitlab.owl.test (web + the registry's token endpoint /jwt/auth) and
-# registry.owl.test (the registry). Both exist only as Docker network aliases — on owl-net (Owl's Trivy) and on
-# each k3d network (containerd pulls). The certificate is signed by the dev CA (dev/.registry/), which the Owl
-# server and the k3d nodes already trust.
+# registry.owl.test (the registry). They exist only as Docker network aliases on owl-corp ("the company network")
+# and — unless dev/ziti.sh made Owl go through OpenZiti — on owl-net (Owl's Trivy); the k3d nodes get /etc/hosts
+# entries (dev/registry.sh). The certificate is signed by the dev CA (dev/.registry/), which the Owl server and
+# the k3d nodes already trust.
 #
 # What gets created (written to dev/.gitlab/tokens.env, 0600):
 #   groups devops (subgroup devops/billing) and platform, each with a read_registry group deploy token;
@@ -30,6 +31,12 @@ GL_NS=corp-apps
 CRANE=gcr.io/go-containerregistry/crane:v0.22.1
 CLUSTERS="it-hetzner it-aws-test it-aws-prod"
 
+# Owl reaches GitLab directly over owl-net — unless dev/ziti.sh is up: then only through Ziti.
+gitlab_owl_net() {
+  docker network disconnect owl-net "$GL_NAME" >/dev/null 2>&1 || true
+  [[ -f dev/.ziti/up ]] || docker network connect --alias "$GL_WEB" --alias "$GL_REG" owl-net "$GL_NAME"
+}
+
 down() {
   kubectl --context "k3d-$GL_CLUSTER" delete namespace "$GL_NS" --ignore-not-found >/dev/null 2>&1 || true
   docker rm -f -v "$GL_NAME" >/dev/null 2>&1 || true
@@ -49,6 +56,7 @@ up() {
   [[ -f $GL_DIR/root-password ]] || { openssl rand -base64 18 | tr -d '/+=' > "$GL_DIR/root-password"; chmod 600 "$GL_DIR/root-password"; }
 
   docker network create owl-net >/dev/null 2>&1 || true
+  docker network create owl-corp >/dev/null 2>&1 || true
   if [[ -z $(docker ps -q -f name="^$GL_NAME$") ]]; then
     docker rm -f "$GL_NAME" >/dev/null 2>&1 || true
     # Tuned for a small dev box (GitLab's "memory-constrained environment" settings).
@@ -72,12 +80,15 @@ EOF
 )
     cp "$GL_DIR/root-password" "$GL_DIR/ssl/root-password"
     cp "$REG_DIR/ca.pem" "$GL_DIR/ssl/ca.pem"
-    docker run -d --name "$GL_NAME" --hostname "$GL_WEB" --network owl-net \
+    # Not --hostname $GL_WEB: Docker's DNS answers a container's hostname on every network it joins (here the
+    # k3d networks, which the Owl server joins too), which would let Owl bypass Ziti for that name.
+    docker run -d --name "$GL_NAME" --hostname owl-gitlab --network owl-corp \
       --network-alias "$GL_WEB" --network-alias "$GL_REG" --shm-size 256m \
       -v owl-gitlab-config:/etc/gitlab -v owl-gitlab-logs:/var/log/gitlab -v owl-gitlab-data:/var/opt/gitlab \
       -v "$PWD/$GL_DIR/ssl:/etc/gitlab/owl-ssl:ro" -e GITLAB_OMNIBUS_CONFIG="$cfg" "$GL_IMAGE" >/dev/null
   fi
 
+  gitlab_owl_net
   echo "waiting for GitLab (the first start takes 3–6 minutes)…"
   local ok=
   for _ in $(seq 1 180); do
@@ -138,7 +149,7 @@ EOF
   printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$GL_REG" "$auth" > "$GL_DIR/docker/config.json"
   chmod 600 "$GL_DIR/docker/config.json"
   for pair in alpine:3.18.0=devops/billing/api:1.0 alpine:3.19.0=devops/web:2.3 busybox:1.36.0=platform/tools:0.4; do
-    docker run --rm --network owl-net -v "$PWD/$GL_DIR/docker:/cfg:ro" -v "$PWD/$REG_DIR/ca-bundle.crt:/ca.crt:ro" \
+    docker run --rm --network owl-corp -v "$PWD/$GL_DIR/docker:/cfg:ro" -v "$PWD/$REG_DIR/ca-bundle.crt:/ca.crt:ro" \
       -e DOCKER_CONFIG=/cfg -e SSL_CERT_FILE=/ca.crt "$CRANE" copy "${pair%%=*}" "$GL_REG/${pair#*=}" >>"$GL_DIR/crane.log" 2>&1 ||
       { echo "copying ${pair%%=*} failed: $GL_DIR/crane.log" >&2; exit 1; }
   done
@@ -189,5 +200,6 @@ EOF
 case ${1:-up} in
   up) up ;;
   down) down ;;
-  *) echo "usage: $0 up|down" >&2; exit 2 ;;
+  owl-net) gitlab_owl_net ;; # dev/ziti.sh: (re)attach or detach GitLab on owl-net
+  *) echo "usage: $0 up|down|owl-net" >&2; exit 2 ;;
 esac

@@ -38,9 +38,25 @@ docker run -d --name owl-mailpit --network owl-net -p 127.0.0.1:8025:8025 axllen
 # Dev registry: the clusters pull the agent image from it, so Owl scans its own agent (dev/registry.sh).
 registry_up "$IMAGE" "$AGENT_IMAGE"
 
+# Network: direct (owl-net), or through the optional dev OpenZiti (dev/ziti.sh) — sidecar: owl-server lives in
+# owl-ziti-client's network namespace (which publishes :8080 and joins the cluster networks); router: DNS via
+# the Ziti router first (it refuses other names, then Docker asks $OWL_DEV_DNS) + the 100.64.0.0/10 route via it.
+ZMODE=$( [[ -f dev/.ziti/up ]] && cat dev/.ziti/mode 2>/dev/null || echo direct)
+NETNS=owl-server # the container that holds owl-server's network (joins the k3d networks)
+net=(--network owl-net -p 127.0.0.1:8080:8080)
+case $ZMODE in
+  sidecar)
+    [[ -n $(docker ps -q -f name='^owl-ziti-client$') ]] || { echo "error: owl-ziti-client isn't running — make ziti-up" >&2; exit 1; }
+    NETNS=owl-ziti-client net=(--network container:owl-ziti-client) ;;
+  router)
+    gw=$(docker inspect -f '{{(index .NetworkSettings.Networks "owl-net").IPAddress}}' owl-ziti-gw 2>/dev/null) ||
+      { echo "error: owl-ziti-gw isn't running — make ziti-up MODE=router" >&2; exit 1; }
+    net+=(--dns "$gw" --dns "${OWL_DEV_DNS:-1.1.1.1}") ;;
+esac
+
 docker rm -f owl-server >/dev/null 2>&1 || true
 # Docker's own copy of the logs is capped (the server also writes rotated files to /data/logs).
-docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-data:/data \
+docker run -d --name owl-server "${net[@]}" -v owl-data:/data \
   -v "$PWD/$REG_DIR/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro" \
   --log-opt max-size=10m --log-opt max-file=3 \
   -e OWL_LISTEN=0.0.0.0:8080 -e OWL_INTERNAL_REGISTRIES=registry.gitlab.example,registry.owl.test,$REG_HOST -e GITHUB_TOKEN \
@@ -50,8 +66,11 @@ docker run -d --name owl-server --network owl-net -p 127.0.0.1:8080:8080 -v owl-
   -e OWL_BACKUP_S3_ENDPOINT=owl-s3:9090 -e OWL_BACKUP_S3_BUCKET=owl-backups -e OWL_BACKUP_S3_PREFIX=dev \
   -e OWL_BACKUP_S3_ACCESS_KEY=dev -e OWL_BACKUP_S3_SECRET_KEY=dev-only-not-a-secret -e OWL_BACKUP_S3_INSECURE=true \
   "$IMAGE" server >/dev/null
+if [[ $ZMODE == router ]]; then # a short-lived container with NET_ADMIN sets the route; Owl never gets it
+  docker run --rm --network container:owl-server --cap-add NET_ADMIN alpine:3.20 ip route add 100.64.0.0/10 via "$gw"
+fi
 until curl -sf 127.0.0.1:8080/healthz >/dev/null; do sleep 1; done
-echo "server: http://127.0.0.1:8080   mail: http://127.0.0.1:8025"
+echo "server: http://127.0.0.1:8080   mail: http://127.0.0.1:8025$([[ $ZMODE != direct ]] && echo "   registries via OpenZiti ($ZMODE)")"
 [[ -z ${OWL_MATTERMOST_WEBHOOK_URL:-} ]] || echo "notifications: Mattermost at http://127.0.0.1:8065 (Settings → Notifications to switch them on)"
 if [[ -z $(docker exec owl-server /owl db user list | awk 'NR>1') ]]; then
   echo "first admin ($ADMIN_EMAIL) — open this link to set a password:"
@@ -60,8 +79,8 @@ fi
 
 for entry in $clusters; do
   name=${entry%%:*} stage=${entry#*:} ctx=k3d-${entry%%:*}
-  docker network connect "k3d-$name" owl-server
-  ip=$(docker inspect -f "{{(index .NetworkSettings.Networks \"k3d-$name\").IPAddress}}" owl-server)
+  docker network connect "k3d-$name" "$NETNS" 2>/dev/null || true # already joined (sidecar kept across runs)
+  ip=$(docker inspect -f "{{(index .NetworkSettings.Networks \"k3d-$name\").IPAddress}}" "$NETNS")
 
   if docker exec owl-server /owl db cluster list | awk 'NR>1{print $1}' | grep -qx "$name"; then
     token=$(docker exec owl-server /owl db cluster rotate-token --name "$name" 2>/dev/null)
