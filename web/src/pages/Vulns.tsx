@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, useIsAdmin, writeErrorText, type ScannerStatus, type Severity, type Vuln, type VulnImage, type VulnPlace } from "../api";
 import { Dialog } from "./Settings";
 import { DocHelp } from "./Docs";
+import { AddLoginDialog } from "./AddLogin";
 import { DOC_HELP } from "../dochelp";
 import { paginate, usePageSize, useQueryState } from "../model";
 import { ago, Card, date, Empty, ErrorBox, Loading, Msg, Pager, Tag, useApi } from "../ui";
@@ -80,6 +81,9 @@ export default function VulnsPage() {
   const affectedOnly = qs.get("affected") === "1";
   const [pageSize, setPageSize] = usePageSize();
   const [q, setQ] = useState("");
+  const isAdmin = useIsAdmin();
+  const [addLogin, setAddLogin] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (list.error) return <ErrorBox error={list.error} retry={list.reload} />;
   if (!list.data) return <Loading />;
@@ -100,6 +104,7 @@ export default function VulnsPage() {
         </div>
       </div>
       {!list.data.enabled && <div className="callout warn">Image scanning is off on this server (see Scanner below).</div>}
+      <Msg msg={msg} />
 
       <Card>
         <div className="kv-grid">
@@ -139,7 +144,8 @@ export default function VulnsPage() {
                     <td className="small"><Places places={i.places} /></td>
                     <td className="small">{i.scannedAt ? <SevSummary c={i.total} accepted={i.accepted} /> : "—"}</td>
                     <td className="small">{i.scannedAt ? ago(i.scannedAt) : "—"}{i.queue && <div><Tag>{i.queue}</Tag></div>}
-                      {i.state === "failed" && <div className="err-text" style={{ margin: 0 }} title={i.error}>last attempt failed</div>}</td>
+                      {i.state === "failed" && <div className="err-text" style={{ margin: 0 }} title={i.error}>{i.needsLogin ? "registry login failed" : "last attempt failed"}</div>}
+                      {i.needsLogin && isAdmin && <button className="btn small" style={{ marginTop: 4 }} onClick={() => { setMsg(null); setAddLogin(i.ref); }}>Add login</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -151,6 +157,9 @@ export default function VulnsPage() {
       </Card>
 
       <ScannerPanel onFinished={list.reload} />
+      {addLogin && <AddLoginDialog imageRef={addLogin} onClose={() => setAddLogin("")} onDone={(text, ok) => {
+        setAddLogin(""); setMsg({ ok, text }); list.reload();
+      }} />}
     </>
   );
 }
@@ -280,7 +289,7 @@ function ScannerHealth({ s }: { s: ScannerStatus }) {
         <div key={a.prefix} className="callout critical"><span><b>Auth failed for {a.prefix}</b> ({ago(a.at)}, {shortRef(a.ref)}): check the login in <Link to="/settings/registries">Settings → Registries</Link> (or in OWL_REGISTRY_AUTH_FILE, for a login from the file).</span></div>
       ))}
       {(s.credentialsExpiring ?? []).map((e) => (
-        <div key={e.prefix} className={`callout ${e.expired ? "critical" : "warn"}`}><span><b>Registry login {e.prefix} {e.expired ? "expired" : "expires"} {date(e.expiresAt)}</b>
+        <div key={e.login} className={`callout ${e.expired ? "critical" : "warn"}`}><span><b>Registry login {e.login} {e.expired ? "expired" : "expires"} {date(e.expiresAt)}</b>
           {e.expired ? " — scans with it fail" : ""}: renew the token and replace it in <Link to="/settings/registries">Settings → Registries</Link> (or in OWL_REGISTRY_AUTH_FILE).</span></div>
       ))}
     </div>
@@ -305,6 +314,7 @@ export function VulnImagePage() {
   const isAdmin = useIsAdmin();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [accepting, setAccepting] = useState<Vuln | null>(null);
+  const [addLogin, setAddLogin] = useState(false);
   const [fixableOnly, setFixableOnly] = useState(true);
   const [sev, setSev] = useState<Severity | "">("");
   const [showAccepted, setShowAccepted] = useState(false);
@@ -346,7 +356,11 @@ export function VulnImagePage() {
         {isAdmin && <button className="btn" onClick={() => void rescan()}>Rescan now</button>}
       </div>
       <Msg msg={msg} />
-      {img.state === "failed" && <div className="callout warn"><span>The last scan attempt failed: {img.error}{img.scannedAt ? ` — showing the result from ${ago(img.scannedAt)}.` : ""}</span></div>}
+      {img.state === "failed" && <div className="callout warn"><span>The last scan attempt failed: {img.error}{img.scannedAt ? ` — showing the result from ${ago(img.scannedAt)}.` : ""}</span>
+        {img.needsLogin && isAdmin && <button className="btn small" onClick={() => { setMsg(null); setAddLogin(true); }}>Add login</button>}</div>}
+      {addLogin && <AddLoginDialog imageRef={img.ref} onClose={() => setAddLogin(false)} onDone={(text, ok) => {
+        setAddLogin(false); setMsg({ ok, text }); d.reload();
+      }} />}
 
       <Card>
         <div className="kv-grid">

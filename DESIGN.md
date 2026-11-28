@@ -517,6 +517,7 @@ Promotion drift across stages: "newer in staging, not yet in prod" and anomalies
 14. **Slim agent image** (built 2026-11-25): agent-only binary and image (plan below). Comes first: the host agent is that binary.
 15. **Image scanning (Trivy), server-side** (built 2026-11-25), clusters first — the team's pain point is in-house images.
 15.1 **Registry credentials in the UI** (agreed 2026-11-26): see below.
+15.2 **Add a login where the scan fails** (agreed 2026-11-28): see below; with a dev GitLab and dev OpenZiti.
 16. **Docker hosts**: their images get scanning for free, because 15 exists by then.
 Then, only if needed: scanning of host-only images (see "Docker hosts"). GuardDuty & co.: "Later".
 
@@ -657,6 +658,64 @@ prefix → credential list in **Settings → Registries**; Trivy pulls exactly a
   may be scanned. The UI refuses loopback, link-local, unspecified/multicast addresses, `localhost` and
   metadata names (never a registry; would reopen the SSRF the scan guard closes). Readable by every signed-in
   user, changed by admins (browser only: not in `tokenWrites`).
+
+## Add a login where the scan fails (agreed 2026-11-28, milestone 15.2)
+15.1 made logins manageable, but the fix lived far from the problem: a red callout on Vulnerabilities, then
+typing a prefix by hand in Settings. The registry itself is never configured — it comes from the image
+reference; Settings only decides **which login** a pull uses. A group deploy token on `host/group` already
+covers every new image below it without any action, so a person is only needed when **no login covers** an
+image (or the one that does is rejected).
+- **Add login** button on images whose last scan failed with "auth failed" (Vulnerabilities row + image
+  detail page). Admin, browser only — same rules as Settings → Registries.
+- **Scope from the image's own path**, not a free-text prefix: for `registry.x/devops/billing/api` the choices
+  are `registry.x`, `registry.x/devops` (**preselected**: first group level), `registry.x/devops/billing`; each
+  shows how many images that currently fail would be covered. Longest prefix still wins.
+- **Use an existing login** or **add a new one** (name, username, token, optional expiry → Test → save). After
+  saving, the covered failed images are queued again at once (existing 15.1 behaviour).
+- **Model change: a login is stored once and used under several scopes.** `registry_credentials` gets an id and
+  a **name** (default `username @ prefix` — unique, since a prefix has one login; shown in the picker); a new `registry_scopes` table maps prefix →
+  credential id (prefix unique; a file prefix still wins and can't be added in the UI). The sealed password's
+  additional data becomes the credential id (`cred:<id>`) instead of the prefix; migrated rows keep their old
+  prefix as stored AD until replaced (the migration can't re-seal: it has no key). Deleting a login deletes its
+  scopes (the confirm lists them). Expiry, Test result and auth failures belong to the login; the page shows
+  them on each scope. File logins stay prefix-bound and can't be picked for other scopes.
+- **A login is bound to its registry host** (security review 2026-11-28): otherwise an admin, or a stolen admin
+  session, could add a prefix on their own host and press Test to receive a stored token — write-only would be
+  void. New seal ids are `login:<random>@<host>` (the host is in the additional data, so editing the row breaks
+  decryption; migrated rows have their prefix). A prefix on another host is refused, and ignored if written
+  into the database directly. Reuse across groups of the same registry — the point — still works.
+- **Test** runs against a scope (it needs a repository path for the pull scope). Its result names the host that
+  failed — the registry or the **token realm** (GitLab's `/jwt/auth` host): with ziti/VPN the realm host can be
+  unreachable while the registry works, which otherwise looks like a wrong token.
+- Settings → Registries: "Prefix" becomes **"Used for"**; each login lists its scopes and how many running
+  images each covers.
+- **Dev GitLab** (optional, like Mattermost — ~4 GB RAM): `make gitlab-up` / `gitlab-down` runs GitLab CE with
+  the registry, groups `devops` and `platform` (+ a subgroup), a `read_registry` group deploy token each, one
+  pushed image per group, and a deployment in one k3d cluster. Cases: covered by a group token, uncovered,
+  wrong token, expired.
+- **Nothing Ziti-specific in Owl** (user, 2026-11-28: other teams won't use it): no Ziti code, settings or
+  dependencies; Owl only needs DNS + routing to work inside its container, however that's provided. Dev GitLab and
+  dev Ziti are opt-in, never part of `make stack-up`; the docs section is "if your registries sit behind a VPN /
+  OpenZiti".
+- **Dev OpenZiti** (optional, after GitLab): `make ziti-up` runs a Ziti controller + edge router, a hosting
+  tunneler next to GitLab publishing `registry.ziti.test` and `gitlab.ziti.test` (names that exist in no
+  normal DNS), and Owl reaching them **both ways the team does**: (a) **tunneler sidecar** — `owl-server` shares
+  a `ziti-edge-tunnel` container's network namespace (tproxy + its DNS); (b) **router-level** — an edge router
+  in tunnel mode as gateway, `owl-server` uses it for DNS and the `100.64.0.0/10` route (set by a short-lived
+  NET_ADMIN init container in its namespace; Owl itself never gets NET_ADMIN). Cases: OK, realm service missing
+  (only the registry exposed), tunneler/router down. Proves Owl's networking assumptions and error messages,
+  not the team's real network — Test against the real registry once afterwards.
+  Built 2026-11-28 (`dev/ziti.sh`, `make ziti-up [MODE=router]`, `make ziti-case`). Learned: a Ziti resolver
+  (tunneller or router) answers only Ziti names and REFUSES the rest — Owl needs a normal resolver after it
+  (sidecar: ziti-edge-tunnel puts itself first in resolv.conf, Docker's stays second; router: `--dns <gw>
+  --dns <resolver>`); the router image must run as root for its tproxy rules; Docker's DNS answers a
+  container's *hostname* on every network it joins — the dev GitLab must not use its public name as hostname,
+  or Owl (which joins the k3d networks) bypasses Ziti. Scan errors now name the unreachable host and say when
+  it's the login service (`scan.networkError`).
+- **Docs**: a "Private registries over OpenZiti / VPN" section in the deploy docs: DNS must resolve inside the
+  Owl container, both the registry and the GitLab host must be reachable, internal CA via `SSL_CERT_FILE`, and
+  `100.100.100.200` (refused as a metadata address) lies inside Ziti's default range — rare, but if Ziti ever
+  hands it out, change the tunneler's DNS range.
 
 ## Docker hosts (agreed 2026-11-25, milestone 16)
 - **What**: plain Docker / Compose hosts — their containers and images, plus Docker Engine and OS version.

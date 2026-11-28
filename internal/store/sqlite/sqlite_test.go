@@ -212,3 +212,71 @@ func TestChangesSinceHasNoLimit(t *testing.T) {
 		t.Fatalf("future: %d", len(none))
 	}
 }
+
+// 15.1 registry credentials become logins with one prefix each (milestone 15.2). The seal id is the old
+// prefix: the password was sealed with it as additional data and the migration can't re-seal (no key).
+func TestMigrationRegistryLogins(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "old.db")
+	raw, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := len(migrations) - 1 // the schema just before registry_logins
+	for i := range n {
+		if _, err := raw.Exec(migrations[i]); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	for _, q := range []string{
+		fmt.Sprintf("PRAGMA user_version = %d", n),
+		`INSERT INTO registry_credentials(prefix, username, secret, expires_at, updated_by, created_at, updated_at) VALUES
+			('reg.x/devops', 'gitlab+deploy-token-1', x'0102', '2027-01-01T23:59:59.999Z', 'a@x', '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z'),
+			('reg.x/platform', 'bot', x'03', NULL, 'b@x', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`,
+	} {
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	raw.Close()
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ls, err := db.ListRegistryLogins(ctx)
+	if err != nil || len(ls) != 2 {
+		t.Fatalf("logins = %+v %v", ls, err)
+	}
+	l := ls[1] // sorted by name: "bot @ …" first
+	if l.Name != "gitlab+deploy-token-1 @ reg.x/devops" || l.SealID != "reg.x/devops" || string(l.Secret) != "\x01\x02" ||
+		l.ExpiresAt == nil || l.UpdatedBy != "a@x" || len(l.Scopes) != 1 || l.Scopes[0] != "reg.x/devops" {
+		t.Errorf("migrated login = %+v", l)
+	}
+	// The table is gone; deleting a login cascades to its prefixes.
+	if err := db.DeleteRegistryLogin(ctx, l.ID); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	db.db.QueryRow("SELECT count(*) FROM registry_scopes").Scan(&left)
+	if left != 1 {
+		t.Errorf("prefixes left = %d, want 1", left)
+	}
+	if _, err := db.db.Exec("SELECT 1 FROM registry_credentials"); err == nil {
+		t.Error("registry_credentials still exists")
+	}
+	// A prefix belongs to one login; a login needs a known id.
+	if err := db.AddRegistryScope(ctx, ls[0].ID, "reg.x/platform"); !errors.Is(err, store.ErrExists) {
+		t.Errorf("same prefix twice: %v", err)
+	}
+	if err := db.AddRegistryScope(ctx, 999, "reg.x/new"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown login: %v", err)
+	}
+	if _, err := db.AddRegistryLogin(ctx, store.RegistryLogin{Name: ls[0].Name, Username: "u", Secret: []byte("s"), SealID: "z", UpdatedBy: "a", Scopes: []string{"reg.x/z"}}); !errors.Is(err, store.ErrExists) {
+		t.Errorf("same name twice: %v", err)
+	}
+	if ls2, _ := db.ListRegistryLogins(ctx); len(ls2) != 1 || len(ls2[0].Scopes) != 1 {
+		t.Errorf("a refused add must leave nothing behind: %+v", ls2)
+	}
+}

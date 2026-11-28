@@ -221,7 +221,7 @@ type VulnSummary struct {
 
 // CredentialExpiry: a registry login Trivy pulls with that needs renewing.
 type CredentialExpiry struct {
-	Prefix    string
+	Name      string // the login's name (a file entry: its prefix)
 	ExpiresAt time.Time
 	Expired   bool
 }
@@ -317,7 +317,7 @@ func expiryBlock(es []CredentialExpiry, now time.Time, link string) []Block {
 		if e.Expired {
 			when = "expired " + e.ExpiresAt.Format("2 Jan 2006") + " — scans with it fail"
 		}
-		b.Items = append(b.Items, Ln(C(e.Prefix), T(" "+when)))
+		b.Items = append(b.Items, Ln(C(e.Name), T(" "+when)))
 	}
 	if link != "" {
 		b.Items = append(b.Items, Ln(L("Open Settings → Registries", link)))

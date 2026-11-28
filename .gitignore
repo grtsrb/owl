@@ -12,3 +12,5 @@
 *.tsbuildinfo
 dev/.mattermost.env
 dev/.registry/
+dev/.gitlab/
+dev/.ziti/

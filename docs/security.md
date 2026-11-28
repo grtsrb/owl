@@ -128,6 +128,8 @@ What Owl can see, what it stores and sends, and how to run it safely.
   loopback, link-local and metadata addresses) or has a registry login;
   such images show as *not scannable*. Registry logins only go to the host in their own prefix (and, for
   **Test**, to the token endpoint that registry names — never an IP-address, local or metadata one).
+- A UI registry login is bound to its **registry host**: it can be used for more prefixes on that host only
+  (the host is part of the encrypted data), so nobody can point it at another server to read it back.
 - Registry logins added in the UI are **write-only** (never shown or returned again, never in logs or the
   audit log) and encrypted with `OWL_SECRET_KEY` (AES-256-GCM, bound to their prefix). The database and its
   backups hold only ciphertext; keep the key separate from the backup bucket. Only admins in a browser

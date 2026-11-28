@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -116,6 +117,9 @@ func classify(stderr string, err error) error {
 	case strings.Contains(low, "--skip-db-update cannot be specified on the first run") || strings.Contains(low, "first run cannot skip downloading db"):
 		return ErrNoDB
 	}
+	if msg := networkError(stderr); msg != "" {
+		return errors.New(msg)
+	}
 	msg := ""
 	for _, l := range strings.Split(strings.TrimSpace(stderr), "\n") {
 		if l = strings.TrimSpace(l); l != "" {
@@ -129,6 +133,51 @@ func classify(stderr string, err error) error {
 		msg = msg[:300] + "…"
 	}
 	return errors.New("trivy: " + msg)
+}
+
+var reNetURL = regexp.MustCompile(`(?i)\b(?:get|head|post)\s+"?https?://([^/"\s:]+)(?::\d+)?(/[^"\s?]*)?`)
+
+// networkError says which host couldn't be reached, in the words Test uses (no URL query: it could carry
+// anything). A host that isn't the registry's /v2/ API is its login service (GitLab: /jwt/auth on the web
+// host) — behind a VPN / ziti that one has to be reachable too. "" = not a network error.
+func networkError(stderr string) string {
+	var low string
+	var m []string
+	for _, l := range strings.Split(stderr, "\n") { // the line with the network error; its last URL is the
+		ll := strings.ToLower(l) // innermost request (Trivy wraps: GET /v2/…: Get "…/jwt/auth": dial tcp …)
+		if !netFailure(ll) {
+			continue
+		}
+		if ms := reNetURL.FindAllStringSubmatch(l, -1); len(ms) > 0 {
+			low, m = ll, ms[len(ms)-1]
+		}
+	}
+	if m == nil {
+		return ""
+	}
+	host, what := m[1], ""
+	if !strings.HasPrefix(m[2], "/v2/") {
+		what = " (the registry's login service)"
+	}
+	switch {
+	case strings.Contains(low, "no such host") || strings.Contains(low, "server misbehaving"):
+		return "can't resolve " + host + what + " from the Owl server — check its DNS (VPN / ziti / split DNS)"
+	case strings.Contains(low, "connection refused") || strings.Contains(low, "i/o timeout") ||
+		strings.Contains(low, "no route to host") || strings.Contains(low, "network is unreachable") ||
+		strings.Contains(low, "connection reset"):
+		return "can't connect to " + host + what + " from the Owl server (refused, unreachable or timeout)"
+	}
+	return ""
+}
+
+func netFailure(low string) bool {
+	for _, s := range []string{"no such host", "server misbehaving", "connection refused", "i/o timeout", "no route to host",
+		"network is unreachable", "connection reset"} {
+		if strings.Contains(low, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateDB downloads the vulnerability DB and the Java DB (from Trivy's default source, mirror.gcr.io).

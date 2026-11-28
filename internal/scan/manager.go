@@ -514,40 +514,42 @@ func (m *Manager) doneDaily(digest string) {
 
 func (m *Manager) worker(ctx context.Context) {
 	for {
-		job, ok := m.next(ctx)
+		job, sctx, cancel, ok := m.next(ctx)
 		if !ok {
 			return
 		}
-		m.scan(ctx, job)
+		m.scan(ctx, sctx, cancel, job)
 	}
 }
 
-// next waits for a job (and a DB).
-func (m *Manager) next(ctx context.Context) (Job, bool) {
+// next waits for a job (and a DB) and makes it the running one in the same step: a digest is never
+// neither queued nor running in between, or a sync would queue it again as new.
+func (m *Manager) next(ctx context.Context) (Job, context.Context, context.CancelFunc, bool) {
 	for {
 		m.mu.Lock()
 		if m.dbReady && len(m.queue) > 0 {
 			j := m.queue[0]
 			m.queue = m.queue[1:]
+			sctx, cancel := context.WithTimeout(ctx, m.Timeout)
+			m.cur, m.curCancel, m.cancelled = &Running{Job: j, StartedAt: m.Now(), TimeoutSec: int64(m.Timeout / time.Second)}, cancel, false
 			m.mu.Unlock()
-			return j, true
+			return j, sctx, cancel, true
 		}
 		m.mu.Unlock()
 		select {
 		case <-ctx.Done():
-			return Job{}, false
+			return Job{}, nil, nil, false
 		case <-m.wake:
 		}
 	}
 }
 
-func (m *Manager) scan(ctx context.Context, job Job) {
-	sctx, cancel := context.WithTimeout(ctx, m.Timeout)
+// scan runs job, which next made the running one (sctx: its timeout and admin cancel).
+func (m *Manager) scan(ctx, sctx context.Context, cancel context.CancelFunc, job Job) {
 	defer cancel()
-	start := m.Now()
 	m.mu.Lock()
+	start := m.cur.StartedAt
 	cred := m.Creds.For(job.Ref)
-	m.cur, m.curCancel, m.cancelled = &Running{Job: job, StartedAt: start, TimeoutSec: int64(m.Timeout / time.Second)}, cancel, false
 	m.mu.Unlock()
 
 	res, err := m.Scanner.Scan(sctx, job.Target, cred)

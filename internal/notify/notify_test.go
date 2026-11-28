@@ -788,13 +788,13 @@ func TestExpiryBlockDays(t *testing.T) {
 		}
 		return sb.String()
 	}
-	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(47*time.Hour + 30*time.Minute)}}); !strings.Contains(s, "in 2 days") {
+	if s := text([]CredentialExpiry{{Name: "r/a", ExpiresAt: now.Add(47*time.Hour + 30*time.Minute)}}); !strings.Contains(s, "in 2 days") {
 		t.Errorf("47.5 h: %q", s)
 	}
-	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(20 * time.Hour)}}); !strings.Contains(s, "within a day") {
+	if s := text([]CredentialExpiry{{Name: "r/a", ExpiresAt: now.Add(20 * time.Hour)}}); !strings.Contains(s, "within a day") {
 		t.Errorf("20 h: %q", s)
 	}
-	if s := text([]CredentialExpiry{{Prefix: "r/a", ExpiresAt: now.Add(-time.Hour), Expired: true}}); !strings.Contains(s, "expired") {
+	if s := text([]CredentialExpiry{{Name: "r/a", ExpiresAt: now.Add(-time.Hour), Expired: true}}); !strings.Contains(s, "expired") {
 		t.Errorf("expired: %q", s)
 	}
 	if expiryBlock(nil, now, "") != nil {

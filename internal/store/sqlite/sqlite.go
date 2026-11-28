@@ -228,6 +228,31 @@ var migrations = []string{
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// Milestone 15.2: a login is stored once and used under several prefixes. Each 15.1 row becomes a login
+	// with one scope; its seal id is the old prefix (the password was sealed with it as additional data — a
+	// migration has no key to re-seal). Restored with backups, like registry_credentials was.
+	`CREATE TABLE registry_logins (
+		id         INTEGER PRIMARY KEY,
+		name       TEXT NOT NULL UNIQUE,
+		username   TEXT NOT NULL,
+		secret     BLOB NOT NULL,
+		seal_id    TEXT NOT NULL UNIQUE,
+		expires_at TEXT,
+		updated_by TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE registry_scopes (
+		prefix   TEXT PRIMARY KEY,
+		login_id INTEGER NOT NULL REFERENCES registry_logins(id) ON DELETE CASCADE
+	);
+	CREATE INDEX registry_scopes_login ON registry_scopes(login_id);
+	INSERT INTO registry_logins(name, username, secret, seal_id, expires_at, updated_by, created_at, updated_at)
+		SELECT username || ' @ ' || prefix, username, secret, prefix, expires_at, updated_by, created_at, updated_at
+		FROM registry_credentials ORDER BY prefix;
+	INSERT INTO registry_scopes(prefix, login_id)
+		SELECT c.prefix, l.id FROM registry_credentials c JOIN registry_logins l ON l.seal_id = c.prefix;
+	DROP TABLE registry_credentials;`,
 }
 
 type DB struct{ db *sql.DB }
@@ -460,6 +485,9 @@ func stageExists(ctx context.Context, q interface {
 }
 
 func isUnique(err error) bool { return err != nil && strings.Contains(err.Error(), "UNIQUE") }
+func isForeignKey(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY")
+}
 
 func (d *DB) GetCluster(ctx context.Context, name string) (*store.Cluster, error) {
 	return scanCluster(d.db.QueryRowContext(ctx, "SELECT "+clusterCols+" FROM clusters WHERE name=?", name))

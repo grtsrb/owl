@@ -7,7 +7,7 @@ K3S_it-hetzner  := v1.36.4-k3s1
 K3S_it-aws-test := v1.35.0-k3s1
 K3S_it-aws-prod := v1.33.6-k3s1
 
-.PHONY: ui ui-dev docs build cli test lint image image-push dev-up dev-down seed agent-print catalog-check agent-deploy stack-up stack-down mattermost-up mattermost-down
+.PHONY: ui ui-dev docs build cli test lint image image-push dev-up dev-down seed agent-print catalog-check agent-deploy stack-up stack-down mattermost-up mattermost-down gitlab-up gitlab-down ziti-up ziti-case ziti-down
 
 ## Web UI (web/). `make build` embeds whatever is in web/dist; run `make ui` first for the real UI.
 ui:
@@ -94,3 +94,18 @@ mattermost-up:
 mattermost-down:
 	docker rm -f -v owl-mattermost
 	rm -f dev/.mattermost.env
+
+gitlab-up:
+	dev/gitlab.sh up
+
+gitlab-down:
+	dev/gitlab.sh down
+
+ziti-up:
+	MODE=$(or $(MODE),sidecar) dev/ziti.sh up
+
+ziti-case:
+	dev/ziti.sh case $(CASE)
+
+ziti-down:
+	dev/ziti.sh down

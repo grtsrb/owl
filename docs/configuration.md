@@ -44,13 +44,21 @@ Trivy pulls each running image from its registry. Public images need nothing; fo
 registries Owl needs a login per image prefix. The longest matching prefix wins; an image with no match is
 pulled anonymously.
 
-**In the UI** (admins): **Settings → Registries → Add credential** — prefix, username, password/token and
-the token's expiry date (optional). Needs `OWL_SECRET_KEY`. The password is stored encrypted and never shown
-again: **Replace** sets a new username + password, **Expiry** changes the date, **Delete** removes it.
-**Test** logs in from the Owl server the way a pull would, so it also catches DNS problems (VPN, ziti,
-split DNS — the name has to resolve *inside the Owl container*) and untrusted certificates. After a change,
-images whose last scan couldn't log in are scanned again right away — no restart. Owl warns 14 days before
-an expiry date, on that page, in the Scanner panel and in the weekly digest.
+**In the UI** (admins, needs `OWL_SECRET_KEY`): the quickest way is **Add login** on an image whose scan
+couldn't log in (Vulnerabilities page or the image's page). Choose what the login is for from the image's
+path — the whole registry, its group (suggested: `registry.gitlab.example.com/devops` for
+`…/devops/billing/api`) or a subgroup — then use an **existing login** or add a **new** one (name, username,
+password/token, optional expiry). Owl tests it at once and doesn't keep a login the registry rejects.
+**Settings → Registries** lists every login with the prefixes it's used for: **Add login**, **Use for another
+prefix** (one token that reads several groups of the same registry — a login is never sent to another
+registry host), **Remove** a prefix, **Replace** (new username + password),
+**Edit** (name, expiry), **Delete**. The password is stored encrypted and never shown again.
+**Test** logs in from the Owl server the way a pull would and checks the token may pull a running image
+below the prefix (a token of another group logs in fine but can read nothing there). It also catches DNS
+problems (VPN, ziti, split DNS — the names have to resolve *inside the Owl container*), an unreachable login
+host (GitLab logs in on its web host) and untrusted certificates. After a change, images whose last scan
+couldn't log in are scanned again right away — no restart. Owl warns 14 days before an expiry date, on that
+page, in the Scanner panel and in the weekly digest.
 
 **From a file** (e.g. managed by your config tooling): a YAML list, mounted read-only. Its entries show in
 Settings → Registries as *from file* and can only be changed in the file (then restart); the file wins over
@@ -78,6 +86,19 @@ a UI entry with the same prefix.
   (visible in `ps`), never in logs or API answers. UI logins are encrypted (AES-256-GCM, `OWL_SECRET_KEY`) in
   the database and its backups; file logins are never stored. The Scanner panel shows the prefixes and any
   that failed to log in.
+- **Registries behind a VPN or OpenZiti**: Owl needs nothing special — only that both the registry host and
+  its login host (GitLab: the web host, `/jwt/auth`) resolve and route *inside the Owl container*. Run a
+  tunneller as a sidecar sharing the container's network, or route the overlay's range (OpenZiti:
+  `100.64.0.0/10`) through a router and point the container's DNS at it — **plus a normal resolver after it**:
+  a Ziti resolver answers only Ziti names and refuses the rest (GitHub, endoflife.date, public registries), and
+  Docker then asks the next server (`--dns <router> --dns <your resolver>`). An internal CA goes in via
+  `SSL_CERT_FILE` (Trivy uses it too). Test shows which host failed. Rare: `100.100.100.200` is refused as a
+  cloud metadata address but lies in OpenZiti's default range — if Ziti ever hands it out, change the
+  tunneller's DNS range.
+
+> **Why:** a login belongs to a token, and one token often covers a group with many images — so it's stored
+> once and used by prefix, and the place to add it is where the scan failed, with the prefixes taken from the
+> image itself instead of typed.
 
 ### Sign-in
 

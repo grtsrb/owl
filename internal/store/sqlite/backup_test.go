@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -270,7 +271,7 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "a", Ref: "r@a", ScannedAt: &at, Result: []byte(`{"vulns":[]}`), AttemptAt: at})
 	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-1", Reason: "not reachable", CreatedBy: "a@x"})
 	_ = db.SetSetting(ctx, "scanLastDaily", "before")
-	_ = db.AddRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/team", Username: "u", Secret: []byte("sealed-1"), UpdatedBy: "a@x"})
+	id, _ := db.AddRegistryLogin(ctx, store.RegistryLogin{Name: "team", Username: "u", Secret: []byte("sealed-1"), SealID: "s1", UpdatedBy: "a@x", Scopes: []string{"reg/team", "reg/team2"}})
 
 	bak := filepath.Join(t.TempDir(), "b.db")
 	if err := db.Backup(ctx, bak); err != nil {
@@ -288,8 +289,9 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 	_ = db.PutVulnAcceptance(ctx, store.VulnAcceptance{Repository: "reg/app", VulnID: "CVE-2", Reason: "later", CreatedBy: "a@x"})
 	_ = db.PutImageScan(ctx, store.ImageScan{Digest: d + "b", Ref: "r@b", Error: "auth", AttemptAt: at})
 	_ = db.SetSetting(ctx, "scanLastDaily", "after")
-	_ = db.UpdateRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/team", Username: "u2", Secret: []byte("sealed-2"), UpdatedBy: "a@x"})
-	_ = db.AddRegistryCredential(ctx, store.RegistryCredential{Prefix: "reg/other", Username: "u", Secret: []byte("x"), UpdatedBy: "a@x"})
+	_ = db.UpdateRegistryLogin(ctx, store.RegistryLogin{ID: id, Name: "team", Username: "u2", Secret: []byte("sealed-2"), SealID: "s1", UpdatedBy: "a@x"})
+	_ = db.DeleteRegistryScope(ctx, "reg/team2")
+	_, _ = db.AddRegistryLogin(ctx, store.RegistryLogin{Name: "other", Username: "u", Secret: []byte("x"), SealID: "s2", UpdatedBy: "a@x", Scopes: []string{"reg/other"}})
 	cp := filepath.Join(t.TempDir(), "restore.db")
 	b, _ := os.ReadFile(bak)
 	_ = os.WriteFile(cp, b, 0o600)
@@ -301,7 +303,8 @@ func TestBackupScansAndAcceptances(t *testing.T) {
 		t.Errorf("acceptances = %+v", as)
 	}
 	// Registry credentials are kept in backups (sealed) and come back with a restore.
-	if rc, _ := db.ListRegistryCredentials(ctx); len(rc) != 1 || rc[0].Username != "u" || string(rc[0].Secret) != "sealed-1" {
+	if rc, _ := db.ListRegistryLogins(ctx); len(rc) != 1 || rc[0].Username != "u" || string(rc[0].Secret) != "sealed-1" ||
+		!slices.Equal(rc[0].Scopes, []string{"reg/team", "reg/team2"}) {
 		t.Errorf("registry credentials = %+v", rc)
 	}
 	scans, _ := db.ListImageScans(ctx)

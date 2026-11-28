@@ -2,6 +2,30 @@
 
 What each milestone shipped. Newest first.
 
+## Add a login where the scan fails (milestone 15.2)
+
+- **Add login** on an image whose scan couldn't log in to its registry (Vulnerabilities list and the image's
+  page, admins). Pick what the login is for from the image's own path — the whole registry, its group
+  (suggested) or a subgroup — with how many failing images each choice fixes; then **use an existing login**
+  or **add a new one**. Owl tests it right away; a login the registry rejects isn't kept.
+- A login is now stored once and **used for several prefixes** (e.g. one token that reads several groups).
+  Settings → Registries lists each login with what it's *used for* and how many running images each prefix
+  covers; **Use for another prefix**, **Remove** a prefix, **Edit** (name, expiry), **Replace**. Existing
+  logins are migrated (one prefix each) and keep working without re-entering anything.
+- **Test checks read access**: it asks for a token for a running image below the prefix and checks the token
+  actually allows pulling it — a GitLab deploy token of another group used to pass the test and then fail
+  every scan. Test results are shown per prefix.
+- Test names the **login host** when that's what's unreachable (GitLab logs in on its web host, not the
+  registry host) — behind a VPN or OpenZiti both have to be reachable from Owl.
+- Expiry warnings come once per login (not per prefix) and show its name.
+- Scan errors name the host that couldn't be reached (and whether it's the registry's login service) instead
+  of Trivy's raw output.
+- Checked against a registry reachable only through **OpenZiti**, both with a tunneller sidecar and with a
+  Ziti router as gateway (dev setup: `make ziti-up`); the configuration docs list what Owl needs.
+- Fix: a scan could run twice when an agent report arrived just as the scanner picked the image up.
+- Dev: `make gitlab-up` / `gitlab-down` for a throwaway GitLab with a registry, groups and deploy tokens;
+  `make ziti-up [MODE=router]` / `ziti-case` / `ziti-down` put it behind OpenZiti.
+
 ## Registry logins in the UI (milestone 15.1)
 
 - **Settings → Registries**: admins add the logins Trivy pulls private (in-house) images with — prefix,
